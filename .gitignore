@@ -1,0 +1,28 @@
+# --- Data & outputs (never in git) ---
+data/
+output/
+*.RData
+*.rda
+*.rds
+*.nc
+*.grib
+
+# --- Secrets ---
+*APIkey*
+.Renviron
+.cdsapirc
+
+# --- R / RStudio ---
+.Rhistory
+.Rproj.user/
+.RDataTmp
+
+# --- renv (library is rebuilt from renv.lock) ---
+renv/library/
+renv/staging/
+renv/local/
+
+# --- OS / editor ---
+.DS_Store
+Thumbs.db
+desktop.ini
