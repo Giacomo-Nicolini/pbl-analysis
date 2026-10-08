@@ -1,0 +1,20 @@
+# Path profiles. Select with env var R_CONFIG_ACTIVE (default = local PC).
+# Usage in R: cfg <- config::get()
+
+default:
+  icos_l2_dir: "data/raw/icos_l2"          # contains XX-Yyy_output_L2I_2026/ folders
+  era5_dir: "data/raw/era5"
+  standard_dir: "data/standard"
+  derived_dir: "data/derived"
+  output_dir: "output"
+  sites_file: "config/sites.csv"
+  test_sites: ["BE-Bra"]
+
+cluster:
+  icos_l2_dir: "/bigdata/g.nicolini/ETC/L2_DATA_backup/L2I_2026"
+  era5_dir: "TODO"                         # path to ERA5 BLH yearly CSVs
+  standard_dir: "TODO"
+  derived_dir: "TODO"
+  output_dir: "TODO"
+  sites_file: "config/sites.csv"
+  test_sites: ~
