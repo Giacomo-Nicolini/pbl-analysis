@@ -22,7 +22,12 @@
 #'   - `n_sub` [-] RK4 sub-steps per half-hour (default 30);
 #'   - `n_neg_end` [half-hours] consecutive `wtheta <= 0` ending the convective
 #'     window (default 2);
-#'   - `combine` [`"max"` (default) or `"bg_only"`] PBLH in the convective window;
+#'   - `neutral_method` [`"auto"` (default), `"B2"`, `"B3"`] neutral formula
+#'     (unstable rows outside the window, `combine = "max"`, `stable_method =
+#'     "neutral"`): `"auto"` uses Eq. B2 where 10 < N/|f| < 70, else Eq. B3
+#'     (Kljun et al. 2015 App. B), N = sqrt(g gamma / T);
+#'   - `combine` [`"bg_only"` (default, Kljun et al. 2015 App. B) or `"max"`
+#'     (max of B5 and the diagnostic height)] PBLH in the convective window;
 #'   - `label` [character] run label (default `"default"`).
 #' @return Named list of options.
 pblh_options <- function(...) {
@@ -34,9 +39,10 @@ pblh_options <- function(...) {
     h_qc_max = 1,
     h_fallback = TRUE,
     max_gap_interp = 2,
+    neutral_method = "auto",
     n_sub = 30,
     n_neg_end = 2,
-    combine = "max",
+    combine = "bg_only",
     label = "default"
   )
   user <- list(...)
@@ -74,6 +80,7 @@ validate_pblh_options <- function(opts) {
   one_of("stable_method", c("nieuwstadt", "zilitinkevich", "neutral"))
   one_of("h_source", c("H_F_MDS", "H", "H_CORR"))
   one_of("combine", c("max", "bg_only"))
+  one_of("neutral_method", c("auto", "B2", "B3"))
   pos_num("c_s")
   g <- opts$gamma
   if (!(is.numeric(g) && length(g) >= 1 && all(is.finite(g)) && all(g > 0))) {
@@ -94,7 +101,7 @@ validate_pblh_options <- function(opts) {
 
 #' Run the PBLH model (PBLHmod v2)
 #'
-#' Daily cycle of Kljun et al. (2015) App. B: diagnostic height (Eqs. B1/B2/B4,
+#' Daily cycle of Kljun et al. (2015) App. B: diagnostic height (Eqs. B1-B4,
 #' [h_diagnostic()]) at night and outside the convective window; Batchvarova &
 #' Gryning (1991) slab model (Eq. B5, [bg_step()]) integrated from sunrise.
 #' Rules: spec 02 section 6 and Amendments 2, 5-8.
@@ -113,8 +120,8 @@ validate_pblh_options <- function(opts) {
 #'   `wtheta > 0` with `L > 0`, or undefined rate: h held,
 #'   `flag_sign_inconsistent`. Missing forcing: integration stops for the rest
 #'   of the day (`flag_bg_stopped_gap`).
-#' - `pblh_m = max(h_bg_m, h_diag_m)` (`combine = "max"`) or `h_bg_m`
-#'   (`"bg_only"`) in the window. Output is raw: no smoothing, clipping or filling.
+#' - `pblh_m = h_bg_m` (`combine = "bg_only"`, default) or
+#'   `max(h_bg_m, h_diag_m)` (`"max"`) in the window. Output is raw: no smoothing, clipping or filling.
 #'
 #' @param data Output of [read_icos_site()] (complete 30-min grid, sorted).
 #' @param site_meta One row of [read_sites()] (`site_id`, `lat`, `lon`,
@@ -123,7 +130,7 @@ validate_pblh_options <- function(opts) {
 #' @return Tibble, one row per input row: `site_id`, `timestamp_start_utc`,
 #'   `timestamp_end_utc` [POSIXct UTC], `pblh_m` [m], `regime` (`"stable"`,
 #'   `"unstable_diag"`, `"convective"`, `"excluded"`, `NA`), `method` (`"B1"`,
-#'   `"B2"`, `"B4"`, `"B5"`, `NA`), `h_diag_m` [m], `h_bg_m` [m, window only],
+#'   `"B2"`, `"B3"`, `"B4"`, `"B5"`, `NA`), `h_diag_m` [m], `h_bg_m` [m, window only],
 #'   `day_id` [Date, local standard time], `is_day` [logical], `ustar` [m s-1],
 #'   `L` [m], `wtheta` [K m s-1], `T_K` [K], `p_Pa` [Pa], `H_source`,
 #'   `T_source`, `p_source`, `zm_m` [m], flags (logical): `flag_ustar_interp`,
@@ -148,7 +155,7 @@ run_pblh_model <- function(data, site_meta, opts = pblh_options()) {
   }
   const <- pblh_constants()
   f <- prepare_pblh_forcing(data, site_meta, opts)
-  dg <- h_diagnostic(f$L, f$ustar, f$f_cor, opts)
+  dg <- h_diagnostic(f$L, f$ustar, f$f_cor, opts, T_K = f$T_K, gamma = gamma)
 
   pblh <- dg$h_diag_m
   method <- dg$method

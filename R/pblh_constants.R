@@ -17,6 +17,10 @@
 #'     et al. (2015) Eq. B1.
 #'   - `c_n` [-]: 0.3; neutral-limit coefficient, Kljun et al. (2015) Eq. B2
 #'     (Hanna & Chang 1993).
+#'   - `c_nn` [-]: 1.36; neutral coefficient with a stratified free atmosphere,
+#'     Kljun et al. (2015) Eq. B3 (Zilitinkevich et al. 2012).
+#'   - `n_over_f_min`, `n_over_f_max` [-]: 10, 70; range of N/|f| in which the
+#'     neutral formula B2 is valid (Kljun et al. 2015, App. B); outside it B3.
 #'   - `p0` reference sea-level pressure [Pa]: 101325 (standard atmosphere).
 #'   - `scale_height` isothermal scale height [m]: 8434 = r_d T / g with
 #'     T ~ 288 K (e.g. Wallace & Hobbs 2006, Sect. 3.2); barometric fallback.
@@ -37,6 +41,9 @@ pblh_constants <- function() {
     nieuwstadt_a = 3.8,      # Nieuwstadt 1981; Kljun et al. 2015 Eq. B1
     nieuwstadt_b = 2.28,     # idem
     c_n = 0.3,               # Kljun et al. 2015 Eq. B2 (Hanna & Chang 1993)
+    c_nn = 1.36,             # Kljun et al. 2015 Eq. B3 (Zilitinkevich et al. 2012)
+    n_over_f_min = 10,       # B2 valid for 10 < N/|f| < 70; Kljun et al. 2015 App. B
+    n_over_f_max = 70,       # idem
     p0 = 101325,             # standard sea-level pressure [Pa]
     scale_height = 8434,     # isothermal scale height r_d * 288 K / g [m]; Wallace & Hobbs 2006
     h0_search_halfhours = 4, # h0 search window before sunrise (2 h); spec 02 section 6

@@ -42,11 +42,14 @@ test_that("3-day synthetic series: daily cycle, start at sunrise, no carry-over"
 
 test_that("combine = max vs bg_only, and method labels", {
   d <- make_diurnal(1)
-  out <- run(d)
+  out <- run(d, combine = "max", neutral_method = "B2")
   conv <- out$regime %in% "convective"
   expect_equal(out$pblh_m[conv], pmax(out$h_bg_m[conv], out$h_diag_m[conv]))
   expect_equal(out$method[conv], ifelse(out$h_diag_m[conv] > out$h_bg_m[conv], "B2", "B5"))
-  out2 <- run(d, combine = "bg_only")
+  out_auto <- run(d, combine = "max")
+  expect_true(all(out_auto$method[conv] %in% c("B3", "B5"))) # N/|f| = 184 > 70 here
+  out2 <- run(d) # default: bg_only
+  expect_equal(attr(out2, "pblh_options")$combine, "bg_only")
   expect_equal(out2$pblh_m[conv], out2$h_bg_m[conv])
   expect_true(all(out2$method[conv] == "B5"))
 })

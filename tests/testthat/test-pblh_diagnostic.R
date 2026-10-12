@@ -39,16 +39,57 @@ test_that("h_neutral and h_zilitinkevich: hand-computed cases", {
 test_that("h_diagnostic selects the formula by stability and option", {
   L <- c(100, -100, NA, 0, 100)
   u <- c(0.3, 0.3, 0.3, 0.3, NA)
-  d <- h_diagnostic(L, u, 1e-4)
+  b2 <- pblh_options(neutral_method = "B2")
+  d <- h_diagnostic(L, u, 1e-4, b2)
   expect_equal(d$method, c("B1", "B2", NA, NA, NA))
   expect_equal(d$h_diag_m[1:2], c(h_nieuwstadt(100, 0.3, 1e-4), 900))
   expect_true(all(is.na(d$h_diag_m[3:5])))
 
-  d <- h_diagnostic(L, u, 1e-4, pblh_options(stable_method = "zilitinkevich", c_s = 0.63))
+  d <- h_diagnostic(L, u, 1e-4, pblh_options(stable_method = "zilitinkevich", c_s = 0.63,
+                                              neutral_method = "B2"))
   expect_equal(d$method[1:2], c("B4", "B2"))
   expect_equal(d$h_diag_m[1], h_zilitinkevich(100, 0.3, 1e-4, 0.63))
 
-  d <- h_diagnostic(L, u, 1e-4, pblh_options(stable_method = "neutral"))
+  d <- h_diagnostic(L, u, 1e-4, pblh_options(stable_method = "neutral", neutral_method = "B2"))
   expect_equal(d$method[1:2], c("B2", "B2"))
   expect_equal(d$h_diag_m[1:2], c(900, 900))
+})
+
+test_that("brunt_vaisala and h_neutral_nn: hand-computed cases (Eq. B3)", {
+  # N = sqrt(g gamma / T) = sqrt(9.80665 * 0.01 / 290) = sqrt(3.381603e-4) = 0.0183891 s-1
+  expect_equal(brunt_vaisala(0.01, 290), 0.0183891, tolerance = 1e-6)
+  expect_true(is.na(brunt_vaisala(-0.01, 290)))
+  # B3: 1.36 * 0.3 / sqrt(1e-4 * 0.01) = 0.408 / 1e-3 = 408 m
+  expect_equal(h_neutral_nn(0.3, 1e-4, 0.01), 408)
+  expect_equal(h_neutral_nn(0.3, -1e-4, 0.01), 408) # |f|
+  # with N = 0.0183891: 0.408 / sqrt(1e-4 * 0.0183891) = 0.408 / 1.356064e-3 = 300.8704 m
+  expect_equal(h_neutral_nn(0.3, 1e-4, brunt_vaisala(0.01, 290)), 300.8704, tolerance = 1e-6)
+})
+
+test_that("neutral_method auto switches between B2 and B3 on N/|f|", {
+  f <- 1e-4
+  # gamma = 0.01, T = 290: N/|f| = 183.9 > 70 -> B3
+  a <- h_neutral_select(0.3, f, "auto", T_K = 290, gamma = 0.01)
+  expect_equal(a$method, "B3")
+  expect_equal(a$h, 300.8704, tolerance = 1e-6)
+  # gamma = N^2 T / g with N = 0.005: 2.5e-5 * 290 / 9.80665 = 7.392943e-4 -> N/|f| = 50 -> B2
+  a <- h_neutral_select(0.3, f, "auto", T_K = 290, gamma = 7.392943e-4)
+  expect_equal(a$method, "B2")
+  expect_equal(a$h, 900)
+  # N/|f| = 5 (< 10) -> B3; gamma vector per value
+  a <- h_neutral_select(c(0.3, 0.3, 0.3), f, "auto", T_K = 290,
+                        gamma = c(0.01, 7.392943e-4, 7.392943e-6))
+  expect_equal(a$method, c("B3", "B2", "B3"))
+  # forced methods
+  expect_equal(h_neutral_select(0.3, f, "B2")$h, 900)
+  expect_equal(h_neutral_select(0.3, f, "B3", T_K = 290, gamma = 7.392943e-4)$method, "B3")
+  # missing T: undecidable -> NA
+  expect_true(is.na(h_neutral_select(0.3, f, "auto", T_K = NA, gamma = 0.01)$h))
+  expect_error(h_neutral_select(0.3, f, "auto"), "T_K")
+})
+
+test_that("h_diagnostic uses neutral_method for L < 0, not for B1", {
+  d <- h_diagnostic(c(100, -100), 0.3, 1e-4, pblh_options(), T_K = 290)
+  expect_equal(d$method, c("B1", "B3"))
+  expect_equal(d$h_diag_m, c(h_nieuwstadt(100, 0.3, 1e-4), 300.8704), tolerance = 1e-6)
 })
