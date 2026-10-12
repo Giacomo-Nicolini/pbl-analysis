@@ -93,6 +93,8 @@ output/       figures/, tables/ (gitignored)
 - Small, focused commits with clear messages (`feat:`, `fix:`, `test:`, `docs:`, `refactor:`).
 - One branch per spec (`spec-01-readers`), merge to `main` when tests pass.
 - Before committing, check `git status` for data, zip, credentials: they must never be staged.
+  Only exception: the tiny **synthetic** test fixtures in `tests/testthat/fixtures/` (zips included),
+  rebuilt by `tests/testthat/fixtures/make_fixtures.R`. Never put real data there.
 
 ## When you finish a task
 
