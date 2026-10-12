@@ -1,5 +1,7 @@
 # Spec 02: run PBLHmod v2 for the test site(s) and print a summary.
-# Runs: default options, and gamma = 0.0025 K/m (legacy value) as sensitivity case.
+# Runs: default (bg_only, neutral auto, gamma 0.01 K/m); gamma0025 (legacy gamma);
+# max_B2 (combine max, neutral B2: behaviour before amendment 11); max_auto.
+# Ends with a side-by-side table of quantiles per regime for all cases and the operational PBLH.
 # Output: <derived_dir>/pblhmod/<site>_pblhmod_<label>.csv.gz
 #
 # Usage: Rscript scripts/02_run_pblh_model.R [SITE ...]
@@ -23,7 +25,9 @@ dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
 
 runs <- list(
   default = pblh_options(),
-  gamma0025 = pblh_options(gamma = 0.0025, label = "gamma0025")
+  gamma0025 = pblh_options(gamma = 0.0025, label = "gamma0025"),
+  max_B2 = pblh_options(combine = "max", neutral_method = "B2", label = "max_B2"),
+  max_auto = pblh_options(combine = "max", neutral_method = "auto", label = "max_auto")
 )
 probs <- c(0.01, 0.05, 0.25, 0.5, 0.75, 0.95, 0.99)
 
@@ -50,10 +54,12 @@ for (site_id in site_ids) {
   cli::cli_inform("H_F_MDS_QC distribution (FLUXNET convention: 0 measured, 1 good, 2 medium, 3 poor gap-fill):")
   print_tbl(count_tbl(d$fn_H_F_MDS_QC, "H_F_MDS_QC"))
 
+  outs <- list()
   for (lab in names(runs)) {
     opts <- runs[[lab]]
-    cli::cli_h2("Run {.val {opts$label}} (gamma = {opts$gamma} K m-1, stable = {opts$stable_method}, H = {opts$h_source}, combine = {opts$combine})")
+    cli::cli_h2("Run {.val {opts$label}} (gamma = {opts$gamma} K m-1, stable = {opts$stable_method}, neutral = {opts$neutral_method}, H = {opts$h_source}, combine = {opts$combine})")
     tm <- system.time(out <- run_pblh_model(d, meta, opts))
+    outs[[opts$label]] <- out
     cli::cli_inform("Run time: {round(tm[['elapsed']], 1)} s.")
 
     path <- file.path(out_dir, paste0(site_id, "_pblhmod_", opts$label, ".csv.gz"))
@@ -118,4 +124,17 @@ for (site_id in site_ids) {
       }
     }
   }
+
+  cli::cli_h2("Side by side: quantiles per regime [m] (rows valid in all cases and in the operational PBLH)")
+  reg <- outs[[1]]$regime # regimes do not depend on combine / neutral_method / gamma
+  all_ok <- Reduce(`&`, lapply(outs, function(o) !is.na(o$pblh_m))) & !is.na(d$PBLH)
+  series <- c(lapply(outs, `[[`, "pblh_m"), list(PBLH_oper = d$PBLH))
+  side <- do.call(rbind, lapply(c("all", "stable", "unstable_diag", "convective"), function(r) {
+    sel <- all_ok & (r == "all" | reg %in% r)
+    do.call(rbind, lapply(names(series), function(s) {
+      q <- stats::quantile(series[[s]][sel], c(0.05, 0.5, 0.95), na.rm = TRUE, names = FALSE)
+      data.frame(regime = r, case = s, n = sum(sel), p5 = round(q[1]), p50 = round(q[2]), p95 = round(q[3]))
+    }))
+  }))
+  print_tbl(side)
 }
