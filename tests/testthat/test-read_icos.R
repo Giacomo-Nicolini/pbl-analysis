@@ -149,7 +149,7 @@ test_that("read_icos_site merges the three files on a complete grid", {
 test_that("icos_range_report counts but never modifies", {
   d <- suppressWarnings(q(read_icos_fluxes(f_fluxes, 1)))
   r <- icos_range_report(d)
-  expect_named(r, c("variable", "n_total", "n_valid", "pct_valid", "n_out_of_range", "min", "max"))
+  expect_named(r, c("variable", "n_total", "n_excluded", "n_valid", "pct_valid", "n_out_of_range", "min", "max"))
   h <- r[r$variable == "H", ]
   expect_equal(h$n_total, 7)
   expect_equal(h$n_valid, 5)
@@ -158,4 +158,51 @@ test_that("icos_range_report counts but never modifies", {
   expect_equal(r$n_out_of_range[r$variable == "PBLH"], 1)      # 5 m
   expect_equal(r$n_valid[r$variable == "fn_PA_F_PA"], 0)       # absent in FLUXES alone
   expect_equal(max(d$H, na.rm = TRUE), 900)
+})
+
+test_that("T_SONIC is already in K: renamed, not converted", {
+  d <- suppressWarnings(q(read_icos_fluxes(f_fluxes, 1)))
+  expect_equal(d$T_SONIC_K[1], 283.15)
+})
+
+test_that("unit sanity check aborts on implausible medians of declared units", {
+  write_col <- function(name, values) {
+    f <- withr::local_tempfile(fileext = ".csv", .local_envir = parent.frame())
+    n <- length(values)
+    s <- format(as.POSIXct("2020-01-01", tz = "UTC") + (seq_len(n) - 1) * 1800, "%Y%m%d%H%M")
+    e <- format(as.POSIXct("2020-01-01", tz = "UTC") + seq_len(n) * 1800, "%Y%m%d%H%M")
+    df <- data.frame(TIMESTAMP_START = s, TIMESTAMP_END = e)
+    df[[name]] <- values
+    utils::write.csv(df, f, row.names = FALSE, quote = FALSE)
+    f
+  }
+  rd <- function(f, col) q(read_icos_csv(f, c("TIMESTAMP_START", "TIMESTAMP_END", col), 1))
+
+  # T_SONIC declared K: degC values abort, K values pass
+  expect_error(rd(write_col("T_SONIC", c(10, 11, 12)), "T_SONIC"), "unit check failed")
+  expect_no_error(rd(write_col("T_SONIC", c(283, 284, 285)), "T_SONIC"))
+  # TA_F declared degC: K values abort; boundaries [-40, 50] inclusive
+  expect_error(rd(write_col("TA_F", c(283, 284, 285)), "TA_F"), "TA_F")
+  expect_no_error(rd(write_col("TA_F", c(-40, -40, -40)), "TA_F"))
+  expect_error(rd(write_col("TA_F", c(-41, -41, -41)), "TA_F"), "unit check failed")
+  # PA declared kPa: Pa values abort
+  expect_error(rd(write_col("PA", c(100000, 100100, 100200)), "PA"), "kPa")
+  expect_no_error(rd(write_col("PA", c(99.5, 99.6, 99.7)), "PA"))
+  # all missing: no check
+  expect_no_error(rd(write_col("PA", c(-9999, -9999, -9999)), "PA"))
+})
+
+test_that("icos_range_report skips excluded rows by default", {
+  d <- suppressWarnings(q(read_icos_fluxes(f_fluxes, 1)))
+  d$excl_flag <- FALSE
+  d$excl_flag[d$H %in% 900] <- TRUE
+  expect_message(r <- icos_range_report(d), "1 excluded")
+  h <- r[r$variable == "H", ]
+  expect_equal(h$n_total, 6)
+  expect_equal(h$n_excluded, 1)
+  expect_equal(h$n_out_of_range, 0)
+  r2 <- suppressMessages(icos_range_report(d, include_excluded = TRUE))
+  expect_equal(r2$n_total[r2$variable == "H"], 7)
+  expect_equal(r2$n_out_of_range[r2$variable == "H"], 1)
+  expect_equal(r2$n_excluded[r2$variable == "H"], 1)
 })

@@ -1,8 +1,9 @@
 # ICOS L2 readers (FLUXES, FLUXNET FLUXMET HH, METEO).
 # Input facts: CLAUDE.md "Input data". Rules: docs/specs/01_metadata_readers.md section 4.
 # Timestamps in the files are local standard time (no DST); converted to UTC here.
-# Units are converted at this boundary only (degC -> K, kPa -> Pa); converted
-# columns get a unit suffix (_K, _PA). No filtering, no gap-filling.
+# Units are converted at this boundary only (degC -> K, kPa -> Pa); columns in
+# K get a unit suffix (_K, _PA). Declared units are sanity-checked on the column
+# median before conversion (abort if implausible). No filtering, no gap-filling.
 
 icos_na <- c("-9999", "-9999.0", "-9999.00", "NA", "")
 
@@ -23,9 +24,20 @@ icos_cols <- list(
   )
 )
 
-# Columns converted at the reader boundary.
-icos_degc_cols <- c("T_SONIC", "TA_F", "TA", paste0("TA_", 1:10))
+# Declared units of the raw columns handled at the reader boundary.
+# T_SONIC is already in K in the L2 FLUXES files (checked on BE-Bra, spec 01):
+# not converted, only renamed T_SONIC_K.
+icos_degc_cols <- c("TA_F", "TA", paste0("TA_", 1:10))
+icos_kelvin_cols <- c("T_SONIC")
 icos_kpa_cols <- c("PA_F", "PA")
+
+# Plausible range of the column MEDIAN for each declared unit (unit sanity check,
+# not a data filter): degC [-40, 50], K [220, 330], kPa [50, 110].
+icos_unit_median_ranges <- list(
+  degC = c(-40, 50),
+  K = c(220, 330),
+  kPa = c(50, 110)
+)
 
 # Time columns never prefixed / never unit-converted.
 icos_time_cols <- c("TIMESTAMP_START", "TIMESTAMP_END", "timestamp_start_utc", "timestamp_end_utc")
@@ -156,6 +168,8 @@ read_icos_csv <- function(path, cols, utc_offset_h, label = basename(path)) {
     cli::cli_warn("{label}: {n_dur} record{?s} with TIMESTAMP_END - TIMESTAMP_START != 30 min.")
   }
 
+  check_icos_units(d, label)
+
   d$.in_file <- TRUE
   n_file <- nrow(d)
   d <- complete_halfhour_grid(d, label)
@@ -189,11 +203,35 @@ complete_halfhour_grid <- function(d, label) {
   out
 }
 
-# Unit conversion at the reader boundary; converted columns renamed with unit suffix.
+# Unit sanity check on raw columns: abort if the median of a column is outside
+# the plausible range of its declared unit (icos_unit_median_ranges).
+check_icos_units <- function(d, label) {
+  declared <- list(degC = icos_degc_cols, K = icos_kelvin_cols, kPa = icos_kpa_cols)
+  for (u in names(declared)) {
+    rng <- icos_unit_median_ranges[[u]]
+    for (v in intersect(declared[[u]], names(d))) {
+      if (all(is.na(d[[v]]))) next
+      med <- stats::median(d[[v]], na.rm = TRUE)
+      if (med < rng[1] || med > rng[2]) {
+        cli::cli_abort(c(
+          "{label}: unit check failed for {.field {v}} (declared {u}).",
+          "x" = "Median = {signif(med, 6)}, expected within [{rng[1]}, {rng[2]}] {u}.",
+          "i" = "The file may use a different unit; check before converting."
+        ))
+      }
+    }
+  }
+  invisible(TRUE)
+}
+
+# Unit conversion at the reader boundary; columns renamed with unit suffix.
 convert_icos_units <- function(d) {
   for (v in intersect(icos_degc_cols, names(d))) {
     d[[v]] <- d[[v]] + 273.15 # degC -> K (SI definition, 0 degC = 273.15 K)
     names(d)[names(d) == v] <- paste0(v, "_K")
+  }
+  for (v in intersect(icos_kelvin_cols, names(d))) {
+    names(d)[names(d) == v] <- paste0(v, "_K") # already K: rename only
   }
   for (v in intersect(icos_kpa_cols, names(d))) {
     d[[v]] <- d[[v]] * 1000 # kPa -> Pa
@@ -345,21 +383,35 @@ read_icos_site <- function(site_id, cfg, sites, sites_tv, exclusions) {
 #' `H` [-200, 800] W m-2; `USTAR` [0, 3] m s-1; `T_SONIC_K` [223, 323] K;
 #' `fn_PA_F_PA` [50000, 110000] Pa; `PBLH` [10, 5000] m; `|MO_LENGTH|` > 0 m.
 #' Rows of `ranges` with `NA` bounds give coverage only (`n_out_of_range` = `NA`).
+#' By default, rows flagged by [flag_exclusions()] (`excl_flag` TRUE) are not
+#' counted; their number is reported.
 #'
 #' @param data Output of [read_icos_site()] (or a reader).
+#' @param include_excluded If `FALSE` (default), skip rows with `excl_flag`
+#'   `TRUE` (no effect if `data` has no `excl_flag` column) [logical].
 #' @param ranges Tibble with `variable`, `lower`, `upper` (units of the
 #'   variable), `abs` [logical, compare `|x|`] and optional `strict_lower`
 #'   [logical, require `x > lower`]; see [icos_default_ranges()]. Bounds are
 #'   otherwise inclusive.
-#' @return Tibble: `variable`, `n_total` [-], `n_valid` [-, non-missing],
+#' @return Tibble: `variable`, `n_total` [-, rows counted], `n_excluded` [-,
+#'   rows flagged as excluded; part of `n_total` only if `include_excluded`], `n_valid` [-, non-missing],
 #'   `pct_valid` [%], `n_out_of_range` [-, among valid], `min`, `max` [units of
 #'   the variable, valid values].
-icos_range_report <- function(data, ranges = icos_default_ranges()) {
+icos_range_report <- function(data, ranges = icos_default_ranges(),
+                              include_excluded = FALSE) {
+  excl <- if ("excl_flag" %in% names(data)) !is.na(data$excl_flag) & data$excl_flag else rep(FALSE, nrow(data))
+  n_excluded <- sum(excl)
+  if (!include_excluded) {
+    data <- data[!excl, , drop = FALSE]
+    cli::cli_inform("Range report: {n_excluded} excluded row{?s} skipped.")
+  } else {
+    cli::cli_inform("Range report: {n_excluded} excluded row{?s} included.")
+  }
   rows <- lapply(seq_len(nrow(ranges)), function(i) {
     v <- ranges$variable[i]
     n_total <- nrow(data)
     if (!v %in% names(data)) {
-      return(dplyr::tibble(variable = v, n_total = n_total, n_valid = 0L,
+      return(dplyr::tibble(variable = v, n_total = n_total, n_excluded = n_excluded, n_valid = 0L,
                            pct_valid = 0, n_out_of_range = NA_integer_,
                            min = NA_real_, max = NA_real_))
     }
@@ -376,7 +428,7 @@ icos_range_report <- function(data, ranges = icos_default_ranges()) {
       sum((!is.na(lo) & y < lo) | (!is.na(hi) & y > hi))
     }
     dplyr::tibble(
-      variable = v, n_total = n_total, n_valid = length(x),
+      variable = v, n_total = n_total, n_excluded = n_excluded, n_valid = length(x),
       pct_valid = if (n_total > 0) 100 * length(x) / n_total else NA_real_,
       n_out_of_range = as.integer(n_oor),
       min = if (length(x)) min(x) else NA_real_,

@@ -40,7 +40,7 @@ fluxes_cols <- c(
 fl$CO2 <- 400 # extra column, must not be read
 for (v in fluxes_cols) fl[[v]] <- seq_len(n)
 fl$H <- c(-9999, -50, 20, 100, 900, 10)        # -9999 -> NA; 900 out of range
-fl$T_SONIC <- c(10, 10.5, 11, 11.5, 12, 12.5)  # degC
+fl$T_SONIC <- c(283.15, 283.65, 284.15, 284.65, 285.15, 285.65)  # K (as in L2 FLUXES)
 fl$USTAR <- c(0.1, 0.2, 0.3, 0.4, 0.5, 0.6)
 fl$MO_LENGTH <- c(-100, 50, 0, -9999, 200, -20)
 fl$PBLH <- c(500, "-9999.0", 800, 1000, 5, 1200)
