@@ -18,7 +18,7 @@ era5_file_regex <- function(site_id) {
 #'
 #' @param site_id Station code [character].
 #' @param cfg Configuration list with `era5_dir` (may contain `{site}`).
-#' @return Tibble, one row per file: `path`, `file`, `product` (`ERA5`/`ERA5T`),
+#' @return Tibble, one row per file: `site_id`, `path`, `file`, `product` (`ERA5`/`ERA5T`),
 #'   `year` [integer], `lon_offset`, `lat_offset` [integer, grid cells from the
 #'   site cell].
 find_era5_files <- function(site_id, cfg) {
@@ -33,6 +33,7 @@ find_era5_files <- function(site_id, cfg) {
     ))
   }
   out <- dplyr::tibble(
+    site_id = rep(site_id, sum(ok)),
     path = file.path(dir, all_files[ok]),
     file = all_files[ok],
     product = m[ok, 2],
@@ -78,17 +79,23 @@ haversine_km <- function(lat1, lon1, lat2, lon2) {
 #' Reads the files listed by [find_era5_files()]. Checks: `time` vs `datetime`
 #' (warn, use `time`), duplicated timestamps per offset (abort), hourly
 #' continuity (report gaps), negative or missing `blh_m` (report). No values
-#' are modified or removed.
+#' are modified or removed. If `sites` is given, warns when the site
+#' coordinates stored in the ERA5 files differ from `sites` by more than
+#' `coord_tol_deg` (sign of an extraction with outdated coordinates).
 #'
 #' @param files Output of [find_era5_files()].
 #' @param offsets `"center"` (only `lon_offset == 0 & lat_offset == 0`) or
 #'   `"all"` (all grid cells found).
+#' @param sites Optional output of [read_sites()]; `NULL` skips the coordinate check.
+#' @param coord_tol_deg Tolerance for the coordinate check [decimal degrees];
+#'   default 0.01.
 #' @return Tibble sorted by offsets and time: `timestamp_utc` [POSIXct UTC,
 #'   instantaneous value at the hour], `blh_m` boundary-layer height [m above
 #'   model ground], `product` [-], `lon_offset`, `lat_offset` [integer, cells],
 #'   `grid_lat`, `grid_lon` grid-cell centre [decimal degrees], `site_lat`,
 #'   `site_lon` [decimal degrees], `grid_dist_km` site to cell-centre distance [km].
-read_era5_blh <- function(files, offsets = c("center", "all")) {
+read_era5_blh <- function(files, offsets = c("center", "all"), sites = NULL,
+                          coord_tol_deg = 0.01) {
   offsets <- match.arg(offsets)
   if (offsets == "center") {
     files <- files[files$lon_offset == 0 & files$lat_offset == 0, ]
@@ -159,6 +166,33 @@ read_era5_blh <- function(files, offsets = c("center", "all")) {
     cli::cli_warn("ERA5: {n_na} missing and {n_neg} negative {.field blh_m} value{?s} (kept as is).")
   }
 
+  if (!is.null(sites)) check_era5_site_coords(d, files, sites, coord_tol_deg)
+
   d$grid_dist_km <- haversine_km(d$site_lat, d$site_lon, d$grid_lat, d$grid_lon)
   d
+}
+
+# Warn if site coordinates in the ERA5 files differ from site metadata by more
+# than tol degrees (e.g. ERA5 extracted with outdated coordinates).
+check_era5_site_coords <- function(d, files, sites, tol) {
+  site_id <- unique(files$site_id)
+  if (length(site_id) != 1) {
+    cli::cli_abort("ERA5 coordinate check: {.arg files} must hold exactly one site.")
+  }
+  meta <- sites[sites$site_id == site_id, ]
+  if (nrow(meta) != 1) {
+    cli::cli_abort("ERA5 coordinate check: site {.val {site_id}} not found in site metadata.")
+  }
+  era_lat <- unique(d$site_lat)
+  era_lon <- unique(d$site_lon)
+  dlat <- max(abs(era_lat - meta$lat), na.rm = TRUE)
+  dlon <- max(abs(era_lon - meta$lon), na.rm = TRUE)
+  if (dlat > tol || dlon > tol) {
+    cli::cli_warn(c(
+      "ERA5 {.val {site_id}}: site coordinates in the ERA5 files differ from site metadata by more than {tol} deg.",
+      "x" = "ERA5 files: lat {.val {era_lat}}, lon {.val {era_lon}}; site metadata: lat {meta$lat}, lon {meta$lon}.",
+      "i" = "ERA5 may have been extracted for the wrong grid cell; re-extract with the current coordinates."
+    ))
+  }
+  invisible(TRUE)
 }

@@ -77,7 +77,7 @@ for (site_id in site_ids) {
   era_files <- find_era5_files(site_id, cfg)
   print_tbl(era_files[c("file", "product", "year", "lon_offset", "lat_offset")])
   if (nrow(era_files) > 0) {
-    era <- read_era5_blh(era_files, offsets = "center")
+    era <- read_era5_blh(era_files, offsets = "center", sites = sites)
     cells <- dplyr::summarise(
       era, .by = c(lon_offset, lat_offset),
       grid_lat = dplyr::first(grid_lat), grid_lon = dplyr::first(grid_lon),

@@ -72,3 +72,18 @@ test_that("haversine distance against hand-computed values", {
   expect_equal(haversine_km(60, 0, 60, 1), 55.59693, tolerance = 1e-6)
   expect_equal(haversine_km(51.3, 4.5, 51.3, 4.5), 0)
 })
+
+test_that("ERA5 site coordinates are checked against site metadata", {
+  f <- find_q()
+  sites <- read_sites(fixture_path("sites.csv")) # XX-Tst at 50.0 N, 10.0 E, as in the ERA5 fixtures
+  w <- testthat::capture_warnings(read_era5_blh(f, sites = sites))
+  expect_false(any(grepl("coordinates", w)))
+
+  sites$lat[sites$site_id == "XX-Tst"] <- 50.02 # e.g. corrected coordinates (SE-Myc case)
+  w <- testthat::capture_warnings(read_era5_blh(f, sites = sites))
+  expect_true(any(grepl("differ from site metadata", w)))
+
+  sites$lat[sites$site_id == "XX-Tst"] <- 50.005 # within tolerance
+  w <- testthat::capture_warnings(read_era5_blh(f, sites = sites))
+  expect_false(any(grepl("coordinates", w)))
+})
