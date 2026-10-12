@@ -1,0 +1,6 @@
+site_id,lat,lon,altitude_m,utc_offset_h,zm_m,canopy_height_m,d_m,z0_m,igbp,slope_perc,slope_class,notes
+XX-Tst,50.0,10.0,100,1,30,20,NA,NA,ENF,0.1,Flat,synthetic test site
+XX-Sta,45.0,5.0,10,0,3,0.5,NA,NA,GRA,NA,NA,static heights only
+XX-Mis,45.0,5.0,10,2,NA,NA,NA,NA,NA,NA,NA,no heights at all
+XX-One,45.0,5.0,10,1,10,5,NA,NA,CRO,NA,NA,single canopy measurement
+XX-Nor,60.0,17.0,45,1,36,28,NA,NA,ENF,NA,NA,SE-Nor-like exclusion case
