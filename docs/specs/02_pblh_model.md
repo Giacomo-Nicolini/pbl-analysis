@@ -228,4 +228,8 @@ looked physically odd.
 9. **Barometric fallback** `p = 101325 exp(-z / 8434)`: isothermal atmosphere, scale height R_d T / g with T ≈ 288 K
    (e.g. Wallace & Hobbs 2006, Sect. 3.2).
 
+10. *(Implementation decision, to confirm)* A day whose daylight `wtheta` has no positive value **and** contains gaps
+    is a gap day (`flag_bg_stopped_gap`, diagnostic only), not a `flag_no_positive_h` day: the missing values could
+    have been positive (e.g. days before the start of the H record).
+
 Added output columns: `flag_polar_day`, `flag_no_positive_h`.

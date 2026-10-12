@@ -152,6 +152,17 @@ test_that("no positive heat flux: no window, flagged", {
   expect_length(windows(out), 1)
 })
 
+test_that("missing heat flux all day is a gap day, not a no-positive day", {
+  d <- make_diurnal(2)
+  d$fn_H_F_MDS[49:96] <- NA
+  d$H[49:96] <- NA
+  out <- run(d)
+  day2 <- out$day_id == out$day_id[which(out$is_day & seq_len(nrow(out)) > 48)[1]]
+  expect_false(any(out$flag_no_positive_h))
+  expect_true(all(out$flag_bg_stopped_gap[day2]))
+  expect_false(any(out$regime[day2] %in% "convective"))
+})
+
 test_that("sign inconsistency: h held and flagged", {
   d <- make_diurnal(1)
   day <- which(is_day(d$timestamp_start_utc, d$timestamp_end_utc, site$lat, site$lon))

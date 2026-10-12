@@ -104,7 +104,9 @@ validate_pblh_options <- function(opts) {
 #' - `h0` = diagnostic height of the half-hour before sunrise, else the nearest
 #'   valid value within the 2 h before; none: `flag_no_h0`, diagnostic only.
 #' - No `wtheta > 0` between sunrise and sunset: `flag_no_positive_h`,
-#'   diagnostic only. Polar day: `flag_polar_day`, diagnostic only.
+#'   diagnostic only; if the daylight `wtheta` also has gaps, the day is treated
+#'   as a gap day instead (`flag_bg_stopped_gap`). Polar day: `flag_polar_day`,
+#'   diagnostic only.
 #' - In the window: h held at `h0` until the first `wtheta > 0`; then Eq. B5;
 #'   negative spells shorter than `opts$n_neg_end` held; the window ends at the
 #'   first run of `opts$n_neg_end` half-hours with `wtheta <= 0` or at sunset.
@@ -187,7 +189,11 @@ run_pblh_model <- function(data, site_meta, opts = pblh_options()) {
       next
     }
     if (!any(f$wtheta[light] > 0, na.rm = TRUE)) {
-      flag_nopos[day_rows] <- TRUE # no positive heat flux: no window (Amendment 5)
+      if (anyNA(f$wtheta[light])) {
+        flag_stop[day_rows] <- TRUE # no positive value but gaps: undecidable, treated as a gap day
+      } else {
+        flag_nopos[day_rows] <- TRUE # no positive heat flux: no window (Amendment 5)
+      }
       next
     }
     # initial height: half-hour before sunrise, else nearest valid within 2 h (Amendment 8)
