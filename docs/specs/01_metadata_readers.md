@@ -106,7 +106,8 @@ Reads `config/exclusion_periods.csv`: `site_id, date_start, date_end, scope, rea
   step ≠ 30 min (warn with count). Return the data on a **complete regular 30-min grid** from first to last
   timestamp (missing steps become rows of `NA`), and report how many rows were added.
 - **Units: convert at this boundary only**, and rename converted columns with a unit suffix so their unit is explicit:
-  - °C → K (+273.15): `T_SONIC` → `T_SONIC_K`, `TA_F` → `TA_F_K`, `TA` → `TA_K`, `TA_1..TA_10` → `TA_1_K..TA_10_K`
+  - °C → K (+273.15): `TA_F` → `TA_F_K`, `TA` → `TA_K`, `TA_1..TA_10` → `TA_1_K..TA_10_K`
+  - Already K (rename only): `T_SONIC` → `T_SONIC_K` (*amended 2026-10-12: `T_SONIC` is in K in L2 FLUXES, verified on BE-Bra*)
   - kPa → Pa (×1000): `PA_F` → `PA_F_PA`, `PA` → `PA_PA` (METEO PA: verify on BE-Bra that it is kPa —
     values ≈ 100 — and state the result in the summary; if not, stop and ask)
   - All other columns keep their ICOS name and unit (document units in roxygen).
@@ -130,7 +131,12 @@ Reads `config/exclusion_periods.csv`: `site_id, date_start, date_end, scope, rea
   `flag_exclusions()`. Output sorted by time, one row per half-hour.
 
 ### Plausibility report (flag, never modify)
-`icos_range_report(data)` returns a tibble `variable, n_total, n_valid, pct_valid, n_out_of_range, min, max`,
+- **Unit sanity check** (*amended 2026-10-12*), on raw values before conversion: abort with an informative message if the
+  median of a column declared °C is outside [-40, 50], declared K outside [220, 330], declared kPa outside [50, 110].
+
+`icos_range_report(data, include_excluded = FALSE)` returns a tibble
+`variable, n_total, n_excluded, n_valid, pct_valid, n_out_of_range, min, max`. By default rows with `excl_flag` TRUE
+are skipped (*amended 2026-10-12*); the number of excluded rows is always reported. Uses
 using these ranges (only for reporting):
 `H` [-200, 800] W m-2; `USTAR` [0, 3] m s-1; `T_SONIC_K` [223, 323] K; `PA_F_PA` [50000, 110000] Pa;
 `PBLH` [10, 5000] m; `|MO_LENGTH|` > 0.
@@ -147,13 +153,15 @@ These ranges are not physical filters and must not be used to remove data.
 - If ERA5 and ERA5T exist for the same year and offsets: keep ERA5, warn.
 - Returns a tibble of files with the parsed fields.
 
-### `read_era5_blh(files, offsets = "center")`
+### `read_era5_blh(files, offsets = "center", sites = NULL, coord_tol_deg = 0.01)`
 - `offsets = "center"` keeps `lon_offset == 0 & lat_offset == 0`; `offsets = "all"` keeps all
   (the 3×3 neighbours will arrive later; the code must already support them).
 - Output columns: `timestamp_utc` (from `time`, POSIXct UTC, instantaneous value at the hour), `blh_m` (from `value`,
   m above model ground), `product`, `lon_offset`, `lat_offset`, `grid_lat` (`my_lat`), `grid_lon` (`my_lon`),
   `site_lat` (`latitude`), `site_lon` (`longitude`).
 - Check that `time` and `datetime` are identical; if not, warn and use `time`.
+- If `sites` is given (*amended 2026-10-12*): warn if `latitude`/`longitude` in the ERA5 files differ from `sites.csv`
+  by more than 0.01° (ERA5 for SE-Myc was extracted with old, wrong coordinates).
 - Checks: duplicated timestamps per offset (abort), hourly continuity (report gaps), `blh_m` < 0 or missing (report).
 - Add `grid_dist_km`: great-circle (haversine) distance between site and grid-cell centre (R = 6371 km).
 

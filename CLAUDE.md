@@ -43,7 +43,9 @@ so code must be reproducible, documented and traceable to references.
   - Files are zipped CSVs. Read directly from the zip (no permanent unzipping). Use only needed columns.
   - Missing value: `-9999`. Timestamps: `TIMESTAMP_START`, `TIMESTAMP_END` as `YYYYMMDDHHMM`, **local standard time (no DST)**.
     Convert to UTC with the site UTC offset from site metadata. Store both start and end.
-  - Units: `T_SONIC`, `TA*` in °C (convert to K); `PA_F` in kPa (convert to Pa); H in W m-2; USTAR in m s-1; MO_LENGTH in m.
+  - Units: `TA*` in °C (convert to K); **`T_SONIC` already in K** (verified on BE-Bra, spec 01; rename only);
+    `PA_F`, `PA` in kPa (convert to Pa); H in W m-2; USTAR in m s-1; MO_LENGTH in m.
+    Readers check the median of each declared-unit column and abort if implausible.
 - ERA5 BLH: yearly CSV per station, hourly, UTC, instantaneous at the hour, e.g.
   `BE-Bra__ERA5__reanalysis-era5-single-levels__boundary_layer_height__2025__lon+0__lat+0.csv`.
   Columns: `value` (BLH, m above ground), `time`, `latitude`, `longitude` (site), `location`, `pos_my_lat`, `pos_my_lon`,
@@ -93,6 +95,8 @@ output/       figures/, tables/ (gitignored)
 - Small, focused commits with clear messages (`feat:`, `fix:`, `test:`, `docs:`, `refactor:`).
 - One branch per spec (`spec-01-readers`), merge to `main` when tests pass.
 - Before committing, check `git status` for data, zip, credentials: they must never be staged.
+  Only exception: the tiny **synthetic** test fixtures in `tests/testthat/fixtures/` (zips included),
+  rebuilt by `tests/testthat/fixtures/make_fixtures.R`. Never put real data there.
 
 ## When you finish a task
 

@@ -4,17 +4,23 @@
 default:
   icos_l2_dir: "data/raw/icos_l2"          # contains XX-Yyy_output_L2I_2026/ folders
   era5_dir: "data/raw/era5/{site}"         # {site} is replaced by the station code, e.g. BE-Bra
+  target_areas_dir: "data/raw/target_areas"
   standard_dir: "data/standard"
   derived_dir: "data/derived"
   output_dir: "output"
   sites_file: "config/sites.csv"
+  sites_timevarying_file: "config/sites_timevarying.csv"
+  exclusions_file: "config/exclusion_periods.csv"
   test_sites: ["BE-Bra"]
 
 cluster:
   icos_l2_dir: "/bigdata/g.nicolini/ETC/L2_DATA_backup/L2I_2026"
   era5_dir: "/bigdata/c.trotta/era2oneflux/ERA5_whole_available_region_nc__getDataPixel__yearly/{site}/reanalysis-era5-single-levels__boundary_layer_height"
+  target_areas_dir: "TODO"
   standard_dir: "TODO"
   derived_dir: "TODO"
   output_dir: "TODO"
   sites_file: "config/sites.csv"
+  sites_timevarying_file: "config/sites_timevarying.csv"
+  exclusions_file: "config/exclusion_periods.csv"
   test_sites: ~

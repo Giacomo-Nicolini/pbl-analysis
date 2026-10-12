@@ -124,7 +124,14 @@ The class is therefore not a stratum to compare against other classes; it tells 
   SE-Nor IGBP after clearcut (not used in calculations).
 
 - Time zone and timestamp convention of ICOS L2 files (UTC vs local standard time) vs ERA5 (UTC, instantaneous at the hour).
-- Units of `T_SONIC` in L2 (°C or K).
+  Spec 01 check (BE-Bra, 2026-10-12): after converting with UTC+1, the mean diurnal METEO `SW_IN` peaks at
+  11:15–11:45 UTC (solar noon ≈ 11:42 UTC), consistent with local standard time. To confirm at other sites.
+- ~~Units of `T_SONIC` in L2 (°C or K).~~ Resolved (spec 01, BE-Bra): `T_SONIC` is in K (median 290 K). Readers
+  now rename only, and abort if a column's median is implausible for its declared unit, so other sites are checked
+  automatically.
+- ERA5 for SE-Myc must be re-extracted with the corrected coordinates.
+- Operational L2 FLUXES contain implausible USTAR (max 49 m/s) and PBLH (max 91 km) at BE-Bra: report to ETC QC.
+- METEO `PA` unit: kPa at BE-Bra (median 101.1), as assumed in spec 01.
 - ERA5 extraction details (nearest cell? downscaling? QC?), and availability of neighbouring cells.
 - Source of zm, d, z0 and target area per site.
 - Measured PBLH datasets: to be collected; open data candidates: ACTRIS/Cloudnet, E-PROFILE, IGRA radiosondes.
