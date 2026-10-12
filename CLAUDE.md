@@ -50,6 +50,9 @@ so code must be reproducible, documented and traceable to references.
   `my_lat`, `my_lon` (grid cell), `datetime`, `year`.
 - Site metadata: `config/sites.csv` (lat, lon, altitude, UTC offset, zm, canopy height, d, z0...).
   Missing values allowed; functions must fail with an informative error only when a *required* value is missing.
+  Time-varying zm / canopy height: `config/sites_timevarying.csv` (derived from `config/sites_H_EC_canopy_formBIF.csv`).
+- **Exclusions**: `config/exclusion_periods.csv` lists periods that must be removed for a site (e.g. SE-Nor clearcut).
+  Every pipeline step must apply them and report how many records were excluded. Never skip this silently.
 
 ## Code organisation
 

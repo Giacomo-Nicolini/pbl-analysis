@@ -33,7 +33,13 @@ Status: agreed design, v0.1 (2026-10-08). Living document: update as decisions c
 - Base: Kljun et al. (2015) App. B. Diagnostic formulas for neutral and stable conditions; Batchvarova & Gryning (1991) slab model for convective conditions.
 - Selectable options (the comparison of options is itself a result):
   - stable formula: Nieuwstadt (1981) (verify it is the one in Kljun App. B) vs Zilitinkevich (as in legacy);
-  - γ (free-atmosphere lapse rate): constant (default 0.0025 K/m as legacy; to be justified) vs site/season-varying from ERA5 pressure levels;
+  - γ (free-atmosphere lapse rate, B&G): **optional input**. Three levels, from simplest to richest:
+    1. constant (default; 0.0025 K/m as legacy, value to be justified from literature) — EC-only, always available;
+    2. climatological lookup table (site × month), computed once from ERA5 pressure levels and shipped with the code —
+       operationally still EC-only;
+    3. time-varying γ from ERA5 pressure levels (hourly/daily) — requires ERA5 download.
+    The function uses the richest γ provided and falls back to the constant. Comparing 1 vs 2 vs 3 is an explicit
+    result: how much accuracy does the EC-only method lose without external data? (Supports the "simplicity" goal.)
   - convective trigger: H > 0 vs 1/L class (must be consistent);
   - H forcing: `H` (FLUXES) vs `H_F_MDS` (gap-filled) vs `H_CORR` (energy-balance corrected, FLUXNET). The closure-corrected run is an exploratory sensitivity test, not based on the assumption that EC underestimates H.
 - B&G needs continuous forcing from sunrise: define the gap rule (restart at next sunrise, flag integrated values after a gap).
@@ -91,10 +97,31 @@ The class is therefore not a stratum to compare against other classes; it tells 
 - ICOS L2 FLUXNET: `TA_F`, `PA_F` (kPa), `H_F_MDS`, `H_CORR`, `NIGHT`, `SW_IN_POT`, `WS_F`, `P_F`.
 - ICOS L2 METEO: `TA` and `TA_1..10` profile, `P`, `SW_IN`. Optional; the temperature profile may help at tall towers.
 - ERA5 `boundary_layer_height`: hourly, yearly CSV per station (nearest cell).
-- Site metadata: lat, lon, altitude, zm, canopy height, d, z0, target area (source: ICOS BADM; to confirm).
+- Site metadata: `config/sites.csv` (static; `zm_m` = latest value, `canopy_height_m` = median of measurements)
+  + `config/sites_timevarying.csv` (long format; `zm_m` as step periods, `canopy_height_m` as point measurements).
+  Both derived from `config/sites_H_EC_canopy_formBIF.csv` (ETC/BIF source, do not edit by hand) and ETC ancillary files.
+  Rules for the code: zm is a step function (before the first record use the first value, and flag it);
+  canopy height is interpolated linearly between measurements and held constant outside the measured range.
+- **Exclusions** (must be applied by every reader/analysis step, never silently skipped):
+  - `config/exclusion_periods.csv`: hard, date-based exclusions (`site_id, date_start, date_end, scope, reason`).
+    Currently: SE-Nor 2022-10-01 → 2023-04-20 (clearcut, tower lowered 36 → 12 m).
+  - Tall canopy relative to zm (e.g. IT-BCi maize seasons): **phases 1–4** keep the data but add a per-half-hour flag
+    and the ratio hc/zm as a covariate in the error analysis; **phase 5** applies the FFP validity criteria.
+  - FFP validity criteria (Kljun et al. 2015): implemented with **configurable thresholds**, at three strictness levels:
+    `strict` (as published), `relaxed` (as used operationally at ETC; in past work some criteria, notably the
+    roughness-length and h/zm ones, had to be relaxed or nearly ignored), `none`. Report how many records each level
+    keeps per site, and whether the phase-5 conclusions change with strictness. The exact published thresholds and the
+    ETC relaxed values must be written in the phase-5 spec (to be provided by G. Nicolini / verified in the paper).
+- ICOS target areas: KML polygons (ETC), one per station, stored in `data/raw/target_areas/XX-Yyy_TA.kml` (38 stations; some are multi-polygon, e.g. IT-Cp2, IT-Ren)
+  (gitignored, not published for now). Read with `sf`; for FFP overlap, transform to a local
+  metric projection centred on the tower (e.g. azimuthal equidistant), matching FFP x/y coordinates in metres.
+  Needed in phase 5 only.
 - Missing values: `-9999`.
 
 ## Open points
+
+- Site metadata to verify: canopy-height jumps at FR-Fon, FR-Hes, SE-Svb (use current values for now);
+  SE-Nor IGBP after clearcut (not used in calculations).
 
 - Time zone and timestamp convention of ICOS L2 files (UTC vs local standard time) vs ERA5 (UTC, instantaneous at the hour).
 - Units of `T_SONIC` in L2 (°C or K).
