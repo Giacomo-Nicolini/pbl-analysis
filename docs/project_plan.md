@@ -30,21 +30,33 @@ Status: agreed design, v0.1 (2026-10-08). Living document: update as decisions c
 
 ## Phase 1: PBLHmod v2
 
-- Base: Kljun et al. (2015) App. B. Diagnostic formulas for neutral and stable conditions; Batchvarova & Gryning (1991) slab model for convective conditions.
+- Base: Kljun et al. (2015) App. B (notes: `docs/references/kljun2015_appB_notes.md`). Diagnostic formulas for
+  neutral and stable conditions; Batchvarova & Gryning (1991) slab model for convective conditions, integrated as a
+  daily cycle from sunrise (no carry-over between days), with internal sub-steps.
 - Selectable options (the comparison of options is itself a result):
-  - stable formula: Nieuwstadt (1981) (verify it is the one in Kljun App. B) vs Zilitinkevich (as in legacy);
+  - stable/neutral formula: Nieuwstadt (1981) Eq. B1 (default, as in Kljun App. B) vs Zilitinkevich Eq. B4
+    (c_s = 0.4 / 0.63 / 0.3; legacy used 0.4) vs neutral Eq. B2;
   - γ (free-atmosphere lapse rate, B&G): **optional input**. Three levels, from simplest to richest:
-    1. constant (default; 0.0025 K/m as legacy, value to be justified from literature) — EC-only, always available;
+    1. constant (**default 0.01 K/m**, Batchvarova & Gryning 1991 as cited in Kljun 2015; legacy 0.0025 K/m run as
+       sensitivity case) — EC-only, always available;
     2. climatological lookup table (site × month), computed once from ERA5 pressure levels and shipped with the code —
        operationally still EC-only;
     3. time-varying γ from ERA5 pressure levels (hourly/daily) — requires ERA5 download.
     The function uses the richest γ provided and falls back to the constant. Comparing 1 vs 2 vs 3 is an explicit
     result: how much accuracy does the EC-only method lose without external data? (Supports the "simplicity" goal.)
   - convective trigger: H > 0 vs 1/L class (must be consistent);
-  - H forcing: `H` (FLUXES) vs `H_F_MDS` (gap-filled) vs `H_CORR` (energy-balance corrected, FLUXNET). The closure-corrected run is an exploratory sensitivity test, not based on the assumption that EC underestimates H.
-- B&G needs continuous forcing from sunrise: define the gap rule (restart at next sunrise, flag integrated values after a gap).
-- Each legacy bug fix behind a toggle, to quantify the effect of each fix (see `legacy_review.md`).
-- Regression baseline: the operational `PBLH` column in ETC L2 FLUXES files.
+  - H forcing: `H_F_MDS` (gap-filled, default; values with `H_F_MDS_QC` above a threshold, default > 1, treated as
+    missing because poor gap-filling can be very bad) vs `H` (FLUXES) vs `H_CORR` (energy-balance corrected,
+    FLUXNET). The closure-corrected run is an exploratory sensitivity test, not based on the assumption that EC
+    underestimates H.
+- B&G needs continuous forcing from sunrise: forcing gaps ≤ 1 h are interpolated; longer gaps stop that day's
+  integration (flagged); restart at the next sunrise.
+- Model output is **raw**: no smoothing, no clipping (in particular no 50 m floor), no gap-filling of PBLH.
+  Post-processing (smoothing, clipping, filling) may be added in a later stage, only if the evaluation shows it is
+  needed, as a separate step that keeps the raw output.
+- Spec 02: the model. Spec 03: legacy regression — run the legacy script on BE-Bra, compare with the operational
+  `PBLH` column (which has an unexplained 50 m floor, probably applied after `calc_PBL_height()`) and with PBLHmod,
+  then switch each legacy fix on one at a time to quantify its effect (see `legacy_review.md`).
 
 ## Standard PBLH format (all sources: PBLHmod, ERA5, measurements)
 
