@@ -232,4 +232,15 @@ looked physically odd.
     is a gap day (`flag_bg_stopped_gap`, diagnostic only), not a `flag_no_positive_h` day: the missing values could
     have been positive (e.g. days before the start of the H record).
 
+11. **Defaults per Kljun et al. (2015) App. B** (decided after the first BE-Bra run, where B2 was taken in 85 % of
+    convective half-hours with `combine = "max"`):
+    - `combine = "bg_only"` is the default; `"max"` stays available.
+    - New option `neutral_method = c("auto", "B2", "B3")`, default `"auto"`: `N = sqrt(g * gamma / T_K)` per
+      half-hour (gamma scalar or vector); B2 (`c_n = 0.3`) where `10 < N/|f| < 70`, otherwise B3
+      `h = c_nn * ustar / sqrt(|f| * N)`, `c_nn = 1.36` (Kljun Eq. B3, Zilitinkevich et al. 2012). Applied wherever B2
+      was used (unstable rows outside the window, `combine = "max"`, `stable_method = "neutral"`). B1 for stable
+      conditions (including its internal neutral limit) is unchanged. New functions `brunt_vaisala()`,
+      `h_neutral_nn()`, `h_neutral_select()`; method label `"B3"`.
+    - Script cases: `default` (bg_only, auto, gamma 0.01), `gamma0025`, `max_B2` (previous behaviour), `max_auto`.
+
 Added output columns: `flag_polar_day`, `flag_no_positive_h`.

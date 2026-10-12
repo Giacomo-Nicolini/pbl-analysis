@@ -146,6 +146,7 @@ The class is therefore not a stratum to compare against other classes; it tells 
 - METEO `PA` unit: kPa at BE-Bra (median 101.1), as assumed in spec 01.
 - Polar-day convective rule (e.g. start at solar midnight) for GL-ZaF, SE-Sto, FI-Lom: spec 02 runs diagnostic only on
   polar days (`flag_polar_day`).
+- Operational PBLH has a 50 m floor and the exact value 1654.6 m in ~13% of rows at BE-Bra: investigate in spec 03.
 - ERA5 extraction details (nearest cell? downscaling? QC?), and availability of neighbouring cells.
 - Source of zm, d, z0 and target area per site.
 - Measured PBLH datasets: to be collected; open data candidates: ACTRIS/Cloudnet, E-PROFILE, IGRA radiosondes.
