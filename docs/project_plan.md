@@ -144,6 +144,8 @@ The class is therefore not a stratum to compare against other classes; it tells 
 - ERA5 for SE-Myc must be re-extracted with the corrected coordinates.
 - Operational L2 FLUXES contain implausible USTAR (max 49 m/s) and PBLH (max 91 km) at BE-Bra: report to ETC QC.
 - METEO `PA` unit: kPa at BE-Bra (median 101.1), as assumed in spec 01.
+- Polar-day convective rule (e.g. start at solar midnight) for GL-ZaF, SE-Sto, FI-Lom: spec 02 runs diagnostic only on
+  polar days (`flag_polar_day`).
 - ERA5 extraction details (nearest cell? downscaling? QC?), and availability of neighbouring cells.
 - Source of zm, d, z0 and target area per site.
 - Measured PBLH datasets: to be collected; open data candidates: ACTRIS/Cloudnet, E-PROFILE, IGRA radiosondes.
