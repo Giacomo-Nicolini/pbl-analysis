@@ -9,6 +9,8 @@ default:
   derived_dir: "data/derived"
   output_dir: "output"
   sites_file: "config/sites.csv"
+  sites_timevarying_file: "config/sites_timevarying.csv"
+  exclusions_file: "config/exclusion_periods.csv"
   test_sites: ["BE-Bra"]
 
 cluster:
@@ -19,4 +21,6 @@ cluster:
   derived_dir: "TODO"
   output_dir: "TODO"
   sites_file: "config/sites.csv"
+  sites_timevarying_file: "config/sites_timevarying.csv"
+  exclusions_file: "config/exclusion_periods.csv"
   test_sites: ~
