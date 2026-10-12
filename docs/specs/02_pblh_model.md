@@ -205,3 +205,42 @@ standard-format output (phase 2); plots; footprint.
 As in `CLAUDE.md`, plus: the BE-Bra summary from the script (both γ values), the `H_F_MDS_QC` distribution, the
 share of days with `flag_no_h0` / `flag_bg_stopped_gap`, the share of `flag_sign_inconsistent`, and anything that
 looked physically odd.
+
+## Amendments (2026-10-12, agreed before implementation)
+
+1. **Sunrise reference / zenith.** `sun_times()` gets `zenith_deg = 90` (geometric, default; 90.833 reproduces the
+   NOAA calculator with refraction). Unit tests use textbook checks (equation-of-time extremes, solstice declination,
+   equinox day length). `scripts/02_run_pblh_model.R` additionally compares `is_day` with `fn_SW_IN_POT > 0` over the
+   FLUXNET period and reports the agreement; mismatches should be at most one half-hour at each sunrise/sunset.
+2. **Polar day / night.** Days without sunrise (polar day): diagnostic only, `flag_polar_day = TRUE`. Polar night:
+   diagnostic only, `day_id` = local standard time date. A polar-day convective rule is an open point.
+3. **L interpolation.** Short gaps in `L` are filled by interpolating `1/L` linearly (smooth through neutral), not `L`;
+   still flagged `flag_L_interp`.
+4. **H fallback scope.** With `h_source = "H_F_MDS"`, the fallback to `H` (FLUXES) applies only where `fn_H_F_MDS` is
+   missing in the file; rows masked by `h_qc_max` stay `NA` (`flag_H_qc_masked`).
+5. **Days without positive `wtheta`.** If `wtheta` is never > 0 between sunrise and sunset, there is no convective
+   window that day: diagnostic only, `flag_no_positive_h = TRUE`. On normal days the rows before the first positive
+   `wtheta` stay in the window (h held at `h0`, `regime = "convective"`).
+6. **`h_bg_m`** (mean over the half-hour) is the trapezoidal mean of the `n_sub + 1` sub-step nodes.
+7. **Monotonicity test** applies to `h_bg_m` (with `combine = "max"`, `pblh_m` can decrease when `h_diag_m` does).
+8. **Window start** = first half-hour whose midpoint has solar elevation > 0 (consistent with `is_day`); `h0` from the
+   half-hour before, else the nearest valid diagnostic value within the 2 h (4 half-hours) before.
+9. **Barometric fallback** `p = 101325 exp(-z / 8434)`: isothermal atmosphere, scale height R_d T / g with T ≈ 288 K
+   (e.g. Wallace & Hobbs 2006, Sect. 3.2).
+
+10. *(Implementation decision, to confirm)* A day whose daylight `wtheta` has no positive value **and** contains gaps
+    is a gap day (`flag_bg_stopped_gap`, diagnostic only), not a `flag_no_positive_h` day: the missing values could
+    have been positive (e.g. days before the start of the H record).
+
+11. **Defaults per Kljun et al. (2015) App. B** (decided after the first BE-Bra run, where B2 was taken in 85 % of
+    convective half-hours with `combine = "max"`):
+    - `combine = "bg_only"` is the default; `"max"` stays available.
+    - New option `neutral_method = c("auto", "B2", "B3")`, default `"auto"`: `N = sqrt(g * gamma / T_K)` per
+      half-hour (gamma scalar or vector); B2 (`c_n = 0.3`) where `10 < N/|f| < 70`, otherwise B3
+      `h = c_nn * ustar / sqrt(|f| * N)`, `c_nn = 1.36` (Kljun Eq. B3, Zilitinkevich et al. 2012). Applied wherever B2
+      was used (unstable rows outside the window, `combine = "max"`, `stable_method = "neutral"`). B1 for stable
+      conditions (including its internal neutral limit) is unchanged. New functions `brunt_vaisala()`,
+      `h_neutral_nn()`, `h_neutral_select()`; method label `"B3"`.
+    - Script cases: `default` (bg_only, auto, gamma 0.01), `gamma0025`, `max_B2` (previous behaviour), `max_auto`.
+
+Added output columns: `flag_polar_day`, `flag_no_positive_h`.
