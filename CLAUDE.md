@@ -10,6 +10,7 @@ ERA5 and measured PBLH (lidar, ceilometer, radiosonde...), explain when/why they
 impact of PBLH errors on FFP footprint estimates (Kljun et al. 2015). The work will become a peer-reviewed paper,
 so code must be reproducible, documented and traceable to references.
 
+- Current status and next steps: `docs/STATUS.md`
 - Full design: `docs/project_plan.md` (source of truth for scientific choices)
 - Legacy code issues: `docs/legacy_review.md`
 - Task specs: `docs/specs/NN_*.md`. **Implement only what the current spec asks.**
