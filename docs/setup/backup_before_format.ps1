@@ -7,8 +7,12 @@
   Run in a normal (non-admin) PowerShell, with an external drive connected, e.g. E:\
     powershell -ExecutionPolicy Bypass -File C:\WORK\dev\pbl-analysis\docs\setup\backup_before_format.ps1 -BackupRoot E:\
   Optional switches:
+    -SizeOnly               only print the size of each block and the free space on BackupRoot, copy nothing
+    -SkipOldRProjects       do not copy C:\WORK\R (e.g. if it is already backed up)
     -IncludeUserFolders     also copy Desktop, Documents, Downloads
     -IncludeClaudeAppData   also copy the whole Claude Desktop app-data folder (can be large)
+  The full C:\WORK is NOT copied: repos in git are restored from GitHub; only their gitignored data\raw,
+  C:\WORK\secrets and (unless skipped) C:\WORK\R are copied.
 
 .NOTES
   Read-only on the source: it only copies. Writes everything to <BackupRoot>\PC_BACKUP_<timestamp>\
@@ -17,8 +21,21 @@
 param(
   [Parameter(Mandatory = $true)][string]$BackupRoot,
   [switch]$IncludeUserFolders,
-  [switch]$IncludeClaudeAppData
+  [switch]$IncludeClaudeAppData,
+  [switch]$SkipOldRProjects,
+  [switch]$SizeOnly
 )
+
+# Size check: print how much each block would take, then exit (nothing is copied).
+if ($SizeOnly) {
+  function SizeGB($p) { if (Test-Path $p) { "{0,8:N2} GB  {1}" -f ((Get-ChildItem $p -Recurse -File -ErrorAction SilentlyContinue | Measure-Object Length -Sum).Sum / 1GB), $p } else { "     n/a    $p" } }
+  $paths = @(Get-ChildItem C:\WORK\dev -Directory -ErrorAction SilentlyContinue | ForEach-Object { Join-Path $_.FullName "data\raw" }) +
+           @("C:\WORK\secrets", "C:\WORK\R", "$HOME\.claude", (Join-Path $env:APPDATA "Claude"), "$HOME\Desktop", "$HOME\Documents", "$HOME\Downloads")
+  $paths | ForEach-Object { SizeGB $_ }
+  $d = Get-PSDrive -Name ($BackupRoot.Substring(0, 1)) -ErrorAction SilentlyContinue
+  if ($d) { "Free space on {0}: {1:N2} GB" -f $BackupRoot, ($d.Free / 1GB) }
+  exit
+}
 
 $ErrorActionPreference = "Continue"
 $stamp = Get-Date -Format "yyyyMMdd_HHmm"
@@ -144,14 +161,26 @@ if (Test-Path "HKCU:\Software\SimonTatham")    { reg export "HKCU\Software\Simon
 Copy-Tree (Join-Path $env:APPDATA "MobaXterm") (Join-Path $cfg "MobaXterm_AppData")
 Copy-Tree "$HOME\Documents\MobaXterm" (Join-Path $cfg "MobaXterm_Documents")
 
-# 11. C:\WORK (all projects, data, secrets) -------------------------------------------------------
-Log "11. Copying C:\WORK (excluding rebuildable renv libraries)"
-$xd = @(Get-ChildItem C:\WORK -Recurse -Directory -ErrorAction SilentlyContinue |
-        Where-Object { $_.Parent -and $_.Parent.Name -eq "renv" -and $_.Name -in @("library", "staging", "sandbox") } |
-        ForEach-Object { $_.FullName })
-Log "  excluded renv folders: $($xd.Count)"
-$extra = @(); if ($xd.Count -gt 0) { $extra = @("/XD") + $xd }
-Copy-Tree "C:\WORK" (Join-Path $dest "WORK") $extra
+# 11. Parts of C:\WORK that are NOT in git ----------------------------------------------------------
+#     (the full C:\WORK is not copied: everything in git is restored by cloning from GitHub)
+#     - data\raw of every repo in C:\WORK\dev (ICOS zips, ERA5 CSVs, target-area KML for pbl-analysis)
+#     - C:\WORK\secrets (ERA5 API key)
+#     - C:\WORK\R (old R projects), skipped with -SkipOldRProjects
+Log "11. Copying the parts of C:\WORK not in git"
+Get-ChildItem C:\WORK\dev -Directory -ErrorAction SilentlyContinue | ForEach-Object {
+  $raw = Join-Path $_.FullName "data\raw"
+  if (Test-Path $raw) { Copy-Tree $raw (Join-Path $dest ("WORK\dev\" + $_.Name + "\data\raw")) }
+}
+Copy-Tree "C:\WORK\secrets" (Join-Path $dest "WORK\secrets")
+if ($SkipOldRProjects) {
+  Log "  C:\WORK\R skipped (-SkipOldRProjects)"
+} else {
+  $xd = @(Get-ChildItem C:\WORK\R -Recurse -Directory -ErrorAction SilentlyContinue |
+          Where-Object { $_.Parent -and $_.Parent.Name -eq "renv" -and $_.Name -in @("library", "staging", "sandbox") } |
+          ForEach-Object { $_.FullName })
+  $extra = @(); if ($xd.Count -gt 0) { $extra = @("/XD") + $xd }
+  Copy-Tree "C:\WORK\R" (Join-Path $dest "WORK\R") $extra
+}
 
 # 12. Optional user folders ------------------------------------------------------------------------
 if ($IncludeUserFolders) {
@@ -163,3 +192,4 @@ if ($IncludeUserFolders) {
 $size = (Get-ChildItem $dest -Recurse -File -ErrorAction SilentlyContinue | Measure-Object Length -Sum).Sum / 1GB
 Log ("DONE. Backup size: {0:N2} GB in {1}" -f $size, $dest)
 Log "Next: open REPO_STATUS.txt and backup_log.txt; verify that WORK\dev\pbl-analysis\data\raw and WORK\secrets are in the backup."
+Log "Repos are NOT copied: anything listed as uncommitted/unpushed in REPO_STATUS.txt exists only on this PC."

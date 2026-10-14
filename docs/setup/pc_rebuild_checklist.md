@@ -17,12 +17,17 @@ Tick the boxes as you go. Commands are for PowerShell unless stated otherwise.
       `git push origin spec-01-readers spec-02-pblh-model`
 
 ### A2. Run the backup script (external drive, e.g. `E:\`)
-- [ ] Connect an external drive with enough space (C:\WORK contains the old R projects and the raw data).
-- [ ] Run (normal PowerShell, not admin):
+- [ ] Connect the external drive. First check sizes vs free space (copies nothing):
       ```powershell
-      powershell -ExecutionPolicy Bypass -File C:\WORK\dev\pbl-analysis\docs\setup\backup_before_format.ps1 -BackupRoot E:\ -IncludeUserFolders
+      powershell -ExecutionPolicy Bypass -File C:\WORK\dev\pbl-analysis\docs\setup\backup_before_format.ps1 -BackupRoot E:\ -SizeOnly
       ```
-      Add `-IncludeClaudeAppData` to also keep the Claude Desktop app data (local Cowork sessions); it can be large.
+- [ ] Run the backup (normal PowerShell, not admin). The full `C:\WORK` is **not** copied (already backed up
+      separately; repos come back from GitHub). Use `-SkipOldRProjects` if `C:\WORK\R` is already safe elsewhere:
+      ```powershell
+      powershell -ExecutionPolicy Bypass -File C:\WORK\dev\pbl-analysis\docs\setup\backup_before_format.ps1 -BackupRoot E:\ -SkipOldRProjects
+      ```
+      Optional: `-IncludeUserFolders` (Desktop, Documents, Downloads), `-IncludeClaudeAppData` (local Cowork
+      sessions; can be large).
 - [ ] Open `E:\PC_BACKUP_<date>\REPO_STATUS.txt`: every repo must show **no** uncommitted changes and **no** unpushed
       commits (otherwise commit/push and rerun).
 - [ ] Open `backup_log.txt`: no `ERROR` lines.
@@ -31,7 +36,7 @@ What the script saves (in `E:\PC_BACKUP_<date>\`):
 
 | Item | Where in the backup | Why it matters |
 |---|---|---|
-| All of `C:\WORK` (old R projects, `dev`, `secrets`) | `WORK\` | **Not in git**: `data/raw` (ICOS zips, ERA5, target-area KML), `C:\WORK\R`, `C:\WORK\secrets` (ERA5 API key), EBC ancillary files |
+| Parts of `C:\WORK` not in git | `WORK\dev\<repo>\data\raw`, `WORK\secrets`, `WORK\R` (unless `-SkipOldRProjects`) | `data/raw` (ICOS zips, ERA5, target-area KML), ERA5 API key, old R projects (incl. EBC ancillary files) |
 | Installed software list | `config\winget_packages.json`, `installed_programs.csv` | reinstall the same programs |
 | Tool versions and paths | `config\versions.txt` | e.g. how Claude Code was installed (path of `claude`) |
 | User/Machine PATH | `config\PATH_*.txt` | R 4.4.1 on PATH |
@@ -110,15 +115,12 @@ gh auth status
 - [ ] Optional: RStudio, then Tools → Global Options → General → R version → 4.4.1.
 
 ### B6. Restore C:\WORK
-- [ ] Copy `E:\PC_BACKUP_<date>\WORK` to `C:\WORK` (this restores `C:\WORK\R`, `C:\WORK\secrets`, and
-      `C:\WORK\dev\...` including `pbl-analysis\data\raw`).
-      ```powershell
-      robocopy E:\PC_BACKUP_<date>\WORK C:\WORK /E
-      ```
-- [ ] Alternative for the project (clean clone) — then copy only the gitignored data back:
+- [ ] Restore `C:\WORK\R` (and anything else) from your separate full backup of `C:\WORK`.
+- [ ] Clone the project from GitHub, then copy back the gitignored data and the secrets from this backup:
       ```powershell
       gh repo clone Giacomo-Nicolini/pbl-analysis C:\WORK\dev\pbl-analysis
-      robocopy E:\PC_BACKUP_<date>\WORK\dev\pbl-analysis\data C:\WORK\dev\pbl-analysis\data /E
+      robocopy E:\PC_BACKUP_<date>\WORK\dev\pbl-analysis\data\raw C:\WORK\dev\pbl-analysis\data\raw /E
+      robocopy E:\PC_BACKUP_<date>\WORK\secrets C:\WORK\secrets /E
       ```
 - [ ] In `C:\WORK\dev\pbl-analysis`: `git status` clean, `git pull` up to date.
 
