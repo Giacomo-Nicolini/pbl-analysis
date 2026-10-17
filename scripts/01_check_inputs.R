@@ -74,20 +74,18 @@ for (site_id in site_ids) {
 
   # --- ERA5 ---
   cli::cli_h2("ERA5 BLH")
-  era_files <- find_era5_files(site_id, cfg)
-  print_tbl(era_files[c("file", "product", "year", "lon_offset", "lat_offset")])
-  if (nrow(era_files) > 0) {
-    era <- read_era5_blh(era_files, offsets = "center", sites = sites)
-    cells <- dplyr::summarise(
-      era, .by = c(lon_offset, lat_offset),
-      grid_lat = dplyr::first(grid_lat), grid_lon = dplyr::first(grid_lon),
-      grid_dist_km = round(dplyr::first(grid_dist_km), 2),
-      first = fmt_t(min(timestamp_utc)), last = fmt_t(max(timestamp_utc)),
-      n_hours = dplyr::n(), n_valid = sum(!is.na(blh_m))
-    )
-    print_tbl(cells)
-    print(table(product = era$product, year = lubridate::year(era$timestamp_utc)))
-  }
+  era_files <- find_era5_files(site_id, cfg, "single_level", "boundary_layer_height", sites = sites)
+  print_tbl(era_files[c("file", "cell_row", "cell_col")])
+  era <- read_era5_single_level(era_files, "boundary_layer_height", cells = "center")
+  cells <- dplyr::summarise(
+    era, .by = c(cell_row, cell_col),
+    grid_lat = dplyr::first(grid_lat), grid_lon = dplyr::first(grid_lon),
+    grid_dist_km = round(dplyr::first(grid_dist_km), 2),
+    first = fmt_t(min(timestamp_utc)), last = fmt_t(max(timestamp_utc)),
+    n_hours = dplyr::n(), n_valid = sum(!is.na(blh_m))
+  )
+  print_tbl(cells)
+  print(table(year = lubridate::year(era$timestamp_utc)))
 
   out <- file.path(tables_dir, paste0("01_check_inputs_", site_id, ".csv"))
   readr::write_csv(dplyr::mutate(rr, site_id = site_id, .before = 1), out)
