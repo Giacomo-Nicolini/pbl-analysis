@@ -79,48 +79,77 @@ test_that("ERA5 provenance comes from the file header", {
   expect_match(txt, "cell centre 50 N, 10 E", fixed = TRUE)
 })
 
-# Synthetic operational series: floor rows, two fill constants, a frequent but
-# too rare value, realistic noise.
+# Synthetic operational series, 2020-01-01 to 2023-06 (local standard time):
+# a long run 2020-2022 and a short run in 2023, with noise, floor rows, NA and
+# - 1234.56 m: long-run fill, 200 rows in each of 2020-2022 (> 1 % per year);
+# - 682.86 m: short-run fill, 80 rows in 2023 (1.08 %) + 2 coincidences in 2021;
+#   whole-record share 0.14 %, missed by a whole-record 0.5 % rule;
+# - 999.99 m: 20 rows per year 2020-2022 (total 60 >= 50, every year < 0.5 %): not a fill;
+# - 333.33 m: 40 rows in 2023 (0.54 %, but total < 50): not a fill.
 oper_series <- function() {
   set.seed(42)
-  n <- 20000
-  x <- round(exp(stats::rnorm(n, log(600), 0.8)), 2)
-  x[x %in% c(50, 1234.56, 777.77, 999.99)] <- 600.01 # noise must not hit the test constants
-  x[1:200] <- 50          # floor
-  x[201:500] <- 1234.56   # fill 1: 300 rows
-  x[501:650] <- 777.77    # fill 2: 150 rows
-  x[651:710] <- 999.99    # 60 rows: >= 50 but < 0.5 % of non-missing -> not a fill
-  x[711:810] <- NA
-  x
+  s <- utc("2020-01-01 00:00:00") + 1800 * (seq_len(60000) - 1) # read as local standard time
+  year <- as.integer(format(s, "%Y"))
+  x <- round(exp(stats::rnorm(length(s), log(600), 0.8)), 2)
+  x[x %in% c(50, 1234.56, 682.86, 999.99, 333.33)] <- 600.01 # noise must not hit the test constants
+  pick <- function(y, k, used) sample(setdiff(which(year == y), used), k)
+  used <- integer(0)
+  put <- function(y, k, v) {
+    i <- pick(y, k, used)
+    used <<- c(used, i)
+    x[i] <<- v
+  }
+  for (y in 2020:2022) put(y, 200, 1234.56)
+  put(2023, 80, 682.86)
+  put(2021, 2, 682.86)
+  for (y in 2020:2022) put(y, 20, 999.99)
+  put(2023, 40, 333.33)
+  put(2020, 200, 50)
+  put(2022, 100, NA)
+  list(s = s, year = year, x = x)
 }
 
-test_that("detect_fill_values finds exactly the constants", {
-  x <- oper_series()
-  fv <- detect_fill_values(x)
-  expect_equal(fv$value, c(1234.56, 777.77))
-  expect_equal(fv$n, c(300L, 150L))
-  expect_equal(fv$frac, c(300, 150) / sum(!is.na(x)))
-  expect_equal(nrow(detect_fill_values(c(NA, NA))), 0)
+test_that("detect_fill_values: per-year rule finds long- and short-run fills only", {
+  o <- oper_series()
+  fv <- detect_fill_values(o$x, o$year)
+  expect_equal(fv$value, c(1234.56, 682.86))
+  expect_equal(fv$n_total, c(600L, 82L))
+  expect_equal(fv$years, list(2020:2022, 2023L))
+  expect_equal(fv$n_flagged, c(600L, 80L))
+  expect_equal(fv$n_outside, c(0L, 2L))
+  n2023 <- sum(o$year == 2023 & !is.na(o$x))
+  expect_equal(fv$share[[2]], 80 / n2023)
+  # the whole-record share of the short-run fill is below 0.5 %
+  expect_lt(82 / sum(!is.na(o$x)), 0.005)
+  expect_equal(nrow(detect_fill_values(c(NA, NA), c(2020L, 2020L))), 0)
+  expect_error(detect_fill_values(1:3, 2020L), "length")
 })
 
-test_that("standardize_icos_oper: qc 0/1/2/NA, excluded rows dropped", {
-  x <- oper_series()
-  n <- length(x)
-  s <- utc("2020-01-01 00:00:00") + 1800 * (seq_len(n) - 1)
-  d <- dplyr::tibble(site_id = "XX-Tst", timestamp_start_utc = s, timestamp_end_utc = s + 1800,
-                     PBLH = x, src_fluxes = TRUE, excl_flag = FALSE)
+test_that("standardize_icos_oper: qc 0/1/2/NA by value and year, excluded rows dropped", {
+  o <- oper_series()
+  n <- length(o$x)
+  s_utc <- o$s - 3600 # site UTC+1
+  d <- dplyr::tibble(site_id = "XX-Tst", timestamp_start_utc = s_utc, timestamp_end_utc = s_utc + 1800,
+                     TIMESTAMP_START = format(o$s, "%Y%m%d%H%M"), PBLH = o$x, src_fluxes = TRUE,
+                     excl_flag = FALSE)
   d$excl_flag[n] <- TRUE
   d$src_fluxes[n - 1] <- FALSE
-  expect_message(r <- standardize_icos_oper(d), "1 of 19999 rows in exclusion periods dropped")
+  expect_message(r <- standardize_icos_oper(d), "1 of 59999 rows in exclusion periods dropped")
   expect_equal(nrow(r$data), n - 2)
   expect_equal(r$n_floor, 200)
   q <- r$data$qc_flag
+  x <- r$data$pblh_m
+  yr <- o$year[seq_len(n - 2)]
   expect_equal(sum(q == 1, na.rm = TRUE), 200)
-  expect_equal(sum(q == 2, na.rm = TRUE), 450)
+  expect_equal(sum(q == 2, na.rm = TRUE), 680)
   expect_equal(sum(is.na(q)), 100)
-  expect_true(all(q[651:710] == 0))
-  expect_equal(r$fill_values$value, c(1234.56, 777.77))
-  expect_match(r$meta$processing_history, "1234.56 m (300 rows)", fixed = TRUE)
+  expect_true(all(q[x %in% 682.86 & yr == 2021] == 0)) # coincidences keep qc 0
+  expect_true(all(q[x %in% c(999.99, 333.33)] == 0))
+  expect_match(r$meta$processing_history,
+               "682.86 m: 82 rows in total; years 2023 (1.08 %): 80 rows flagged; 2 rows outside those years",
+               fixed = TRUE)
   expect_equal(r$meta$licence, "CC BY 4.0")
   expect_true(validate_standard_pblh(r$data, r$meta))
+  d$TIMESTAMP_START <- NULL
+  expect_error(suppressMessages(standardize_icos_oper(d)), "TIMESTAMP_START")
 })

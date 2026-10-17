@@ -322,3 +322,15 @@ PBLHmod bias by regime compared with `literature_review_pblh.md` section 2).
    (ICOS data licence).
 6. **CSV reading.** ERA5 files are read with `readr::read_csv(skip = n_header_lines)` (not `data.table`, which is not
    in renv). The only new packages for this spec are `ggplot2` and `yaml`.
+7. **Fill-value detection per calendar year** (agreed 2026-10-17 after the first BE-Bra check). Replaces the rule in
+   section 5: a value (rounded to 0.01 m, other than 50) is a fill value if it occurs in ≥ 50 rows in total **and**
+   in ≥ 0.5 % of the non-missing rows of at least one calendar year (local standard time, from `TIMESTAMP_START`).
+   `qc_flag = 2` only for rows with that value in the years where it meets the 0.5 % criterion; rows with the same
+   value in other years keep `qc_flag = 0` and are counted. The report lists, per fill value: total rows, the
+   qualifying years with their share, and rows outside those years.
+   *Reason:* the whole-record 0.5 % rule missed the 2026-run night fill (682.86 m, 427 rows = 0.42 % of the
+   non-missing rows) because the run is short.
+   *BE-Bra result:* all four values found: 1654.58 m (15,649 rows, 2020–2025), 843.07 m (2,739, 2020–2025),
+   1591.68 m (2,649, 2026), 682.86 m (426 flagged in 2026, 1 outside: 2022-03-30). The two rows at 2026-01-01
+   00:00/00:30 local (2025-12-31 23:00/23:30 UTC) belong to 2026 in local time and are the start of the 2026 run's
+   night fill, consistent with `docs/STATUS.md` (426 rows + one coincidence in 2022).

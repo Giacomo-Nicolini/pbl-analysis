@@ -192,62 +192,114 @@ standardize_era5_blh <- function(era5_center, era5_bilin, spread, variant = c("c
 
 #' Detect run-mean fill values in a PBLH series
 #'
-#' Generic rule (spec 04 section 5): a value, rounded to 0.01 m, other than the
-#' floor value that occurs in at least `min_n` rows and in at least `min_frac`
-#' of the non-missing rows is a fill value (ETC `proc_PBL_height()` fills gaps
-#' with the mean of the day or night values of a processing run; the run
-#' boundaries are not known in general).
+#' ETC `proc_PBL_height()` fills gaps with the mean of the day or night values
+#' of a processing run; the run boundaries are not known in general. Rule
+#' (spec 04 section 5, amendment 7): a value, rounded to 0.01 m, other than the
+#' floor value, is a fill value if it occurs in at least `min_n` rows in total
+#' **and** in at least `min_frac` of the non-missing rows of at least one
+#' calendar year (the year stands in for the processing run). Only the rows
+#' of the qualifying years are fill rows; rows with the same value in other
+#' years are counted in `n_outside` (coincidences).
 #'
 #' @param x PBLH [m].
-#' @param min_n Minimum number of occurrences [-]; default 50.
-#' @param min_frac Minimum fraction of the non-missing rows [-]; default 0.005.
+#' @param year Calendar year of each row (local standard time, from
+#'   `TIMESTAMP_START`) [integer, same length as `x`].
+#' @param min_n Minimum number of occurrences in the whole record [-]; default 50.
+#' @param min_frac Minimum fraction of the non-missing rows of a year [-];
+#'   default 0.005.
 #' @param floor_value Floor value excluded from the search [m]; default 50.
-#' @return Tibble sorted by `n` (decreasing): `value` [m, rounded to 0.01],
-#'   `n` [-], `frac` [-].
-detect_fill_values <- function(x, min_n = 50, min_frac = 0.005, floor_value = 50) {
-  r <- sprintf("%.2f", x[!is.na(x)]) # rounded to 0.01 m, compared as text
-  n_tot <- length(r)
-  if (n_tot == 0) return(dplyr::tibble(value = numeric(0), n = integer(0), frac = numeric(0)))
+#' @return Tibble sorted by `n_total` (decreasing), one row per fill value:
+#'   `value` [m, rounded to 0.01], `n_total` [-], `years` [list of integer,
+#'   qualifying years], `share` [list of numeric, fraction of the non-missing
+#'   rows of each qualifying year], `n_flagged` [-, rows in qualifying years],
+#'   `n_outside` [-, rows in other years].
+detect_fill_values <- function(x, year, min_n = 50, min_frac = 0.005, floor_value = 50) {
+  if (length(year) != length(x)) cli::cli_abort("{.arg year} must have the length of {.arg x}.")
+  empty <- dplyr::tibble(value = numeric(0), n_total = integer(0), years = list(), share = list(),
+                         n_flagged = integer(0), n_outside = integer(0))
+  ok <- !is.na(x)
+  r <- sprintf("%.2f", x[ok]) # rounded to 0.01 m, compared as text
+  y <- year[ok]
+  if (length(r) == 0) return(empty)
   tab <- table(r)
-  cand <- dplyr::tibble(value = as.numeric(names(tab)), n = as.integer(tab))
-  cand$frac <- cand$n / n_tot
-  cand <- cand[abs(cand$value - floor_value) > 1e-9 & cand$n >= min_n & cand$frac >= min_frac, ]
-  cand[order(-cand$n), ]
+  cand <- names(tab)[tab >= min_n & abs(as.numeric(names(tab)) - floor_value) > 1e-9]
+  if (length(cand) == 0) return(empty)
+  n_year <- table(y) # non-missing rows per year
+  rows <- lapply(cand, function(v) {
+    ny <- table(y[r == v])
+    share <- as.numeric(ny) / as.numeric(n_year[names(ny)])
+    q <- share >= min_frac
+    if (!any(q)) return(NULL)
+    dplyr::tibble(
+      value = as.numeric(v), n_total = as.integer(tab[[v]]),
+      years = list(as.integer(names(ny)[q])), share = list(share[q]),
+      n_flagged = as.integer(sum(ny[q])), n_outside = as.integer(sum(ny[!q]))
+    )
+  })
+  out <- dplyr::bind_rows(rows)
+  if (nrow(out) == 0) return(empty)
+  out[order(-out$n_total), ]
+}
+
+# TRUE for rows holding a fill value in one of its qualifying years.
+is_fill_row <- function(x, year, fills) {
+  out <- rep(FALSE, length(x))
+  if (nrow(fills) == 0) return(out)
+  r <- sprintf("%.2f", x)
+  for (i in seq_len(nrow(fills))) {
+    out <- out | (!is.na(x) & r == sprintf("%.2f", fills$value[i]) & year %in% fills$years[[i]])
+  }
+  out
+}
+
+# One line per fill value: total rows, qualifying years with share, rows outside.
+format_fill_values <- function(fills) {
+  if (nrow(fills) == 0) return(character(0))
+  vapply(seq_len(nrow(fills)), function(i) {
+    yrs <- paste0(fills$years[[i]], " (", sprintf("%.2f", 100 * fills$share[[i]]), " %)", collapse = ", ")
+    sprintf("%.2f m: %d rows in total; years %s: %d rows flagged; %d rows outside those years",
+            fills$value[i], fills$n_total[i], yrs, fills$n_flagged[i], fills$n_outside[i])
+  }, character(1))
 }
 
 #' Standardize the operational ICOS PBLH
 #'
 #' The `PBLH` column of FLUXES L2 (ETC processing: legacy `calc_PBL_height()`
 #' + `proc_PBL_height()`, `docs/legacy_review.md`). `qc_flag`: 0 as computed;
-#' 1 floored (`pblh_m == 50`); 2 run-mean fill (values from
-#' [detect_fill_values()]); `NA` where `pblh_m` is missing. Rows outside the
-#' FLUXES file (if `src_fluxes` is present) and rows in exclusion periods are
-#' dropped (the latter counted).
+#' 1 floored (`pblh_m == 50`); 2 run-mean fill (value and year from
+#' [detect_fill_values()], amendment 7); `NA` where `pblh_m` is missing. Rows
+#' outside the FLUXES file (if `src_fluxes` is present) and rows in exclusion
+#' periods are dropped (the latter counted).
 #'
-#' @param d Output of [read_icos_site()] (`PBLH` [m], `excl_flag`).
+#' @param d Output of [read_icos_site()] (`PBLH` [m], `TIMESTAMP_START`
+#'   [character, `YYYYMMDDHHMM` local standard time], `excl_flag`).
 #' @param ... Passed to [detect_fill_values()].
 #' @return List: `data` (standard table, `pblh_m` [m]), `meta`, `n_excluded`,
 #'   `fill_values` (output of [detect_fill_values()]), `n_floor` [-].
 standardize_icos_oper <- function(d, ...) {
   site_id <- unique(d$site_id)
   if (length(site_id) != 1) cli::cli_abort("{.arg d} must hold exactly one site.")
-  if (!"PBLH" %in% names(d)) cli::cli_abort("Column {.field PBLH} not found.")
+  for (k in c("PBLH", "TIMESTAMP_START")) {
+    if (!k %in% names(d)) cli::cli_abort("Column {.field {k}} not found.")
+  }
   source_id <- "icos_oper"
   if ("src_fluxes" %in% names(d)) d <- d[!is.na(d$src_fluxes) & d$src_fluxes, ]
   ex <- drop_excluded_rows(d, source_id)
   d <- ex$data
   x <- as.numeric(d$PBLH)
-  fills <- detect_fill_values(x, ...)
+  year <- as.integer(substr(d$TIMESTAMP_START, 1, 4)) # local standard time
+  fills <- detect_fill_values(x, year, ...)
   floor_value <- list(...)$floor_value
   if (is.null(floor_value)) floor_value <- 50
   is_floor <- !is.na(x) & abs(x - floor_value) < 1e-9
-  is_fill <- !is.na(x) & sprintf("%.2f", x) %in% sprintf("%.2f", fills$value)
+  is_fill <- is_fill_row(x, year, fills)
   qc <- ifelse(is.na(x), NA_integer_, 0L)
   qc[is_floor] <- 1L
   qc[is_fill] <- 2L
+  fill_txt <- format_fill_values(fills)
   cli::cli_inform(c(
     "{source_id}: {sum(is_floor)} floored row{?s} ({floor_value} m); {nrow(fills)} fill value{?s} detected:",
-    stats::setNames(sprintf("%.2f m: %d rows", fills$value, fills$n), rep("*", nrow(fills)))
+    stats::setNames(fill_txt, rep("*", length(fill_txt)))
   ))
 
   data <- dplyr::tibble(
@@ -268,14 +320,14 @@ standardize_icos_oper <- function(d, ...) {
     qc_flag_meaning = list(
       `0` = "as computed",
       `1` = paste0("floored at ", floor_value, " m (proc_PBL_height)"),
-      `2` = "run-mean fill (proc_PBL_height; value detected by detect_fill_values())"
+      `2` = "run-mean fill (proc_PBL_height; value and years detected by detect_fill_values(), spec 04 amendment 7)"
     ),
     processing_history = paste0(
       "ICOS ETC operational processing: calc_PBL_height() then proc_PBL_height() (negative values -> NA; ",
       "floor at 50 m; remaining NA filled with the mean of all day (hour of TIMESTAMP_END 06-18, local ",
       "standard time) or night values of the processing run). Read from ICOSETC_", site_id,
       "_FLUXES_INTERIM_L2 (PBLH) with read_icos_site(); fill values detected: ",
-      if (nrow(fills) == 0) "none" else paste(sprintf("%.2f m (%d rows)", fills$value, fills$n), collapse = ", "),
+      if (nrow(fills) == 0) "none" else paste(fill_txt, collapse = "; "),
       "; rows in exclusion periods dropped (", ex$n_excluded, "); standardized by standardize_icos_oper() (spec 04)."
     ),
     licence = "CC BY 4.0"
