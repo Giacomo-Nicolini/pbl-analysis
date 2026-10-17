@@ -29,8 +29,12 @@ Both specs drafted 2026-10-17, ready for Claude Code (Plan mode first). Suggeste
 (independent; spec 03 reuses `save_figure()` from spec 04 if merged first).
 
 - `docs/specs/04_era5_standard_compare.md` — branch `spec-04-era5-compare`.
-- `docs/specs/03_legacy_regression.md` — branch `spec-03-legacy-regression`. Needs G to confirm the inputs of the
-  ETC pipeline call (section 1 of the spec lists the baseline and alternatives).
+- `docs/specs/03_legacy_regression.md` — branch `spec-03-legacy-regression`. ETC call inputs confirmed by G
+  (2026-10-17): AT, AP, rho, cp from EddyPro full_output (AP from site altitude, no biomet); MOL gap-filled by
+  LOCF. Exact reproduction needs the EddyPro full_output columns (optional, from G); otherwise they are rebuilt from
+  L2 with the EddyPro formulas (approximate acceptance thresholds in the spec).
+- PBLHmod v2 forcing already uses measured meteo: FLUXNET `TA_F`/`PA_F` 2020–2025 (METEO measurements, gap-filled),
+  METEO `TA`/`PA` in 2026. No change needed (G, 2026-10-17: prefer METEO over EddyPro ambient values).
 
 1. **Spec 03 — legacy regression.** Unblocked (2026-10-16): the ETC post-processing is in
    `legacy/proc_PBL_height.R` (negatives → NA; floor at 50 m; remaining NA filled with the mean of all "day" or

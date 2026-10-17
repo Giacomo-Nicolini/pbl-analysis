@@ -49,7 +49,11 @@ calc_PBL_height(
   cp = set.cleaned$cp,   # [J kg-1 K-1] EddyPro full_output air_heat_capacity
   altit = st.alt)
 ```
-then `proc_PBL_height()`. Implement as one function `legacy_inputs(d, site_meta, source = c("eddypro", "l2_reconstructed"))`.
+then `proc_PBL_height()`. Implement as one function `legacy_inputs(d, site_meta)`.
+
+**Data source: only the official, published ICOS L2 files** (FLUXES, plus METEO/FLUXNET where stated), read with
+the spec-01 readers. Do not use the ETC cleanset or EddyPro full_output files, even though they hold the same data
+(G, 2026-10-17).
 
 | legacy argument | value | notes |
 |---|---|---|
@@ -66,15 +70,13 @@ Rows must form a continuous half-hourly series (the legacy aborts on jumps); use
 
 ### 1.1 Ambient variables (`AT`, `AP`, `rho`, `cp`)
 
-The L2 files are produced from the same EddyPro run, but these four columns are not in L2.
+ETC pipeline (G, 2026-10-17): EddyPro → RFlux QC → "cleanset" → ICOS L2 FLUXES (plus storage and footprint).
+No turbulence variable is recomputed for L2, so L2 `H`, `USTAR`, `MO_LENGTH`, `T_SONIC`, `H2O` are exactly the
+values the operational run used. `AT`, `AP`, `rho`, `cp` (EddyPro ambient values) are **not published in L2**, so
+they are rebuilt from L2 following the EddyPro formulas:
 
-- **`source = "eddypro"` (exact; preferred):** if G provides the EddyPro full_output columns `date`, `time`,
-  `air_temperature` [K], `air_pressure` [Pa], `air_density` [kg m-3], `air_heat_capacity` [J kg-1 K-1] for
-  BE-Bra (config key `eddypro_dir`, e.g. `data/raw/eddypro/{site}/`), read them (EddyPro full_output: 3 header
-  lines; `date`/`time` = end of the averaging period — verify by matching `H`/`USTAR` with L2) and use them.
-- **`source = "l2_reconstructed"` (fallback):** rebuild the EddyPro values from L2 following the EddyPro
-  formulas. Take the formulas from the EddyPro documentation (LI-COR, "Calculating ambient and cell parameters";
-  EddyPro manual) and, where the documentation is incomplete, from the open-source EddyPro engine
+- Take the formulas from the EddyPro documentation (LI-COR, "Calculating ambient and cell parameters"; EddyPro
+  manual) and, where the documentation is incomplete, from the open-source EddyPro engine
   (github.com/LI-COR/eddypro-engine); cite file and routine in comments:
   - `AP = 101300 × exp(−altitude / 8200)` [Pa] (no biomet: EddyPro uses site altitude, Campbell & Norman 1998);
     check in the engine whether the altitude includes the measurement height;
@@ -92,11 +94,9 @@ The L2 files are produced from the same EddyPro run, but these four columns are 
 - Run the originals with the inputs of section 1 and compare with the operational `PBLH` on all rows where the
   operational value is not `NA`: share of rows with |legacy − operational| < 0.01 m; distribution of the relative
   difference (median, p95, max); by year and regime; and the four fill values.
-- Acceptance:
-  - `source = "eddypro"`: ≥ 99 % of rows within 0.01 m and fill values reproduced to 0.01 m;
-  - `source = "l2_reconstructed"`: median |relative difference| < 0.5 %, p95 < 2 %, and the four fill values
-    within 0.5 % (exact reproduction is not expected because the reconstructed ambient variables differ slightly
-    from EddyPro's).
+- Acceptance: median |relative difference| < 0.5 %, p95 < 2 %, and the four fill values within 0.5 %. Exact
+  reproduction is not required, because the rebuilt ambient variables may differ slightly from EddyPro's; report
+  the share of rows within 0.01 m anyway (if the rebuild is exact, it should be close to 100 %).
 - Also report the sensitivity of the reproduction to each ambient variable (replace one at a time by the simplest
   alternative: `AT = T_SONIC`, `AP` from altitude, `rho`/`cp` computed inside the legacy function). If the
   acceptance is not met, report the pattern of mismatches (by year, regime, hour, near gaps) and stop part C until
