@@ -15,8 +15,13 @@ and `CLAUDE.md`.
 |---|---|---|
 | 01 | Site metadata, time-varying heights, exclusions, ICOS L2 and ERA5 readers, unit checks | merged (`main`) |
 | 02 | PBLHmod v2: Kljun 2015 App. B (B1 stable, B2/B3 neutral auto, B5 Batchvarova–Gryning daily cycle, RK4) | merged (`main`, 58d45ad) |
+| 04 | New ERA5 readers (3×3 cells, pressure levels, static), standard PBLH format, first PBLHmod vs ERA5 comparison at BE-Bra (amendments 1–7) | implemented on branch `spec-04-era5-compare`, awaiting review |
 
-- Tests: 375 passing. Environment: R 4.4.1 + renv (Posit Package Manager), same as the cluster.
+- Spec 04 at BE-Bra (2026-10-17): overlap 2020-10-25 → 2026-08-25; pair 1 (PBLHmod default vs ERA5 tower cell)
+  50,269 matched hours, bias −9 m, median log ratio −0.14, 72 % within a factor 2, Spearman 0.78; stable −0.23,
+  convective −0.07; JJA evenings (19–22 UTC) PBLHmod ≈ half of ERA5. Operational PBLH vs ERA5: median log ratio
+  +0.57 (qc 0). Outputs: `scripts/04_era5_compare.R`.
+- Tests: 593 passing (spec 04 branch). Environment: R 4.4.1 + renv (Posit Package Manager), same as the cluster.
 - Defaults: `stable_method = "nieuwstadt"` (B1), `neutral_method = "auto"` (B2 if 10 < N/|f| < 70, else B3),
   `combine = "bg_only"`, `gamma = 0.01` K/m, `h_source = "H_F_MDS"` with `h_qc_max = 1`, raw output (no smoothing,
   clipping, or filling).

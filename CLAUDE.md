@@ -86,10 +86,10 @@ so code must be reproducible, documented and traceable to references.
       (≈ 130 W m-2) falls in the hours ending 11–12 UTC.
     - `cloud_base_height` [m above surface]: NaN when there is no cloud (≈ 13 % of hours at BE-Bra). Not an error.
   - Expected completeness: 59,328 hourly rows and 9,888 pressure-level rows per cell (no gaps at BE-Bra).
-  - **Superseded format**: spec 01's `read_era5()` reads the earlier yearly files
-    (`BE-Bra__ERA5__reanalysis-era5-single-levels__boundary_layer_height__2025__lon+0__lat+0.csv`, columns `value`, `time`,
-    `latitude`, …). Those files are no longer the source; the reader must be extended to the format above.
-    `config.yml` (`era5_dir`, cluster profile) still points to the old location and must be updated with it.
+  - **Superseded format**: the earlier yearly files
+    (`BE-Bra__ERA5__reanalysis-era5-single-levels__boundary_layer_height__2025__lon+0__lat+0.csv`) are no longer the
+    source. Spec 04 replaced the reader (`R/read_era5.R`) and `config.yml` (`era5_sl_dir`, `era5_pl_dir`,
+    `era5_static_dir`; `{var}` placeholder for the cluster static folders).
   - `data/raw/era5_meteo_drivers/` (yearly ERA5 meteo drivers, wide format) is not used by this project.
 - Site metadata: `config/sites.csv` (lat, lon, altitude, UTC offset, zm, canopy height, d, z0...).
   Missing values allowed; functions must fail with an informative error only when a *required* value is missing.

@@ -164,6 +164,16 @@ The class is therefore not a stratum to compare against other classes; it tells 
 - ~~ERA5 extraction details (nearest cell? downscaling? QC?), and availability of neighbouring cells.~~ Resolved
   (2026-10-15): nearest 0.25° grid point, no downscaling, 3×3 neighbours delivered (BE-Bra: cell centre 6.5 km from
   the tower). SE-Myc corrected coordinates confirmed (2026-10-16).
+- Spec 04, first PBLHmod vs ERA5 comparison (BE-Bra, 2026-10-17), points to discuss:
+  - Operational fill detection uses a per-calendar-year rule (spec 04 amendment 7); to be checked at other sites,
+    where processing runs may not align with calendar years.
+  - EC H (PBLHmod forcing) exceeds ERA5 H at midday in MAM/JJA by ≈ 90–100 W m-2 (mean diurnal peak ≈ 215 vs
+    ≈ 125 W m-2), yet PBLHmod convective h is close to ERA5 (median log ratio −0.07). With γ = 0.01 K m-1 the larger
+    H is offset by a γ about twice the ERA5 850–700 hPa θ gradient (monthly medians 0.0044–0.0051 K m-1). The
+    850–700 hPa layer lies mostly above the BE-Bra PBL, so it is only context for γ (options 2–3).
+  - The `mad_log_ratio` metric is the unscaled median absolute deviation (constant 1); confirm, or switch to the
+    scaled form (1.4826, sd-consistent).
+  - Pair 5 (PBLHmod vs operational PBLH) is compared on half-hours, not on ERA5 hours.
 - Source of zm, d, z0 and target area per site.
 - Measured PBLH datasets: to be collected; open data candidates: ACTRIS/Cloudnet, E-PROFILE, IGRA radiosondes.
 - ~~Literature: the current bib is footprint-focused. A PBL collection is needed.~~ Done (2026-10-15):
