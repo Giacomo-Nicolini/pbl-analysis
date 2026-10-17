@@ -1,6 +1,6 @@
 # Project status (handover note)
 
-Last update: 2026-10-13. Read this first in a new session (Cowork or Claude Code), then `docs/project_plan.md`
+Last update: 2026-10-17. Read this first in a new session (Cowork or Claude Code), then `docs/project_plan.md`
 and `CLAUDE.md`.
 
 ## Way of working
@@ -25,18 +25,56 @@ and `CLAUDE.md`.
 
 ## Next steps
 
-1. **Spec 03 — legacy regression.** Blocked: needs the ETC operational code that calls `calc_PBL_height()` and
-   post-processes its output, to be copied into `legacy/` (e.g. `legacy/etc_pipeline_pblh.R`).
-   Findings to explain: operational `PBLH` at BE-Bra has a 50 m floor (4,055 rows) and repeated constants —
-   1654.58 m (15,649 rows) and 843.07 m (2,739) in 2020–2025, 1591.68 m (2,649) and 682.86 m (427) in 2026 —
-   probably a percentile cap and a fill value per processing run (hypothesis, unconfirmed).
-2. **Spec 04 (proposed, not started)** — standard PBLH format (phase 2) and a first PBLHmod vs ERA5 comparison at
-   BE-Bra (2025–2026). Independent of spec 03.
+Both specs drafted 2026-10-17, ready for Claude Code (Plan mode first). Suggested order: spec 04, then spec 03
+(independent; spec 03 reuses `save_figure()` from spec 04 if merged first).
+
+- `docs/specs/04_era5_standard_compare.md` — branch `spec-04-era5-compare`.
+- `docs/specs/03_legacy_regression.md` — branch `spec-03-legacy-regression`. Needs G to confirm the inputs of the
+  ETC pipeline call (section 1 of the spec lists the baseline and alternatives).
+
+1. **Spec 03 — legacy regression.** Unblocked (2026-10-16): the ETC post-processing is in
+   `legacy/proc_PBL_height.R` (negatives → NA; floor at 50 m; remaining NA filled with the mean of all "day" or
+   "night" values of the processing run, day = hour 06–18 of the timestamp). The operational artefacts at BE-Bra are
+   now **explained and reproduced exactly** (FLUXES L2, day/night from the hour of `TIMESTAMP_END`, local standard
+   time; means taken after the 50 m floor):
+   - 50 m floor: 4,055 rows;
+   - 2020–2025 run: day fill 1654.58 m (15,649 rows) = day mean, night fill 843.07 m (2,739) = night mean;
+   - 2026 run: day fill 1591.68 m (2,649), night fill 682.86 m (426; one more row in 2022 is a coincidence).
+   - So ≈ 18 % of 2020–2026 operational PBLH rows are run-mean fills and ≈ 4 % are floored. The day fill value is
+     inflated by outliers (median of non-filled day values ≈ 1509 m; max 91 km). PBLH is NA Jan–Oct 2020.
+   Remaining spec 03 work: run legacy `calc_PBL_height()` + `proc_PBL_height()` on BE-Bra, reproduce the operational
+   column, then switch legacy steps/fixes one at a time (γ, smoothing, gap order, units, floor, fill) to quantify each
+   effect against PBLHmod v2.
+2. **Spec 04 (drafted 2026-10-17)** — new ERA5 readers (format changed, see below), standard PBLH format
+   (phase 2) and a first PBLHmod vs ERA5 comparison at BE-Bra (2020–2026). Independent of spec 03.
+   Must include: reader for the new ERA5 hourly / pressure-level / static files (cell position from header, not
+   file name; sshf accumulated J m-2, sign flip; 9 cells), `config.yml` path update (local + cluster), ERA5 cell
+   metadata per site (cell centre, distance, orography height vs site altitude, lsm, sdor), 3×3 spread as
+   representativeness metric. Frame the comparison against `literature_review_pblh.md`.
+
+## Data received (2026-10-15)
+
+ERA5 from C. Trotta, 0.25°, tower cell + 8 neighbours, all stations (verified on BE-Bra; details in `CLAUDE.md`):
+
+- Hourly 2020-01-01 → 2026-10-07: `boundary_layer_height`, `cloud_base_height`, `surface_sensible_heat_flux`
+  (accumulated J m-2, positive downward). Complete at BE-Bra (59,328 h, no gaps).
+- Pressure levels, 6-hourly, 13 levels 50–1000 hPa: temperature, geopotential. Enough for a γ climatology (option 2,
+  e.g. θ gradient 850–700 hPa); too coarse for time-varying γ (option 3) or for inversion diagnosis: that would need
+  hourly data and the intermediate levels 975–750 hPa. Request only if option 3 is pursued (agreed 2026-10-16).
+- Confirmed by G (2026-10-16): SE-Myc extraction uses the corrected coordinates; all stations structured like BE-Bra.
+- Static: surface geopotential, land–sea mask, sdor. BE-Bra tower cell: 51.25 N 4.50 E, 6.5 km from the tower,
+  orography 8.9 m, lsm 0.96, sdor 7.6 m.
+- The ERA5 extraction question (nearest cell? neighbours?) is resolved: nearest 0.25° cell, 3×3 neighbours available.
+
+Literature (2026-10-15): `docs/references/literature_review_pblh.md` + `pblh_literature_2026-10.bib` (~50 verified
+papers: ERA5 BLH evaluations, remote-sensing ABLH methods and datasets, stable/convective parameterisations,
+PBLH from flux towers, footprint sensitivity to h). Novelty check: no published network-scale evaluation of
+EC-derived PBLH against ERA5 and measurements was found. `pblh_collection.bib` fixed (DOIs, typos).
 
 ## Waiting on others
 
-- ERA5 BLH 2020–2024 and 3×3 neighbours + invariant fields (geopotential, land–sea mask, sdor) at 0.25°
-  (C. Trotta). SE-Myc must use the corrected coordinates (58.36503 N, 12.1694 E). ERA5-Land has no BLH.
+- Key papers downloaded (2026-10-16). Still missing: `ECMWF2016` (IFS Cy41r2 Part IV, free from the ECMWF
+  e-library). Second-wave papers: G will notify.
 - Relaxed FFP validity thresholds used at ETC (for the phase-5 spec).
 - Verification of forest canopy-height jumps (FR-Fon, FR-Hes, SE-Svb).
 
@@ -50,4 +88,7 @@ and `CLAUDE.md`.
 ## Local setup notes
 
 - PC rebuild procedure: `docs/setup/pc_rebuild_checklist.md` (+ `backup_before_format.ps1`).
-- Gitignored but needed: `data/raw/` (ICOS L2 zips for BE-Bra, ERA5 CSVs, `target_areas/*.kml`), `C:\WORK\secrets`.
+- Gitignored but needed: `data/raw/` (ICOS L2 zips for BE-Bra, ERA5 CSVs in `era5/`, `era5_pressure_levels/`,
+  `era5_single_levels/`, `target_areas/*.kml`), `C:\WORK\secrets`.
+- Reference PDFs live outside the repo in `C:\WORK\bibliography_new_win11\` (not in git; the `.bib` `file` fields
+  point there).

@@ -1,0 +1,11 @@
+
+Main methods:
+. unstable (daytime) conditions	>	Seibert et al. (2000)
+. stable conditions				>	Zilitinkevich et al. (2012); Zilitinkevich and Mironov (1996)
+
+if the above cannot be applied:
+“meteorological pre-processor” approach
+. stable|neutral conditions 		>	Nieuwstadt(1981)
+. near-neutralconditions			>	Hanna and Chang (1993); Zilitinkevich et al. (2012)
+. strongly stable conditions		>	Zilitinkevich (1972)
+. convective conditions			>	Batchvarova and Gryning (1991) [the boundary layer height cannot be diagnosed due to the nearly symmetric diurnal cycle of the surface heat flux]

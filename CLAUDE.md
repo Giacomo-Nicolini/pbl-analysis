@@ -14,6 +14,8 @@ so code must be reproducible, documented and traceable to references.
 - Full design: `docs/project_plan.md` (source of truth for scientific choices)
 - Legacy code issues: `docs/legacy_review.md`
 - Task specs: `docs/specs/NN_*.md`. **Implement only what the current spec asks.**
+- Literature: `docs/references/` (`pblh_collection.bib`, `pblh_literature_2026-10.bib`, annotated notes in
+  `literature_review_pblh.md`). Cite by BibTeX key in code comments where a formula comes from a paper.
 
 ## Golden rules
 
@@ -47,10 +49,48 @@ so code must be reproducible, documented and traceable to references.
   - Units: `TA*` in °C (convert to K); **`T_SONIC` already in K** (verified on BE-Bra, spec 01; rename only);
     `PA_F`, `PA` in kPa (convert to Pa); H in W m-2; USTAR in m s-1; MO_LENGTH in m.
     Readers check the median of each declared-unit column and abort if implausible.
-- ERA5 BLH: yearly CSV per station, hourly, UTC, instantaneous at the hour, e.g.
-  `BE-Bra__ERA5__reanalysis-era5-single-levels__boundary_layer_height__2025__lon+0__lat+0.csv`.
-  Columns: `value` (BLH, m above ground), `time`, `latitude`, `longitude` (site), `location`, `pos_my_lat`, `pos_my_lon`,
-  `my_lat`, `my_lon` (grid cell), `datetime`, `year`.
+- **ERA5 (current delivery, C. Trotta, Oct 2026; verified on BE-Bra 2026-10-15).** 0.25° grid. For every variable,
+  9 files per station: the cell containing the tower plus its 8 neighbours. All times UTC.
+  - Hourly single levels, 2020-01-01 00:00 → 2026-10-07 23:00, one file per variable × cell (all years in one file):
+    `XX-Yyy__reanalysis_era5_single_level__<var>__20200101T0000__20261007T2300__north_<n>__south_<s>__east_<e>__west_<w>.csv`
+    with `<var>` = `boundary_layer_height`, `cloud_base_height`, `surface_sensible_heat_flux`.
+    Local: `data/raw/era5/XX-Yyy/`; cluster: `/bigdata/c.trotta/era2oneflux_claude_zarr_giacomo/ERA5_surface_single_level/XX-Yyy/`.
+  - Pressure levels, **6-hourly** (00/06/12/18 UTC), 2020-01-01 00:00 → 2026-10-07 18:00, 13 levels
+    (50, 100, 150, 200, 250, 300, 400, 500, 600, 700, 850, 925, 1000 hPa), wide format, one column per level
+    (`temperature_<p>hPa` [K], `geopotential_<p>hPa` [m2 s-2]):
+    `XX-Yyy__reanalysis_era5_pressure_levels-pl__<temperature|geopotential>__20200101T0000__20261007T1800__north_..._west_<w>.csv`.
+    Local: `data/raw/era5_pressure_levels/XX-Yyy/`; cluster: `/bigdata/c.trotta/era2oneflux_claude_zarr_giacomo/ERA5_pressure_levels/XX-Yyy/`.
+  - Static fields, one row each (valid time 1979-01-20 12:00): `z` (surface geopotential [m2 s-2]; height = z / 9.80665),
+    `lsm` (land–sea mask [0–1]), `sdor` (std of sub-grid orography [m]):
+    `XX-Yyy__single-levels__<z|lsm|sdor>__197901201200__197901201200__north_<r>__south_+0__east_<c>__west_+0.csv`.
+    Local: `data/raw/era5_single_levels/` (all stations in one folder); cluster:
+    `/bigdata/c.trotta/era2oneflux_claude_cds_giacomo_grib/out1/<z|lsm|sdor>/`.
+  - **File format**: a `#`-commented metadata header (`# ==== METADATA ... ====` … `# ==== FINE METADATA (dati sotto) ====`),
+    then a CSV with header. Time column: `time` (hourly and pressure-level files) or `valid_time_utc` (static files).
+    Header keys used by readers: `point_id`, `variable`, `latitude_requested`, `longitude_requested` (tower),
+    `latitude_grid`, `longitude_grid` (cell centre), `n_rows`, `first_time`, `last_time`, `levels`. Static files also
+    carry `units` and `distance_km`; **hourly and pressure-level files carry no units** (units are stated here).
+  - **Neighbour naming differs between file families. Never infer the cell position from the file name: read
+    `latitude_grid` / `longitude_grid` from the header.** Hourly and pressure-level files use direction flags
+    (`north_+1__south_+0__east_+0__west_+1` = NW cell); static files use signed offsets in `north_` (row) and `east_`
+    (column), with `south_+0__west_+0` always (`north_-1__..__east_+1` = SE cell). In both families the tower cell is
+    `north_+0__south_+0__east_+0__west_+0`.
+  - Variables and conventions:
+    - `boundary_layer_height` [m above model surface]: instantaneous at the timestamp. ERA5 diagnostic = lowest level
+      where the bulk Richardson number (from the lowest model level, virtual dry static energy, 2 m wind = 0, no
+      surface friction term, no parcel excess) reaches 0.25 (`ECMWF2016`, IFS Cy41r2 Part IV, Sect. 3.10.1, Eq. 3.90;
+      after Seidel et al. 2012).
+    - `surface_sensible_heat_flux`: **hourly accumulation [J m-2] over the hour ending at the timestamp, ECMWF sign
+      (positive downward)**, not a mean. Convert at the reader: `H [W m-2, positive upward] = -sshf / 3600`, assigned to
+      the interval (timestamp − 1 h, timestamp]. Verified on BE-Bra: the June–July midday maximum of upward H
+      (≈ 130 W m-2) falls in the hours ending 11–12 UTC.
+    - `cloud_base_height` [m above surface]: NaN when there is no cloud (≈ 13 % of hours at BE-Bra). Not an error.
+  - Expected completeness: 59,328 hourly rows and 9,888 pressure-level rows per cell (no gaps at BE-Bra).
+  - **Superseded format**: spec 01's `read_era5()` reads the earlier yearly files
+    (`BE-Bra__ERA5__reanalysis-era5-single-levels__boundary_layer_height__2025__lon+0__lat+0.csv`, columns `value`, `time`,
+    `latitude`, …). Those files are no longer the source; the reader must be extended to the format above.
+    `config.yml` (`era5_dir`, cluster profile) still points to the old location and must be updated with it.
+  - `data/raw/era5_meteo_drivers/` (yearly ERA5 meteo drivers, wide format) is not used by this project.
 - Site metadata: `config/sites.csv` (lat, lon, altitude, UTC offset, zm, canopy height, d, z0...).
   Missing values allowed; functions must fail with an informative error only when a *required* value is missing.
   Time-varying zm / canopy height: `config/sites_timevarying.csv` (derived from `config/sites_H_EC_canopy_formBIF.csv`).

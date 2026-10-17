@@ -1,0 +1,52 @@
+
+
+Reference citate nell'Appendice B
+Ecco le reference utilizzate nell'Appendice B, con verifica della loro presenza e correttezza:
+
+Seibert et al. (2000)
+Citazione: "Seibert et al. (2000) gave a comprehensive overview on different methods and discuss the associated caveats and uncertainties."
+Verifica: Presente in bibliografia come:
+Seibert, P., Beyrich, F., Gryning, S.-E., Joffre, S., Rasmussen, A., and Tercier, P.: Review and Intercomparison of Operational Methods for the Determination of the Mixing Height, Atmos. Environ., 34, 1001–1027, 2000.
+
+Zilitinkevich et al. (2012)
+Citazione: "Zilitinkevich et al. (2012) and Zilitinkevich and Mironov (1996) provided a theoretical assessment..."
+Verifica: Presente in bibliografia come:
+Zilitinkevich, S. S., Tyuryakov, S. A., Troitskaya, Y. I., and Mareev, E. A.: Theoretical Models of the Height of the Atmospheric Boundary Layer and Turbulent Entrainment at Its Upper Boundary, Izv. Atmos. Ocean. Phys., 48, 133–142, 2012.
+
+Zilitinkevich and Mironov (1996)
+Citazione: "Zilitinkevich and Mironov (1996) provided a theoretical assessment..."
+Verifica: Presente in bibliografia come:
+Zilitinkevich, S. S. and Mironov, D. V.: A Multi-Limit Formulation for the Equilibrium Depth of a Stably Stratified Boundary Layer, Bound.-Lay. Meteorol., 81, 325–351, 1996.
+
+Nieuwstadt (1981)
+Citazione: "Nieuwstadt (1981) proposed an interpolation formula for neutral to stable conditions..."
+Verifica: Presente in bibliografia come:
+Nieuwstadt, F. T. M.: The Steady-state Height and Resistance Laws of the Nocturnal Boundary Layer: Theory Compared with Cabauw Observations, Bound.-Lay. Meteorol., 20, 3–17, 1981.
+
+Hanna and Chang (1993)
+Citazione: "In their meteorological pre-processor, Hanna and Chang (1993) recommended cn = 0.3..."
+Verifica: Presente in bibliografia come:
+Hanna, S. R. and Chang, J. C.: Hybrid Plume Dispersion Model (HPDM) Improvements and Testing at Three Field Sites, Atmos. Environ., 27A, 1491–1508, 1993.
+
+Tennekes (1973)
+Citazione: "corresponding to Tennekes (1973)"
+Verifica: Presente in bibliografia come:
+Tennekes, H.: Similarity Laws and Scale Relations in Planetary Boundary Layers, in: Workshop on Micrometeorology, edited by: Haugen, D. A., Amer. Meteorol. Soc., Boston, USA, 1973.
+NON SI TROVA ONLINE
+
+Zilitinkevich et al. (2007)
+Citazione: "Zilitinkevich et al. (2007) later proposed cs ≈ 0.3 based on LES results..."
+Verifica: Presente in bibliografia come:
+Zilitinkevich, S. S., Esau, I., and Baklanov, A.: Further Comments on the Equilibrium Height of Neutral and Stable Planetary Boundary Layers, Q. J. Roy. Meteorol. Soc., 133, 265–271, 2007.
+
+Batchvarova and Gryning (1991)
+Citazione: "The slab model of Batchvarova and Gryning (1991) is based on a simplified TKE equation..."
+Verifica: Presente in bibliografia come:
+Batchvarova, E. and Gryning, S.-E.: Applied Model for the Growth of the Daytime Mixed Layer, Bound.-Lay. Meteorol., 56, 261–274, 1991.
+
+Zilitinkevich (1972): 
+Presente in bibliografia come:
+Zilitinkevich, S. S.: On the Determination of the Height of the Ekman Boundary Layer, Bound.-Lay. Meteorol., 3, 141–145, 1972.
+
+Stull (1988): Anche se non citato direttamente nell'Appendice B, è spesso menzionato nel documento per la teoria dello strato limite.
+Sintesi

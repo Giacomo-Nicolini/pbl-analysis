@@ -1,0 +1,197 @@
+# Spec 03: Legacy regression (operational ICOS PBLH vs legacy code vs PBLHmod v2)
+
+Phase 1. Branch: `spec-03-legacy-regression` (from `main`). Independent of spec 04.
+Read first: `CLAUDE.md`, `docs/legacy_review.md` (all issues, including 11–15 on `proc_PBL_height.R`),
+`docs/specs/02_pblh_model.md`, `docs/STATUS.md` (spec 03 findings).
+
+## Goal
+
+1. **Reproduce** the operational `PBLH` column of the ICOS L2 FLUXES file at BE-Bra by running the legacy code
+   (`legacy/calc_PBL_height.R` + `legacy/proc_PBL_height.R`) on the same inputs.
+2. **Port** the legacy algorithm into new, testable code with switches, proven identical to the original.
+3. **Attribute** the difference between operational PBLH and PBLHmod v2 to individual legacy choices, by switching
+   them one at a time (and cumulatively) from the legacy baseline towards PBLHmod v2.
+
+Already established (2026-10-16, see `STATUS.md`): `proc_PBL_height()` floors at 50 m and fills NA with the
+day/night mean of the processing run (day = hour 06–18 of `TIMESTAMP_END`, local standard time); the fill values
+1654.58 / 843.07 m (2020–2025 run) and 1591.68 / 682.86 m (2026 run) are reproduced exactly from the operational
+column itself. This spec must reproduce them **from the inputs**.
+
+## Exception to the `legacy/` rule
+
+`CLAUDE.md` rule 5 allows sourcing `legacy/` only in the explicit legacy regression. In this spec, only
+`scripts/03_legacy_regression.R` and `tests/testthat/test-legacy_port.R` may `source()` the two legacy files, into a
+dedicated environment (`sys.source(..., envir = legacy_env)`), never into the global environment, and never from
+`R/`. The legacy files are not edited.
+
+Running the original requires packages it loads itself (`zoo`, `crayon`, `bigleaf`, `data.table`). Its code calls
+`install.packages()` for missing ones: **the script must check that all four are installed and abort otherwise**
+(never let the legacy code install packages). Add them to renv as legacy-only dependencies (note this in
+`renv.lock` commit message and in `docs/legacy_review.md`).
+
+Call the originals with all plotting/saving off: `calc_PBL_height(..., plot.atmc = FALSE, plot.PBL = FALSE,
+save.PBL = FALSE)`; `proc_PBL_height(..., plot.PBL.h.freq = FALSE, PBL.dir = <tempdir>/)` (with `PBL.dir` set,
+its final plot goes to a png in the temp dir instead of `windows()`; delete it afterwards).
+
+## 1. Inputs of the operational run (confirmed by G, 2026-10-17)
+
+The ETC pipeline call (G):
+
+```r
+calc_PBL_height(
+  TIMESTAMP = set.cleaned.timestamp,  # LST, %Y-%m-%d %H:%M:%S
+  LAT = st.lat, zm = H.EC, d = d.,    # d. = 2/3 canopy height
+  MOL = data.table::nafill(set.cleaned$MO_LENGTH, "locf"),
+  ustar = set.cleaned$USTAR, H = set.cleaned$H,
+  AT = set.cleaned$AT,   # [K]  EddyPro full_output air_temperature
+  AP = set.cleaned$AP,   # [Pa] EddyPro full_output air_pressure (no biomet: from site altitude)
+  rho = set.cleaned$rho, # [kg m-3] EddyPro full_output air_density
+  cp = set.cleaned$cp,   # [J kg-1 K-1] EddyPro full_output air_heat_capacity
+  altit = st.alt)
+```
+then `proc_PBL_height()`. Implement as one function `legacy_inputs(d, site_meta, source = c("eddypro", "l2_reconstructed"))`.
+
+| legacy argument | value | notes |
+|---|---|---|
+| `TIMESTAMP` | `TIMESTAMP_END`, local standard time | consistent with the fill reproduction (day/night from the hour of `TIMESTAMP_END`) |
+| `LAT`, `altit` | `sites.csv` `lat`, `altitude_m` | – |
+| `zm`, `d` | `zm_m` (time-varying), `2/3 × canopy_height_m` | in `calc_PBL_height()` they only enter `zdl`, computed but never used: verify and say so |
+| `MOL` | FLUXES `MO_LENGTH` with **last-observation-carried-forward** filling (`data.table::nafill(type = "locf")` semantics; implement in base R/dplyr, no data.table in `R/`) | leading `NA` stay `NA` |
+| `ustar`, `H` | FLUXES `USTAR`, `H` ("cleaned" = the published L2 values) | – |
+| `AT`, `AP`, `rho`, `cp` | see 1.1 | – |
+| options | `GF.PBL = TRUE`, `smooth.PBL = TRUE` | – |
+| processing runs | 2020-01-01 → 2025-12-31 and 2026-01-01 → end of file, each processed separately (calc + proc) | control: one run over all years (one day and one night fill value; the data show two) |
+
+Rows must form a continuous half-hourly series (the legacy aborts on jumps); use `NA` for missing values.
+
+### 1.1 Ambient variables (`AT`, `AP`, `rho`, `cp`)
+
+The L2 files are produced from the same EddyPro run, but these four columns are not in L2.
+
+- **`source = "eddypro"` (exact; preferred):** if G provides the EddyPro full_output columns `date`, `time`,
+  `air_temperature` [K], `air_pressure` [Pa], `air_density` [kg m-3], `air_heat_capacity` [J kg-1 K-1] for
+  BE-Bra (config key `eddypro_dir`, e.g. `data/raw/eddypro/{site}/`), read them (EddyPro full_output: 3 header
+  lines; `date`/`time` = end of the averaging period — verify by matching `H`/`USTAR` with L2) and use them.
+- **`source = "l2_reconstructed"` (fallback):** rebuild the EddyPro values from L2 following the EddyPro
+  formulas. Take the formulas from the EddyPro documentation (LI-COR, "Calculating ambient and cell parameters";
+  EddyPro manual) and, where the documentation is incomplete, from the open-source EddyPro engine
+  (github.com/LI-COR/eddypro-engine); cite file and routine in comments:
+  - `AP = 101300 × exp(−altitude / 8200)` [Pa] (no biomet: EddyPro uses site altitude, Campbell & Norman 1998);
+    check in the engine whether the altitude includes the measurement height;
+  - `AT`: EddyPro ambient temperature without biomet = sonic temperature corrected for humidity (Schotanus et al.
+    1983); determine whether L2 `T_SONIC` is the raw or the corrected sonic temperature and apply the correction
+    with L2 `H2O` (check its unit) only if needed;
+  - `rho` (moist air density) and `cp` (moist air heat capacity) from `AT`, `AP` and `H2O` with EddyPro's formulas
+    and constants.
+
+  Unit tests for each reconstructed variable (hand-computed cases). If a formula cannot be established from the
+  documentation or the engine source, stop and report (do not substitute other formulas silently).
+
+## 2. Reproduction (`scripts/03_legacy_regression.R`, part A)
+
+- Run the originals with the inputs of section 1 and compare with the operational `PBLH` on all rows where the
+  operational value is not `NA`: share of rows with |legacy − operational| < 0.01 m; distribution of the relative
+  difference (median, p95, max); by year and regime; and the four fill values.
+- Acceptance:
+  - `source = "eddypro"`: ≥ 99 % of rows within 0.01 m and fill values reproduced to 0.01 m;
+  - `source = "l2_reconstructed"`: median |relative difference| < 0.5 %, p95 < 2 %, and the four fill values
+    within 0.5 % (exact reproduction is not expected because the reconstructed ambient variables differ slightly
+    from EddyPro's).
+- Also report the sensitivity of the reproduction to each ambient variable (replace one at a time by the simplest
+  alternative: `AT = T_SONIC`, `AP` from altitude, `rho`/`cp` computed inside the legacy function). If the
+  acceptance is not met, report the pattern of mismatches (by year, regime, hour, near gaps) and stop part C until
+  discussed with G.
+
+## 3. Port (`R/legacy_port.R`)
+
+`legacy_pblh(t_local, lat, zm, d, L, ustar, H, T_K, p_Pa = NULL, altitude_m = NULL, sw = legacy_switches())`
+reimplements `calc_PBL_height()` followed by `proc_PBL_height()` in vectorised/pure style (no plots, no package
+loading). It returns `pblh_m` plus intermediate columns (`atmos_cond`, `h0_m`, `h_bg_m`, `h_smooth_m`,
+`flag_floor`, `flag_fill`).
+
+`legacy_switches()` returns a named list; defaults reproduce the legacy exactly:
+
+| switch | legacy (default) | PBLHmod v2 value | legacy issue |
+|---|---|---|---|
+| `gamma` | 0.0025 K m-1 | 0.01 | 8 |
+| `k` | 0.41 | 0.4 | – |
+| `omega` | 2π/86400 | 7.2921159e-5 | – |
+| `stability_classes` | Essa et al. 2006 1/L classes | regime from L sign + daily window | 3 |
+| `stable_formula` | Zilitinkevich, c_s = 0.4 | Nieuwstadt B1 | – |
+| `neutral_formula` | 0.3 u*/abs(f) | auto B2/B3 | 4 |
+| `convective_trigger` | `H > 0` | daily window from sunrise (spec 02) | 3 |
+| `bg_integration` | explicit Euler, one step per half-hour | RK4 with sub-steps | – |
+| `gap_interp_before_bg` | TRUE (`na.approx(maxgap = 2)` on h0 before B&G) | FALSE | 2 |
+| `smoothing` | 5-point centred moving mean | none | 6 |
+| `floor_m` | 50 | none (`NA`) | 13 |
+| `fill` | `"run_mean_day_night"` (06–18 h of the timestamp) | `"none"` | 11, 12 |
+| `negative_to_na` | TRUE | – | – |
+| `mol_locf` | TRUE (L filled by last observation carried forward before the call) | FALSE (spec 02: 1/L interpolated over ≤ 1 h, longer gaps NA) | – |
+| `forcing` | ETC inputs (section 1: EddyPro/L2 `AT`, `AP`, `rho`, `cp`; L2 `H`) | PBLHmod v2 forcing (`T_K`, `p_Pa`, `rho`, `wtheta` from `prepare_pblh_forcing()`, H = `H_F_MDS`) | – |
+
+Reproduce the legacy exactly, including its quirks, when all switches are at their defaults: e.g. B&G uses
+`h0[i-1]` when not `NA`, else the B&G value of `i-1`; `i = 1` with `H > 0` (legacy issue 5: decide the port's
+behaviour = return `NA` for that row and document it; check it never occurs in the BE-Bra runs, otherwise report);
+smoothing returns `NA` where any of the 5 values is `NA`; the run-mean fill is computed after flooring.
+
+Constants used only by the port go in `legacy_switches()` (documented as "legacy values"), not in
+`pblh_constants()`.
+
+## 4. Port equality (test + script part B)
+
+- `tests/testthat/test-legacy_port.R`: on a synthetic 3-day series with gaps, NA runs, sign changes and stable /
+  neutral / convective rows, `legacy_pblh()` with default switches equals the original legacy pipeline (sourced as
+  described above) to 1e-8 m on every row (including `NA` positions). Also unit tests for each switch (one
+  hand-checked case each, e.g. floor, fill value = mean of day rows of the run, smoothing window).
+- Script part B: the same equality on the full BE-Bra series for the chosen input variant (report max difference;
+  must be < 1e-6 m).
+
+## 5. Attribution (script part C)
+
+On BE-Bra, with the chosen inputs:
+
+1. **One at a time**: from the legacy baseline, change each switch to its PBLHmod v2 value (others at legacy
+   values). Variants named `legacy_<switch>`.
+2. **Cumulative path**: switches changed in this order, each run keeping the previous changes:
+   `fill → floor_m → smoothing → gap_interp_before_bg → mol_locf → forcing → k, omega → gamma → neutral_formula →
+   stable_formula → convective_trigger + stability_classes → bg_integration`. The last step should approach PBLHmod v2; report the
+   residual difference to `pblhmod_default` and explain it (remaining structural differences: daily window,
+   sunrise h0, forcing preparation, H source, interpolation rules).
+3. For every variant: quantiles (1, 5, 25, 50, 75, 95, 99 %) of `pblh_m` overall and by regime (regime from
+   PBLHmod v2 on the same row), share of `NA`, share floored, share filled; median and MAD of
+   `log(variant / pblhmod_default)` by regime; the same for `log(variant / operational)`.
+
+Output tables: `output/tables/03_reproduction_<site>.csv`, `03_variants_<site>.csv` (long format: variant,
+stratum, statistic, value). Output data: `<derived_dir>/legacy/<site>_legacy_<variant>.csv.gz`.
+
+## 6. Figures
+
+Using the `save_figure()` helper from spec 04 if merged; otherwise create `R/plot_utils.R` with the same
+interface (coordinate with spec 04: one implementation only).
+
+1. `03_reproduction_<site>`: operational vs legacy-reproduced (hexbin/2-D density) and difference time series.
+2. `03_waterfall_<site>`: median `pblh_m` by regime along the cumulative path (one point per step, lines per
+   regime), with PBLHmod v2 as a reference line.
+3. `03_one_at_a_time_<site>`: median log-ratio to PBLHmod v2 per switch and regime (dot plot).
+4. `03_diurnal_<site>`: median diurnal cycle (by season) of operational, legacy baseline, legacy without
+   post-processing (fill, floor, smoothing off) and PBLHmod v2.
+
+## Acceptance criteria
+
+- Tests pass (old and new).
+- Reproduction ≥ 99 % exact at BE-Bra with a documented input variant, fill values reproduced exactly; or a
+  stop-and-report if not.
+- Port equal to the original (< 1e-6 m) on the full BE-Bra series.
+- Attribution tables and figures produced; summary printed.
+- Legacy files unchanged (`git diff legacy/` empty); no legacy code sourced outside the two allowed files.
+
+## Out of scope
+
+Changing PBLHmod v2; fixing the ETC pipeline; other sites; ERA5 (spec 04).
+
+## Summary to report back
+
+As in `CLAUDE.md`, plus: the input variant that reproduces the operational column (to be confirmed by G); the
+reproduction statistics; the ranking of legacy choices by their effect on the median per regime (one at a time and
+along the cumulative path); the residual difference legacy-fully-switched vs PBLHmod v2 and its explanation; any
+legacy behaviour that the port had to emulate deliberately (quirks).

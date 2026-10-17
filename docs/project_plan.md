@@ -42,6 +42,10 @@ Status: agreed design, v0.1 (2026-10-08). Living document: update as decisions c
     2. climatological lookup table (site × month), computed once from ERA5 pressure levels and shipped with the code —
        operationally still EC-only;
     3. time-varying γ from ERA5 pressure levels (hourly/daily) — requires ERA5 download.
+       Data note (2026-10-15): the pressure levels received are 6-hourly with only 1000/925/850 hPa below ~1.5 km.
+       Sufficient for option 2 (e.g. θ gradient 850–700 hPa, site × month); option 3 would need hourly data and the
+       intermediate levels (975, 950, 900, 875, 825, 800, 775, 750 hPa). Established recipe for γ from profiles:
+       extrapolate the free-troposphere θ gradient above the mixed-layer top from the morning profile (`Wouters2019`).
     The function uses the richest γ provided and falls back to the constant. Comparing 1 vs 2 vs 3 is an explicit
     result: how much accuracy does the EC-only method lose without external data? (Supports the "simplicity" goal.)
   - convective trigger: H > 0 vs 1/L class (must be consistent);
@@ -84,7 +88,7 @@ The class is therefore not a stratum to compare against other classes; it tells 
 ## ERA5 representativeness
 
 1. Site metadata includes: ERA5 cell centre and distance to site, site elevation vs ERA5 model orography, land–sea fraction of the cell, subgrid orography std (ERA5 `sdor`), and a terrain-complexity class.
-2. If neighbouring cells are available (file naming `lon±n__lat±n` suggests so; to check with the cluster provider): spatial spread of the 3×3 cells as a per-timestep representativeness metric. Otherwise bilinear interpolation of the 4 nearest cells.
+2. Neighbouring cells are available (3×3 around the tower cell, confirmed 2026-10-15): spatial spread of the 3×3 cells as a per-timestep representativeness metric. Bilinear interpolation of the 4 nearest cells to the tower position as a sensitivity case.
 3. Use these as covariates in phase 4, and flag complex sites (mountain, coastal) so headline statistics are given with and without them.
 
 ## Evaluation and error attribution (phases 3–4)
@@ -93,6 +97,9 @@ The class is therefore not a stratum to compare against other classes; it tells 
 - Metrics: bias, MAE, RMSE, correlation; Bland–Altman per regime and season; timing metrics (morning growth rate, time of peak, daily maximum).
 - Triple collocation (log space) where three sources are available; state the "same quantity" assumption.
 - Drivers: stability class, time of day and transitions, season, cloud/precipitation, wind, H magnitude, land cover, terrain, latitude, measurement height, time since last data gap.
+  Candidate ERA5-based drivers (proposed 2026-10-15, to discuss): ERA5 cloud base height (cloud presence and
+  low-cloud capping of the CBL); the difference between ERA5 and EC sensible heat flux (does an ERA5 BLH error follow
+  an ERA5 surface-forcing error?); 3×3 BLH spread.
 - Methods: binned statistics, then GAMs (`mgcv`).
 
 ## Footprint error propagation (phase 5)
@@ -108,7 +115,11 @@ The class is therefore not a stratum to compare against other classes; it tells 
 - ICOS L2 FLUXES: `H`, `USTAR`, `MO_LENGTH`, `ZL`, `T_SONIC`, `WS`, `WD`, `V_SIGMA`, `PBLH` (legacy operational output), `FETCH_*`, `FOOTPRINT_*`, QC flags.
 - ICOS L2 FLUXNET: `TA_F`, `PA_F` (kPa), `H_F_MDS`, `H_CORR`, `NIGHT`, `SW_IN_POT`, `WS_F`, `P_F`.
 - ICOS L2 METEO: `TA` and `TA_1..10` profile, `P`, `SW_IN`. Optional; the temperature profile may help at tall towers.
-- ERA5 `boundary_layer_height`: hourly, yearly CSV per station (nearest cell).
+- ERA5 (0.25°, tower cell + 8 neighbours, 2020-01-01 → 2026-10-07; formats and conventions in `CLAUDE.md`):
+  - hourly `boundary_layer_height` (instantaneous; bulk Richardson diagnostic, Ri_c = 0.25), `cloud_base_height`,
+    `surface_sensible_heat_flux` (hourly accumulation, J m-2, positive downward);
+  - 6-hourly pressure levels (13 levels, 50–1000 hPa): temperature, geopotential;
+  - static: surface geopotential, land–sea mask, sdor.
 - Site metadata: `config/sites.csv` (static; `zm_m` = latest value, `canopy_height_m` = median of measurements)
   + `config/sites_timevarying.csv` (long format; `zm_m` as step periods, `canopy_height_m` as point measurements).
   Both derived from `config/sites_H_EC_canopy_formBIF.csv` (ETC/BIF source, do not edit by hand) and ETC ancillary files.
@@ -141,13 +152,38 @@ The class is therefore not a stratum to compare against other classes; it tells 
 - ~~Units of `T_SONIC` in L2 (°C or K).~~ Resolved (spec 01, BE-Bra): `T_SONIC` is in K (median 290 K). Readers
   now rename only, and abort if a column's median is implausible for its declared unit, so other sites are checked
   automatically.
-- ERA5 for SE-Myc must be re-extracted with the corrected coordinates.
+- ~~ERA5 for SE-Myc must be re-extracted with the corrected coordinates.~~ Done (confirmed 2026-10-16).
 - Operational L2 FLUXES contain implausible USTAR (max 49 m/s) and PBLH (max 91 km) at BE-Bra: report to ETC QC.
 - METEO `PA` unit: kPa at BE-Bra (median 101.1), as assumed in spec 01.
 - Polar-day convective rule (e.g. start at solar midnight) for GL-ZaF, SE-Sto, FI-Lom: spec 02 runs diagnostic only on
   polar days (`flag_polar_day`).
-- Operational PBLH has a 50 m floor and the exact value 1654.6 m in ~13% of rows at BE-Bra: investigate in spec 03.
-- ERA5 extraction details (nearest cell? downscaling? QC?), and availability of neighbouring cells.
+- ~~Operational PBLH has a 50 m floor and the exact value 1654.6 m in ~13% of rows at BE-Bra: investigate in spec 03.~~
+  Explained (2026-10-16): `legacy/proc_PBL_height.R` floors at 50 m and fills NA with the day/night mean of the
+  processing run (reproduced exactly at BE-Bra; see `STATUS.md`). Implication for phase 5 and for the paper: the
+  operational PBLH used for ICOS footprints contains ≈ 18 % run-mean fills; the comparison must flag these rows.
+- ~~ERA5 extraction details (nearest cell? downscaling? QC?), and availability of neighbouring cells.~~ Resolved
+  (2026-10-15): nearest 0.25° grid point, no downscaling, 3×3 neighbours delivered (BE-Bra: cell centre 6.5 km from
+  the tower). SE-Myc corrected coordinates confirmed (2026-10-16).
 - Source of zm, d, z0 and target area per site.
 - Measured PBLH datasets: to be collected; open data candidates: ACTRIS/Cloudnet, E-PROFILE, IGRA radiosondes.
-- Literature: the current bib is footprint-focused. A PBL collection is needed (B&G 1991, Nieuwstadt 1981, Zilitinkevich, Seidel et al. 2010/2012, ERA5 BLH evaluations, ceilometer/lidar MLH methods).
+- ~~Literature: the current bib is footprint-focused. A PBL collection is needed.~~ Done (2026-10-15):
+  `pblh_collection.bib` (Kljun App. B references) + `pblh_literature_2026-10.bib` and annotated
+  `literature_review_pblh.md`. Keep extending as papers are added to `C:\WORK\bibliography_new_win11\`.
+
+## Positioning in the literature (from the 2026-10-15 search; details in `docs/references/literature_review_pblh.md`)
+
+- The Kljun App. B PBLH is already used network-wide without evaluation: ICOS ETC FFP tools (with optional ERA5
+  override), FLUXNET2015 footprint climatologies (`Fang2024`), AmeriFlux footprint representativeness (`Chu2021`),
+  Campbell EasyFlux (`Zhou2026`; it calls γ the "dry adiabatic lapse rate (commonly 9.8 × 10⁻³ K m⁻¹)", which is
+  numerically close to our 0.01 K m⁻¹ default, but in B&G γ is the free-atmosphere potential-temperature gradient).
+  `Rebmann2018` states ICOS uses Kljun 2015.
+- Closest prior work: PBLH vs surface fluxes at a few US sites, daytime only (`Beamesderfer2023`, `Chu2026`); ERA5 vs
+  radiosonde stratified by EC stability at one ICOS site (`Sinclair2022`, FI-Hyy). No study found evaluates EC-derived
+  PBLH against ERA5 and measurements across a network and all stabilities. `Helbig2021` names this gap.
+- Expectations to test: ERA5 too deep in very stable conditions and evening transitions (`Sinclair2022`,
+  `Arganaraz2026`); the sign of the daytime ERA5 bias varies between studies in Europe; surface-flux stable formulas
+  scatter widely (`Vickers2004`, `Steeneveld2007`); slab models overestimate without subsidence/advection
+  (`Pietersen2015`); FFP sensitivity to h has only been tested as ±20 % (`Kljun2015`).
+- Reference choice per class: turbulence-based (Doppler lidar, `Manninen2018`) for EC-derived PBLH; radiosonde bulk Ri
+  for ERA5; ceilometer MLH only late morning to mid-afternoon (`Schween2014`: aerosol-based height +300 to +600 m vs
+  Doppler lidar at transitions).
