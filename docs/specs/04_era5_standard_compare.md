@@ -303,3 +303,21 @@ headers in the real format. Use the real naming conventions for each family (dir
 As in `CLAUDE.md`, plus: the ERA5 cell metadata for BE-Bra; matched hours per pair; pair-1 metrics by regime and
 season; the fill values detected; the monthly γ_850–700 range; anything physically odd (e.g. sign of the ERA5 vs
 PBLHmod bias by regime compared with `literature_review_pblh.md` section 2).
+
+## Amendments (2026-10-17, agreed before implementation)
+
+1. **`scripts/01_check_inputs.R`.** Minimal update to the new reader: ERA5 BLH of the tower cell via
+   `read_era5_single_level(..., cells = "center")` (the old `find_era5_files()` / `read_era5_blh()` are removed).
+2. **Hourly regime and `qc_flag` with one missing half-hour.** With `require_both = TRUE` the hour is `NA`;
+   otherwise the regime (and `qc_flag`) of the valid half-hour is used. `"mixed"` only when both are valid and differ.
+3. **ERA5 `qc_flag`** = `NA` (no QC applied); stated in the sidecar `qc_flag_meaning`.
+4. **`metadata_completeness`** excludes the automatic fields `created_utc` and `code_version` from numerator and
+   denominator: fraction of the 13 remaining optional fields not `unknown` (documented in
+   `docs/specs/standard_format.md`).
+5. **Sidecar provenance.** ERA5: `licence` = "Licence to use Copernicus Products"; `citation` = Hersbach et al. 2020
+   (doi:10.1002/qj.3803) + dataset DOIs 10.24381/cds.adbb2d47 (single levels) and 10.24381/cds.bd0915c6 (pressure
+   levels); `processing_history` = extraction details from the file header (ARCO zarr, `era5_download_arco.py`,
+   nearest 0.25° grid point, 3×3 cells); other fields not given stay `unknown`. `icos_oper`: `licence` = "CC BY 4.0"
+   (ICOS data licence).
+6. **CSV reading.** ERA5 files are read with `readr::read_csv(skip = n_header_lines)` (not `data.table`, which is not
+   in renv). The only new packages for this spec are `ggplot2` and `yaml`.
