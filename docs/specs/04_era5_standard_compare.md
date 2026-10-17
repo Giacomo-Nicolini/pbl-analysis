@@ -312,8 +312,9 @@ PBLHmod bias by regime compared with `literature_review_pblh.md` section 2).
    otherwise the regime (and `qc_flag`) of the valid half-hour is used. `"mixed"` only when both are valid and differ.
 3. **ERA5 `qc_flag`** = `NA` (no QC applied); stated in the sidecar `qc_flag_meaning`.
 4. **`metadata_completeness`** excludes the automatic fields `created_utc` and `code_version` from numerator and
-   denominator: fraction of the 13 remaining optional fields not `unknown` (documented in
-   `docs/specs/standard_format.md`).
+   denominator: fraction of the 12 remaining optional fields not `unknown` (documented in
+   `docs/specs/standard_format.md`). (Corrected count: section 4 lists 14 optional fields, 12 without the two
+   automatic ones.)
 5. **Sidecar provenance.** ERA5: `licence` = "Licence to use Copernicus Products"; `citation` = Hersbach et al. 2020
    (doi:10.1002/qj.3803) + dataset DOIs 10.24381/cds.adbb2d47 (single levels) and 10.24381/cds.bd0915c6 (pressure
    levels); `processing_history` = extraction details from the file header (ARCO zarr, `era5_download_arco.py`,
