@@ -14,6 +14,11 @@ Reviewed 2026-10-08. Reference only: new code goes in `R/` and `scripts/`.
 | `ERA-PBL-stations.txt` | 85 stations (ICOS + NEON) with lat/lon for ERA5 extraction. | Keep as site metadata. |
 | `STabilityClasses_on_MOL.*` | Alternative stability classes from L (a–h). | Reference. |
 
+**Exception to the "no cluster paths in tracked files" rule (spec 05, agreed 2026-10-21):**
+`PBL_ERA_comparison_test.R` contains two absolute cluster paths in comments (lines 7 and 13). `legacy/` is
+read-only (CLAUDE.md rule 5), so the file is kept unchanged; it is an accepted hit of the cluster-path and
+user-name checks of spec 05.
+
 ## `proc_PBL_height.R` (added 2026-10-16): ETC post-processing of `calc_PBL_height()` output
 
 Steps, in order: (1) PBLH < 0 → NA; (2) PBLH < 50 m → 50 m; (3) each NA → mean of all "day" values

@@ -28,6 +28,10 @@
 #'     (Kljun et al. 2015 App. B), N = sqrt(g gamma / T);
 #'   - `combine` [`"bg_only"` (default, Kljun et al. 2015 App. B) or `"max"`
 #'     (max of B5 and the diagnostic height)] PBLH in the convective window;
+#'   - `ustar_ws_max` [-] largest plausible u*/WS (default 0.5; `Inf`
+#'     disables the ratio test), [ustar_implausible()], spec 02 Amendment 12;
+#'   - `ws_min_ratio_test` [m s-1] ratio test only where WS >= this (default 1);
+#'   - `ustar_max` [m s-1] absolute u* cap (default 3; `Inf` disables);
 #'   - `label` [character] run label (default `"default"`).
 #' @return Named list of options.
 pblh_options <- function(...) {
@@ -43,6 +47,9 @@ pblh_options <- function(...) {
     n_sub = 30,
     n_neg_end = 2,
     combine = "bg_only",
+    ustar_ws_max = 0.5,
+    ws_min_ratio_test = 1,
+    ustar_max = 3,
     label = "default"
   )
   user <- list(...)
@@ -93,6 +100,12 @@ validate_pblh_options <- function(opts) {
   int_ge("max_gap_interp", 0)
   int_ge("n_sub", 1)
   int_ge("n_neg_end", 1)
+  for (k in c("ustar_ws_max", "ws_min_ratio_test", "ustar_max")) {
+    v <- opts[[k]]
+    if (!(is.numeric(v) && length(v) == 1 && !is.na(v) && v > 0)) {
+      cli::cli_abort("Option {.field {k}} must be a single positive number or {.code Inf}.")
+    }
+  }
   if (!(is.character(opts$label) && length(opts$label) == 1 && nzchar(opts$label))) {
     cli::cli_abort("Option {.field label} must be a non-empty string.")
   }
@@ -133,7 +146,8 @@ validate_pblh_options <- function(opts) {
 #'   `"B2"`, `"B3"`, `"B4"`, `"B5"`, `NA`), `h_diag_m` [m], `h_bg_m` [m, window only],
 #'   `day_id` [Date, local standard time], `is_day` [logical], `ustar` [m s-1],
 #'   `L` [m], `wtheta` [K m s-1], `T_K` [K], `p_Pa` [Pa], `H_source`,
-#'   `T_source`, `p_source`, `zm_m` [m], flags (logical): `flag_ustar_interp`,
+#'   `T_source`, `p_source`, `zm_m` [m], `WS` [m s-1], flags (logical):
+#'   `flag_ustar_implausible` (spec 02 Amendment 12), `flag_ustar_interp`,
 #'   `flag_L_interp`, `flag_H_interp`, `flag_H_qc_masked`, `flag_no_h0`,
 #'   `flag_bg_stopped_gap`, `flag_sign_inconsistent`, `flag_no_positive_h`,
 #'   `flag_polar_day`, `flag_below_zm` (`pblh_m < zm_m`), and `excl_flag`.
@@ -275,6 +289,7 @@ run_pblh_model <- function(data, site_meta, opts = pblh_options()) {
     day_id = day_id,
     is_day = f$is_day,
     ustar = f$ustar,
+    WS = f$WS,
     L = f$L,
     wtheta = f$wtheta,
     T_K = f$T_K,
@@ -283,6 +298,7 @@ run_pblh_model <- function(data, site_meta, opts = pblh_options()) {
     T_source = f$T_source,
     p_source = f$p_source,
     zm_m = zm,
+    flag_ustar_implausible = f$flag_ustar_implausible,
     flag_ustar_interp = f$flag_ustar_interp,
     flag_L_interp = f$flag_L_interp,
     flag_H_interp = f$flag_H_interp,

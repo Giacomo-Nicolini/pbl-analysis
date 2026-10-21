@@ -9,9 +9,11 @@ implausible USTAR). Agreed with G on 2026-10-21; implement as written.
 ### Why
 
 At BE-Bra, 179 PBLHmod half-hours exceed 5 km (70 exceed 10 km), across B1, B3 and B5. They come from implausible
-L2 `USTAR` (median 6.9 m s-1 on those rows, max 49 m s-1; 1,726 rows > 2 m s-1). These values are consistent with
-L2 `TAU` (u* from TAU ≈ 2.1 m s-1 on rows with USTAR > 2), so they are EddyPro outputs that passed QC, but they are
-physically implausible:
+L2 `USTAR` (median 6.9 m s-1 on those rows, max 49 m s-1; 1,726 rows > 2 m s-1). ~~These values are consistent with
+L2 `TAU` (u* from TAU ≈ 2.1 m s-1 on rows with USTAR > 2), so they are EddyPro outputs that passed QC~~
+*(Correction 2026-10-21: L2 `TAU` is missing on 99 % of the rows rejected by the filter, so USTAR cannot be checked
+against TAU there; the earlier statement rested on the 18 rows with USTAR > 2 m s-1 where TAU is available.)*
+They passed the L2 QC but they are physically implausible:
 - u*/WS: median 0.21, p90 0.30 over all rows; neutral log law at BE-Bra gives u*/U = k / ln((z − d)/z0) ≈ 0.14–0.19
   (z − d ≈ 24 m, z0 ≈ 1–3 m); the suspect rows have WS ≈ 4 m s-1 and u*/WS > 0.5;
 - σw/u* on rows with u* > 2 m s-1: 0.87, vs 1.21 overall (≈ 1.25 near neutral, e.g. Panofsky & Dutton 1984;

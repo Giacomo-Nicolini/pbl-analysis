@@ -1,5 +1,7 @@
 # Path profiles. Select with env var R_CONFIG_ACTIVE (default = local PC).
-# Usage in R: cfg <- config::get()
+# Usage in R: cfg <- get_cfg()  (R/utils_config.R)
+# Machine-specific paths (values "LOCAL" below) go in the untracked config.local.yml,
+# merged over this file by get_cfg(); template: config.local.yml.example.
 
 default:
   icos_l2_dir: "data/raw/icos_l2"          # contains XX-Yyy_output_L2I_2026/ folders
@@ -17,10 +19,10 @@ default:
   test_sites: ["BE-Bra"]
 
 cluster:
-  icos_l2_dir: "/bigdata/g.nicolini/ETC/L2_DATA_backup/L2I_2026"
-  era5_sl_dir: "/bigdata/c.trotta/era2oneflux_claude_zarr_giacomo/ERA5_surface_single_level/{site}"
-  era5_pl_dir: "/bigdata/c.trotta/era2oneflux_claude_zarr_giacomo/ERA5_pressure_levels/{site}"
-  era5_static_dir: "/bigdata/c.trotta/era2oneflux_claude_cds_giacomo_grib/out1/{var}"
+  icos_l2_dir: "LOCAL"
+  era5_sl_dir: "LOCAL"
+  era5_pl_dir: "LOCAL"
+  era5_static_dir: "LOCAL"   # one folder per variable: path ending in {var}
   target_areas_dir: "TODO"
   standard_dir: "TODO"
   derived_dir: "TODO"

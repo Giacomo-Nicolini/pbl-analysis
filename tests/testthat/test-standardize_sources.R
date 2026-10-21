@@ -26,6 +26,11 @@ test_that("standardize_pblhmod maps flags to qc (highest wins) and drops exclude
   expect_match(r$meta$processing_history, "options: unknown")
   r2 <- suppressMessages(standardize_pblhmod(out, "gamma0025", opts = pblh_options(gamma = 0.0025)))
   expect_match(r2$meta$processing_history, "gamma = 0.0025", fixed = TRUE)
+  # rejected u* alone (left NA, not interpolated) gives qc 1
+  out$flag_ustar_implausible <- c(TRUE, FALSE, FALSE, FALSE, FALSE, FALSE)
+  r3 <- suppressMessages(standardize_pblhmod(out, "default"))
+  expect_equal(r3$data$qc_flag, c(1L, 1L, 3L, 2L, 2L))
+  expect_match(r3$meta$qc_flag_meaning$`1`, "flag_ustar_implausible", fixed = TRUE)
 })
 
 test_that("standardize_pblhmod accepts the derived csv (character ISO times)", {

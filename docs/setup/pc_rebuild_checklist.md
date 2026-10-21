@@ -146,7 +146,9 @@ Rscript -e "renv::status()"                                 # expected: consiste
 ### B9. Cluster access
 - [ ] Reinstall WinSCP / MobaXterm / PuTTY as before; import sessions (`*.reg` double-click, or MobaXterm ini).
 - [ ] Copy `config\dot_ssh` back to `%USERPROFILE%\.ssh` if you used SSH keys.
-- [ ] Test: connect to the cluster and list `/bigdata/g.nicolini/ETC/L2_DATA_backup/L2I_2026/`.
+- [ ] Test: connect to the cluster and list the ICOS L2 folder (`icos_l2_dir` of the `cluster` section in
+      `config.local.yml`).
+- [ ] Restore `config.local.yml` (machine-specific paths, not in git; template `config.local.yml.example`).
 
 ### B10. Claude Desktop (Cowork)
 - [ ] Sign in with the same account. Choose the model in the model selector.

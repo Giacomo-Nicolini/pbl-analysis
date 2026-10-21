@@ -24,7 +24,7 @@ so code must be reproducible, documented and traceable to references.
 2. **Units everywhere.** Every function argument and returned column documents its unit in roxygen (`@param H Sensible heat flux [W m-2]`).
    Internally use SI: K for temperature, Pa for pressure, m, s. Convert at the reader boundary only.
 3. **References in code.** Every formula carries a comment with its source (author, year, equation number when known).
-4. **No hardcoded paths.** All paths come from `config.yml` via the `config` package (see Environment).
+4. **No hardcoded paths.** All paths come from `config.yml` (+ untracked `config.local.yml`) via `get_cfg()` (see Environment).
 5. `legacy/` is read-only reference. Never edit, source, or import from it in new code (except in the explicit legacy regression test).
 6. Never commit data, credentials or outputs (see `.gitignore`). Never print secrets.
 
@@ -33,7 +33,11 @@ so code must be reproducible, documented and traceable to references.
 - R 4.4.1, both locally (Windows) and on the cluster (Linux, SLURM). Packages managed by `renv`:
   after adding a dependency run `renv::snapshot()`. Do not call `install.packages()` or `library()` inside functions.
 - Paths: `config.yml` with profiles `default` (local PC) and `cluster`. Select with env var `R_CONFIG_ACTIVE=cluster`.
-  Access with `cfg <- config::get()`.
+  Access with `cfg <- get_cfg()` (`R/utils_config.R`).
+- **The repository is public: no absolute machine paths or user names in tracked files.** Machine-specific values
+  are `"LOCAL"` in `config.yml` and are set in the untracked `config.local.yml` (gitignored; template
+  `config.local.yml.example`), which `get_cfg()` merges over `config.yml` (its `default:` section, then the active
+  profile). `resolve_path()` aborts on `"LOCAL"` and `"TODO"`.
 - Development and testing happen locally on ONE site (BE-Bra); production loops over all ICOS stations on the cluster
   as a SLURM array job (one task per station). Code must run identically in both places.
 
@@ -54,17 +58,18 @@ so code must be reproducible, documented and traceable to references.
   - Hourly single levels, 2020-01-01 00:00 → 2026-10-07 23:00, one file per variable × cell (all years in one file):
     `XX-Yyy__reanalysis_era5_single_level__<var>__20200101T0000__20261007T2300__north_<n>__south_<s>__east_<e>__west_<w>.csv`
     with `<var>` = `boundary_layer_height`, `cloud_base_height`, `surface_sensible_heat_flux`.
-    Local: `data/raw/era5/XX-Yyy/`; cluster: `/bigdata/c.trotta/era2oneflux_claude_zarr_giacomo/ERA5_surface_single_level/XX-Yyy/`.
+    Local: `data/raw/era5/XX-Yyy/`; cluster path: set in `config.local.yml` (see `config.local.yml.example`).
   - Pressure levels, **6-hourly** (00/06/12/18 UTC), 2020-01-01 00:00 → 2026-10-07 18:00, 13 levels
     (50, 100, 150, 200, 250, 300, 400, 500, 600, 700, 850, 925, 1000 hPa), wide format, one column per level
     (`temperature_<p>hPa` [K], `geopotential_<p>hPa` [m2 s-2]):
     `XX-Yyy__reanalysis_era5_pressure_levels-pl__<temperature|geopotential>__20200101T0000__20261007T1800__north_..._west_<w>.csv`.
-    Local: `data/raw/era5_pressure_levels/XX-Yyy/`; cluster: `/bigdata/c.trotta/era2oneflux_claude_zarr_giacomo/ERA5_pressure_levels/XX-Yyy/`.
+    Local: `data/raw/era5_pressure_levels/XX-Yyy/`; cluster path: set in `config.local.yml` (see
+    `config.local.yml.example`).
   - Static fields, one row each (valid time 1979-01-20 12:00): `z` (surface geopotential [m2 s-2]; height = z / 9.80665),
     `lsm` (land–sea mask [0–1]), `sdor` (std of sub-grid orography [m]):
     `XX-Yyy__single-levels__<z|lsm|sdor>__197901201200__197901201200__north_<r>__south_+0__east_<c>__west_+0.csv`.
-    Local: `data/raw/era5_single_levels/` (all stations in one folder); cluster:
-    `/bigdata/c.trotta/era2oneflux_claude_cds_giacomo_grib/out1/<z|lsm|sdor>/`.
+    Local: `data/raw/era5_single_levels/` (all stations in one folder); cluster: one folder per variable
+    (`.../<z|lsm|sdor>/`), path set in `config.local.yml` (see `config.local.yml.example`).
   - **File format**: a `#`-commented metadata header (`# ==== METADATA ... ====` … `# ==== FINE METADATA (dati sotto) ====`),
     then a CSV with header. Time column: `time` (hourly and pressure-level files) or `valid_time_utc` (static files).
     Header keys used by readers: `point_id`, `variable`, `latitude_requested`, `longitude_requested` (tower),
