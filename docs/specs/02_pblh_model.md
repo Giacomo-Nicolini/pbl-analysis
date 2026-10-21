@@ -267,7 +267,8 @@ Added output columns: `WS` [m s-1], `flag_ustar_implausible`.
     `L_forcing = -u*^3 T / (k g wtheta0)` (`obukhov_length()`; Obukhov 1946; Stull 1988 Sect. 5.7 Eq. 5.7c, T in
     place of θv: moisture neglected). `l_consistency()` labels each row `L_check`: `"not_checked"` (L2 L, u*,
     wtheta0 or T missing, or wtheta0 ≤ `l_check_wtheta_min`: **only positive heat flux is checked; stable and
-    near-neutral rows keep L2 L**, spec 06 Amendment 1), `"sign"` (signs differ), `"magnitude"`
+    near-neutral rows keep L2 L**, spec 06 Amendment 1; **and, with `l_check_daytime_only = TRUE` (default),
+    only daytime rows** (`is_day`), spec 06 Amendment 2), `"sign"` (signs differ), `"magnitude"`
     (max(L/L_forcing, L_forcing/L) > `l_consistency_factor`), `"consistent"`. Options: `l_source`
     (`"L2_checked"` default: `"sign"`/`"magnitude"` rows get `L = L_forcing`, `flag_L_replaced`; `"L2"`: no
     replacement = spec 05; `"forcing"`: `L = L_forcing` wherever available, option D, sensitivity),
