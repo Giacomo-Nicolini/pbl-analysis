@@ -8,13 +8,13 @@ Status: agreed design, v0.1 (2026-10-08). Living document: update as decisions c
 2. How do PBLHmod and ERA5 BLH compare with measured PBLH, and with each other?
 3. In which conditions, and why, do the estimates disagree?
 4. What is the impact of PBLH errors on FFP (Kljun et al. 2015) footprint estimates, per half-hour and as climatologies?
-5. Practical outcome: a recommendation for ICOS/ETC on which PBLH source to use, and when.
+5. Practical outcome: a recommendation on which PBLH source to use, and when.
 
 ## Scope
 
 - Sites: ICOS ecosystem stations only, for now.
 - Language: R (a Python port is possible later; keep the logic language-agnostic and well documented).
-- Execution: developed locally (Windows, VS Code), run on the CMCC cluster.
+- Execution: developed locally (Windows, VS Code), run on the Unitus cluster.
 
 ## Phases
 
