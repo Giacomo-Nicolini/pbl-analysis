@@ -127,8 +127,10 @@ pair_table <- function(mod, ref, pair) {
 #' `rmse`, Pearson and Spearman correlation. In log space, only pairs with
 #' `mod > 0` and `ref > 0` (the others counted in `n_log_excluded`):
 #' `median_log_ratio = median(log(mod / ref))`, `mad_log_ratio` = median
-#' absolute deviation of `log(mod / ref)` from its median (unscaled, constant
-#' 1), `frac_within_factor2` = fraction with `|log(mod / ref)| <= log 2`.
+#' absolute deviation of `log(mod / ref)` from its median, scaled by 1.4826
+#' (consistent estimator of the standard deviation for normal data; Rousseeuw
+#' & Croux 1993; spec 04 amendment 8), `frac_within_factor2` = fraction with
+#' `|log(mod / ref)| <= log 2`.
 #' Errors in absolute and log-ratio form as in `docs/project_plan.md`
 #' (Evaluation).
 #'
@@ -157,7 +159,7 @@ pblh_metrics <- function(mod, ref) {
     n_log = nl,
     n_log_excluded = n - nl,
     median_log_ratio = if (nl > 0) stats::median(lr) else NA_real_,
-    mad_log_ratio = if (nl > 0) stats::mad(lr, constant = 1) else NA_real_,
+    mad_log_ratio = if (nl > 0) stats::mad(lr, constant = 1.4826) else NA_real_,
     frac_within_factor2 = if (nl > 0) mean(abs(lr) <= log(2)) else NA_real_
   )
 }

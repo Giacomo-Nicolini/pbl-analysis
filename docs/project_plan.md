@@ -171,9 +171,12 @@ The class is therefore not a stratum to compare against other classes; it tells 
     ≈ 125 W m-2), yet PBLHmod convective h is close to ERA5 (median log ratio −0.07). With γ = 0.01 K m-1 the larger
     H is offset by a γ about twice the ERA5 850–700 hPa θ gradient (monthly medians 0.0044–0.0051 K m-1). The
     850–700 hPa layer lies mostly above the BE-Bra PBL, so it is only context for γ (options 2–3).
-  - The `mad_log_ratio` metric is the unscaled median absolute deviation (constant 1); confirm, or switch to the
-    scaled form (1.4826, sd-consistent).
+  - ~~`mad_log_ratio`: unscaled or scaled MAD?~~ Resolved (2026-10-21): scaled MAD (× 1.4826, sd-consistent;
+    spec 04 amendment 8).
   - Pair 5 (PBLHmod vs operational PBLH) is compared on half-hours, not on ERA5 hours.
+  - PBLHmod values > 5 km at BE-Bra (179 half-hours, 70 > 10 km) come from implausible L2 USTAR (median 6.9 m/s,
+    max 49 m/s; 1,726 rows > 2 m/s), across B1/B3/B5. Decide on an input plausibility filter for the forcing (e.g.
+    u*/WS limit) — input QC, not output clipping. Report to ETC QC.
 - Source of zm, d, z0 and target area per site.
 - Measured PBLH datasets: to be collected; open data candidates: ACTRIS/Cloudnet, E-PROFILE, IGRA radiosondes.
 - ~~Literature: the current bib is footprint-focused. A PBL collection is needed.~~ Done (2026-10-15):

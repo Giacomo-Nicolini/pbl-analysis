@@ -63,9 +63,11 @@ test_that("pblh_metrics: hand-computed values", {
   expect_equal(m$r_pearson, stats::cor(mod[1:4], ref[1:4]))
   # ranks mod 1 2 3 4, ref 1 2 4 3 -> rho = 1 - 6 * 2 / (4 * 15) = 0.8
   expect_equal(m$r_spearman, 0.8)
-  # log ratios: log 2, 0, -log 2, log 2 -> median log(2) / 2; deviations log2/2 * (1, 1, 3, 1) -> mad log(2)/2
+  # log ratios: log 2, 0, -log 2, log 2 -> median log(2) / 2; deviations log2/2 * (1, 1, 3, 1)
+  # -> median absolute deviation log(2)/2, scaled: 1.4826 * 0.693147 / 2 = 0.51383
   expect_equal(m$median_log_ratio, log(2) / 2)
-  expect_equal(m$mad_log_ratio, log(2) / 2)
+  expect_equal(m$mad_log_ratio, 1.4826 * log(2) / 2)
+  expect_equal(round(m$mad_log_ratio, 5), 0.51383)
   expect_equal(m$frac_within_factor2, 1)
   expect_equal(m$n_log_excluded, 0L)
 })

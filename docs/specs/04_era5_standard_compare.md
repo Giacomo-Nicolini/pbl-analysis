@@ -201,7 +201,8 @@ Pure functions returning a standard table + meta list (writing is done by the sc
   half-hours **ending** at `t − 30 min` and `t` (used only for EC H vs ERA5 H).
 - `pblh_metrics(mod, ref)`: `n`, `bias = mean(mod − ref)`, `mae`, `rmse`, `r_pearson`, `r_spearman`, and in log
   space (only `mod > 0 & ref > 0`, number excluded reported): `median_log_ratio = median(log(mod/ref))`,
-  `mad_log_ratio`, `frac_within_factor2`. Errors in absolute and log-ratio form, as in the plan.
+  `mad_log_ratio` (scaled MAD, amendment 8), `frac_within_factor2`. Errors in absolute and log-ratio form, as in
+  the plan.
 - `pblh_metrics_by(df, mod, ref, by)`: metrics per stratum.
 - `diurnal_summary(df, value_cols, by = c("season", "hour_utc"))`: median, p25, p75, n.
 - Strata: all; PBLHmod regime at the hour (`stable`, `unstable_diag`, `convective`, `mixed`); season
@@ -334,3 +335,7 @@ PBLHmod bias by regime compared with `literature_review_pblh.md` section 2).
    1591.68 m (2,649, 2026), 682.86 m (426 flagged in 2026, 1 outside: 2022-03-30). The two rows at 2026-01-01
    00:00/00:30 local (2025-12-31 23:00/23:30 UTC) belong to 2026 in local time and are the start of the 2026 run's
    night fill, consistent with `docs/STATUS.md` (426 rows + one coincidence in 2022).
+8. **`mad_log_ratio` = scaled MAD** (agreed at review, 2026-10-21): median absolute deviation of `log(mod/ref)` from
+   its median × 1.4826 (`stats::mad()` default; consistent estimator of the standard deviation for normal data,
+   Rousseeuw & Croux 1993), so it is comparable with an sd of the log ratio. First implementation used the
+   unscaled form (constant 1).
