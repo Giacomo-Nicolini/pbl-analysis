@@ -174,9 +174,13 @@ The class is therefore not a stratum to compare against other classes; it tells 
   - ~~`mad_log_ratio`: unscaled or scaled MAD?~~ Resolved (2026-10-21): scaled MAD (× 1.4826, sd-consistent;
     spec 04 amendment 8).
   - Pair 5 (PBLHmod vs operational PBLH) is compared on half-hours, not on ERA5 hours.
-  - PBLHmod values > 5 km at BE-Bra (179 half-hours, 70 > 10 km) come from implausible L2 USTAR (median 6.9 m/s,
+  - ~~PBLHmod values > 5 km at BE-Bra (179 half-hours, 70 > 10 km) come from implausible L2 USTAR (median 6.9 m/s,
     max 49 m/s; 1,726 rows > 2 m/s), across B1/B3/B5. Decide on an input plausibility filter for the forcing (e.g.
-    u*/WS limit) — input QC, not output clipping. Report to ETC QC.
+    u*/WS limit) — input QC, not output clipping.~~ Resolved (spec 05, 2026-10-21; spec 02 amendment 12): u* is
+    rejected if u*/WS > 0.5 (WS ≥ 1 m s-1) or u* > 3 m s-1; u* and L set to NA, short gaps interpolated. BE-Bra:
+    2,149 of 100,186 u* values rejected (ratio 1,328, cap 46, both 775; 618 interpolated, 1,531 left NA);
+    PBLHmod > 5 km 179 → 11, > 10 km 70 → 0. Still to do: **report the implausible L2 USTAR to ETC QC** (on 99 % of
+    the rejected rows L2 `TAU` is missing, so USTAR cannot be cross-checked there).
 - Source of zm, d, z0 and target area per site.
 - Measured PBLH datasets: to be collected; open data candidates: ACTRIS/Cloudnet, E-PROFILE, IGRA radiosondes.
 - ~~Literature: the current bib is footprint-focused. A PBL collection is needed.~~ Done (2026-10-15):
