@@ -184,10 +184,16 @@ The class is therefore not a stratum to compare against other classes; it tells 
   - u* filter, low wind (spec 05, BE-Bra): 577 ratio rejections at WS 1–2 m s-1 in convective conditions. Kept as
     rejected: σw/u* 0.88 on those rows vs 1.21 on kept rows suggests an overestimated u*, not free convection.
     Revisit with measured PBLH.
-  - The 11 PBLHmod values > 5 km left after the u* filter: 10 come from B5 on 2021-08-18 and 2022-03-11, where L2 H
+  - ~~The 11 PBLHmod values > 5 km left after the u* filter: 10 come from B5 on 2021-08-18 and 2022-03-11, where L2 H
     is QC-rejected but MO_LENGTH (computed from H_UNCLEANED ≈ 0, |L| ≈ 3e6 m) is kept, while the forcing uses the
     gap-filled H_F_MDS. L2 L vs L from the forcing: median ratio 0.97, but 1,237 convective rows differ by more than
-    a factor 3. To be addressed in spec 06 (L computed from the forcing).
+    a factor 3. To be addressed in spec 06 (L computed from the forcing).~~ Resolved (spec 06, option C with
+    amendment 1, 2026-10-21): L2 L checked against the forcing L where the heat flux is positive; 26,652 rows checked,
+    2,476 replaced (sign 1,349, magnitude 1,127) on 956 days; values > 5 km 11 → 1; pair 1 RMSE 349 → 338 m.
+  - Remaining PBLHmod value > 5 km after spec 06 (BE-Bra): 2024-01-05 09:30, B1 stable, u* 2.67 m s-1 (u*/WS 0.43,
+    WS 6.2 m s-1), H missing so L not checked. Known limitation of the spec 05 u* filter (passes both tests).
+  - u* of 2–3 m s-1 passes the filter at BE-Bra but is suspect (V2 in spec 06 amendment 1: a cap of 2 m s-1 removes
+    all outliers): include in the report to ETC QC.
 - Source of zm, d, z0 and target area per site.
 - Measured PBLH datasets: to be collected; open data candidates: ACTRIS/Cloudnet, E-PROFILE, IGRA radiosondes.
 - ~~Literature: the current bib is footprint-focused. A PBL collection is needed.~~ Done (2026-10-15):
