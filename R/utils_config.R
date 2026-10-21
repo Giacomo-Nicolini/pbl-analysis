@@ -19,16 +19,19 @@ get_cfg <- function(profile = NULL) {
 
 #' Resolve a configured path
 #'
-#' Replaces the `{site}` placeholder with the station code, resolves relative
-#' paths against the project root (`here::here()`) and returns absolute paths
-#' unchanged.
+#' Replaces the placeholders `{site}` (station code) and `{var}` (variable name,
+#' e.g. ERA5 static fields on the cluster), resolves relative paths against the
+#' project root (`here::here()`) and returns absolute paths unchanged. Any
+#' `{...}` placeholder left after substitution aborts.
 #'
 #' @param path Path from `config.yml` [character, length 1].
 #' @param site Station code, e.g. `"BE-Bra"` [character]; required if `path`
 #'   contains `{site}`.
+#' @param var Variable name, e.g. `"z"` [character]; required if `path`
+#'   contains `{var}`, ignored otherwise.
 #' @param must_exist If `TRUE`, abort when the resolved path does not exist [logical].
 #' @return Absolute path [character, length 1].
-resolve_path <- function(path, site = NULL, must_exist = TRUE) {
+resolve_path <- function(path, site = NULL, var = NULL, must_exist = TRUE) {
   if (is.null(path) || length(path) != 1 || is.na(path) || !nzchar(path)) {
     cli::cli_abort("Configured path is missing or empty.")
   }
@@ -38,11 +41,11 @@ resolve_path <- function(path, site = NULL, must_exist = TRUE) {
       "i" = "Set it in {.file config.yml} for the active profile ({.envvar R_CONFIG_ACTIVE} = {.val {Sys.getenv('R_CONFIG_ACTIVE', 'default')}})."
     ))
   }
-  if (grepl("{site}", path, fixed = TRUE)) {
-    if (is.null(site) || is.na(site) || !nzchar(site)) {
-      cli::cli_abort("Path {.path {path}} contains {.code {{site}}} but no {.arg site} was given.")
-    }
-    path <- gsub("{site}", site, path, fixed = TRUE)
+  path <- substitute_placeholder(path, "site", site)
+  path <- substitute_placeholder(path, "var", var)
+  left <- regmatches(path, gregexpr("\\{[^{}]*\\}", path))[[1]]
+  if (length(left) > 0) {
+    cli::cli_abort("Path {.path {path}} has unresolved placeholder{?s} {.code {left}}.")
   }
   if (!is_absolute_path(path)) {
     path <- here::here(path)
@@ -51,6 +54,19 @@ resolve_path <- function(path, site = NULL, must_exist = TRUE) {
     cli::cli_abort("Path does not exist: {.path {path}}")
   }
   path
+}
+
+# Replace `{name}` in `path` by `value`; abort if the placeholder is present but
+# `value` is missing.
+substitute_placeholder <- function(path, name, value) {
+  ph <- paste0("{", name, "}")
+  if (!grepl(ph, path, fixed = TRUE)) {
+    return(path)
+  }
+  if (is.null(value) || length(value) != 1 || is.na(value) || !nzchar(value)) {
+    cli::cli_abort("Path {.path {path}} contains {.code {ph}} but no {.arg {name}} was given.")
+  }
+  gsub(ph, value, path, fixed = TRUE)
 }
 
 # TRUE for "/x", "~", "C:/x", "C:\x", "\\server\share".

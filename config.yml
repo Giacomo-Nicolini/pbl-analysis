@@ -3,7 +3,10 @@
 
 default:
   icos_l2_dir: "data/raw/icos_l2"          # contains XX-Yyy_output_L2I_2026/ folders
-  era5_dir: "data/raw/era5/{site}"         # {site} is replaced by the station code, e.g. BE-Bra
+  # ERA5 (C. Trotta, Oct 2026). {site} = station code, e.g. BE-Bra; {var} = static variable (z, lsm, sdor)
+  era5_sl_dir: "data/raw/era5/{site}"                  # hourly single levels
+  era5_pl_dir: "data/raw/era5_pressure_levels/{site}"  # 6-hourly pressure levels
+  era5_static_dir: "data/raw/era5_single_levels"       # static fields, all stations and variables in one folder
   target_areas_dir: "data/raw/target_areas"
   standard_dir: "data/standard"
   derived_dir: "data/derived"
@@ -15,7 +18,9 @@ default:
 
 cluster:
   icos_l2_dir: "/bigdata/g.nicolini/ETC/L2_DATA_backup/L2I_2026"
-  era5_dir: "/bigdata/c.trotta/era2oneflux/ERA5_whole_available_region_nc__getDataPixel__yearly/{site}/reanalysis-era5-single-levels__boundary_layer_height"
+  era5_sl_dir: "/bigdata/c.trotta/era2oneflux_claude_zarr_giacomo/ERA5_surface_single_level/{site}"
+  era5_pl_dir: "/bigdata/c.trotta/era2oneflux_claude_zarr_giacomo/ERA5_pressure_levels/{site}"
+  era5_static_dir: "/bigdata/c.trotta/era2oneflux_claude_cds_giacomo_grib/out1/{var}"
   target_areas_dir: "TODO"
   standard_dir: "TODO"
   derived_dir: "TODO"

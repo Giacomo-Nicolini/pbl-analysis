@@ -1,0 +1,32 @@
+# ==== METADATA RICHIESTA E ESTRAZIONE ====
+# script: extract_points.py
+# point_id: XX-Tst
+# method: eccodes_nearest
+# dataset: single-levels
+# variable: z
+# units: m**2 s**-2
+# latitude_requested: 50
+# longitude_requested: 10
+# longitude_conversion: not needed (synthetic fixture)
+# latitude_grid: 50.25
+# longitude_grid: 10.25
+# distance_km: 33.048
+# grid_lat_index: 39
+# grid_lon_index: 41
+# grid_resolution_deg: 0.25
+# grid_index_origin: north-west corner of the grid, 0-based
+# grid_scanning: i: west->east, j: north->south
+# pixel_offset_north: 1
+# pixel_offset_south: 1
+# pixel_offset_east: 1
+# pixel_offset_west: 1
+# pixel_rows_from_center: +1 (+ = north, - = south)
+# pixel_cols_from_center: +1 (+ = east, - = west)
+# n_rows: 1
+# first_time: 1979-01-20 12:00:00
+# last_time: 1979-01-20 12:00:00
+# levels: n/a
+# level_dim: surface
+# ==== FINE METADATA (dati sotto) ====
+valid_time_utc,z
+1979-01-20 12:00,1127.76475

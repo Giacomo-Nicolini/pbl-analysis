@@ -12,6 +12,9 @@ output/
 .Renviron
 .cdsapirc
 
+# --- Local working notes (not shared) ---
+docs/local/
+
 # --- R / RStudio ---
 .Rhistory
 .Rproj.user/

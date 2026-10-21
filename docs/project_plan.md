@@ -8,13 +8,13 @@ Status: agreed design, v0.1 (2026-10-08). Living document: update as decisions c
 2. How do PBLHmod and ERA5 BLH compare with measured PBLH, and with each other?
 3. In which conditions, and why, do the estimates disagree?
 4. What is the impact of PBLH errors on FFP (Kljun et al. 2015) footprint estimates, per half-hour and as climatologies?
-5. Practical outcome: a recommendation for ICOS/ETC on which PBLH source to use, and when.
+5. Practical outcome: a recommendation on which PBLH source to use, and when.
 
 ## Scope
 
 - Sites: ICOS ecosystem stations only, for now.
 - Language: R (a Python port is possible later; keep the logic language-agnostic and well documented).
-- Execution: developed locally (Windows, VS Code), run on the CMCC cluster.
+- Execution: developed locally (Windows, VS Code), run on the Unitus cluster.
 
 ## Phases
 
@@ -164,6 +164,19 @@ The class is therefore not a stratum to compare against other classes; it tells 
 - ~~ERA5 extraction details (nearest cell? downscaling? QC?), and availability of neighbouring cells.~~ Resolved
   (2026-10-15): nearest 0.25° grid point, no downscaling, 3×3 neighbours delivered (BE-Bra: cell centre 6.5 km from
   the tower). SE-Myc corrected coordinates confirmed (2026-10-16).
+- Spec 04, first PBLHmod vs ERA5 comparison (BE-Bra, 2026-10-17), points to discuss:
+  - Operational fill detection uses a per-calendar-year rule (spec 04 amendment 7); to be checked at other sites,
+    where processing runs may not align with calendar years.
+  - EC H (PBLHmod forcing) exceeds ERA5 H at midday in MAM/JJA by ≈ 90–100 W m-2 (mean diurnal peak ≈ 215 vs
+    ≈ 125 W m-2), yet PBLHmod convective h is close to ERA5 (median log ratio −0.07). With γ = 0.01 K m-1 the larger
+    H is offset by a γ about twice the ERA5 850–700 hPa θ gradient (monthly medians 0.0044–0.0051 K m-1). The
+    850–700 hPa layer lies mostly above the BE-Bra PBL, so it is only context for γ (options 2–3).
+  - ~~`mad_log_ratio`: unscaled or scaled MAD?~~ Resolved (2026-10-21): scaled MAD (× 1.4826, sd-consistent;
+    spec 04 amendment 8).
+  - Pair 5 (PBLHmod vs operational PBLH) is compared on half-hours, not on ERA5 hours.
+  - PBLHmod values > 5 km at BE-Bra (179 half-hours, 70 > 10 km) come from implausible L2 USTAR (median 6.9 m/s,
+    max 49 m/s; 1,726 rows > 2 m/s), across B1/B3/B5. Decide on an input plausibility filter for the forcing (e.g.
+    u*/WS limit) — input QC, not output clipping. Report to ETC QC.
 - Source of zm, d, z0 and target area per site.
 - Measured PBLH datasets: to be collected; open data candidates: ACTRIS/Cloudnet, E-PROFILE, IGRA radiosondes.
 - ~~Literature: the current bib is footprint-focused. A PBL collection is needed.~~ Done (2026-10-15):

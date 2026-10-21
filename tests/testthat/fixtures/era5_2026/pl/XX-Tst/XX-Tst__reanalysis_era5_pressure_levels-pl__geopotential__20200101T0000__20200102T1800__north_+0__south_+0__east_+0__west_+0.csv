@@ -1,0 +1,36 @@
+# ==== METADATA RICHIESTA E DOWNLOAD ====
+# script: era5_download_arco.py
+# point_id: XX-Tst
+# method: arco
+# dataset: reanalysis_era5_pressure_levels-pl
+# variable: geopotential
+# latitude_requested: 50
+# longitude_requested: 10
+# longitude_conversion: non necessaria (synthetic fixture)
+# latitude_grid: 50
+# longitude_grid: 10
+# grid_lat_index: 160
+# grid_lon_index: 760
+# grid_resolution_deg: 0.25
+# pixel_offset_north: 0
+# pixel_offset_south: 0
+# pixel_offset_east: 0
+# pixel_offset_west: 0
+# start_date_requested: 2020-01-01
+# end_date_requested: 2020-01-02
+# download_utc: 2026-10-14T09:00:00+00:00
+# n_rows: 8
+# first_time: 2020-01-01 00:00:00
+# last_time: 2020-01-02 18:00:00
+# levels: 700,850,1000
+# level_dim: pressureLevel
+# ==== FINE METADATA (dati sotto) ====
+time,geopotential_700hPa,geopotential_850hPa,geopotential_1000hPa
+2020-01-01 00:00:00,29419.95,14709.975,980.665
+2020-01-01 06:00:00,29419.95,14709.975,980.665
+2020-01-01 12:00:00,29419.95,14709.975,980.665
+2020-01-01 18:00:00,29419.95,14709.975,980.665
+2020-01-02 00:00:00,29419.95,14709.975,980.665
+2020-01-02 06:00:00,29419.95,14709.975,980.665
+2020-01-02 12:00:00,29419.95,14709.975,980.665
+2020-01-02 18:00:00,29419.95,14709.975,980.665

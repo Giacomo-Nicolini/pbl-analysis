@@ -201,7 +201,8 @@ Pure functions returning a standard table + meta list (writing is done by the sc
   half-hours **ending** at `t − 30 min` and `t` (used only for EC H vs ERA5 H).
 - `pblh_metrics(mod, ref)`: `n`, `bias = mean(mod − ref)`, `mae`, `rmse`, `r_pearson`, `r_spearman`, and in log
   space (only `mod > 0 & ref > 0`, number excluded reported): `median_log_ratio = median(log(mod/ref))`,
-  `mad_log_ratio`, `frac_within_factor2`. Errors in absolute and log-ratio form, as in the plan.
+  `mad_log_ratio` (scaled MAD, amendment 8), `frac_within_factor2`. Errors in absolute and log-ratio form, as in
+  the plan.
 - `pblh_metrics_by(df, mod, ref, by)`: metrics per stratum.
 - `diurnal_summary(df, value_cols, by = c("season", "hour_utc"))`: median, p25, p75, n.
 - Strata: all; PBLHmod regime at the hour (`stable`, `unstable_diag`, `convective`, `mixed`); season
@@ -303,3 +304,38 @@ headers in the real format. Use the real naming conventions for each family (dir
 As in `CLAUDE.md`, plus: the ERA5 cell metadata for BE-Bra; matched hours per pair; pair-1 metrics by regime and
 season; the fill values detected; the monthly γ_850–700 range; anything physically odd (e.g. sign of the ERA5 vs
 PBLHmod bias by regime compared with `literature_review_pblh.md` section 2).
+
+## Amendments (2026-10-17, agreed before implementation)
+
+1. **`scripts/01_check_inputs.R`.** Minimal update to the new reader: ERA5 BLH of the tower cell via
+   `read_era5_single_level(..., cells = "center")` (the old `find_era5_files()` / `read_era5_blh()` are removed).
+2. **Hourly regime and `qc_flag` with one missing half-hour.** With `require_both = TRUE` the hour is `NA`;
+   otherwise the regime (and `qc_flag`) of the valid half-hour is used. `"mixed"` only when both are valid and differ.
+3. **ERA5 `qc_flag`** = `NA` (no QC applied); stated in the sidecar `qc_flag_meaning`.
+4. **`metadata_completeness`** excludes the automatic fields `created_utc` and `code_version` from numerator and
+   denominator: fraction of the 12 remaining optional fields not `unknown` (documented in
+   `docs/specs/standard_format.md`). (Corrected count: section 4 lists 14 optional fields, 12 without the two
+   automatic ones.)
+5. **Sidecar provenance.** ERA5: `licence` = "Licence to use Copernicus Products"; `citation` = Hersbach et al. 2020
+   (doi:10.1002/qj.3803) + dataset DOIs 10.24381/cds.adbb2d47 (single levels) and 10.24381/cds.bd0915c6 (pressure
+   levels); `processing_history` = extraction details from the file header (ARCO zarr, `era5_download_arco.py`,
+   nearest 0.25° grid point, 3×3 cells); other fields not given stay `unknown`. `icos_oper`: `licence` = "CC BY 4.0"
+   (ICOS data licence).
+6. **CSV reading.** ERA5 files are read with `readr::read_csv(skip = n_header_lines)` (not `data.table`, which is not
+   in renv). The only new packages for this spec are `ggplot2` and `yaml`.
+7. **Fill-value detection per calendar year** (agreed 2026-10-17 after the first BE-Bra check). Replaces the rule in
+   section 5: a value (rounded to 0.01 m, other than 50) is a fill value if it occurs in ≥ 50 rows in total **and**
+   in ≥ 0.5 % of the non-missing rows of at least one calendar year (local standard time, from `TIMESTAMP_START`).
+   `qc_flag = 2` only for rows with that value in the years where it meets the 0.5 % criterion; rows with the same
+   value in other years keep `qc_flag = 0` and are counted. The report lists, per fill value: total rows, the
+   qualifying years with their share, and rows outside those years.
+   *Reason:* the whole-record 0.5 % rule missed the 2026-run night fill (682.86 m, 427 rows = 0.42 % of the
+   non-missing rows) because the run is short.
+   *BE-Bra result:* all four values found: 1654.58 m (15,649 rows, 2020–2025), 843.07 m (2,739, 2020–2025),
+   1591.68 m (2,649, 2026), 682.86 m (426 flagged in 2026, 1 outside: 2022-03-30). The two rows at 2026-01-01
+   00:00/00:30 local (2025-12-31 23:00/23:30 UTC) belong to 2026 in local time and are the start of the 2026 run's
+   night fill, consistent with `docs/STATUS.md` (426 rows + one coincidence in 2022).
+8. **`mad_log_ratio` = scaled MAD** (agreed at review, 2026-10-21): median absolute deviation of `log(mod/ref)` from
+   its median × 1.4826 (`stats::mad()` default; consistent estimator of the standard deviation for normal data,
+   Rousseeuw & Croux 1993), so it is comparable with an sd of the log ratio. First implementation used the
+   unscaled form (constant 1).
