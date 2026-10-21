@@ -244,3 +244,17 @@ looked physically odd.
     - Script cases: `default` (bg_only, auto, gamma 0.01), `gamma0025`, `max_B2` (previous behaviour), `max_auto`.
 
 Added output columns: `flag_polar_day`, `flag_no_positive_h`.
+
+12. **u* plausibility filter in the forcing** (spec 05, agreed with G 2026-10-21; input QC, not output clipping).
+    At BE-Bra, 179 half-hours with PBLHmod > 5 km (70 > 10 km) came from implausible L2 `USTAR` (median 6.9 m s-1 on
+    those rows, max 49 m s-1). New step in `prepare_pblh_forcing()`, before the short-gap interpolation
+    (`ustar_implausible()`): u* is implausible if `ustar / WS > ustar_ws_max` where `WS >= ws_min_ratio_test`
+    (FLUXES `WS`, same sonic), or if `ustar > ustar_max`. On those rows `ustar` and `L` are set to `NA`
+    (`flag_ustar_implausible = TRUE`); the short-gap interpolation then runs as usual (filled rows keep both flags);
+    `H` and the other inputs are untouched. New options (defaults): `ustar_ws_max = 0.5` [-], `ws_min_ratio_test =
+    1` m s-1, `ustar_max = 3` m s-1 (`Inf` disables a test). Reasoning: neutral log law u*/U = k / ln((z − d)/z0)
+    ≈ 0.14–0.19 at BE-Bra; σw/u* = 0.87 on rows with u* > 2 m s-1 vs ≈ 1.25 near neutral (Panofsky & Dutton 1984;
+    Kaimal & Finnigan 1994). **The defaults change PBLHmod results**; case `nofilter` (`ustar_ws_max = Inf,
+    ustar_max = Inf`) reproduces the previous default exactly.
+
+Added output columns: `WS` [m s-1], `flag_ustar_implausible`.

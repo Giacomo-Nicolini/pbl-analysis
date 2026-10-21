@@ -35,13 +35,44 @@ interp_short_gaps <- function(x, max_gap, block = rep(FALSE, length(x))) {
   list(x = x, filled = filled)
 }
 
+#' Implausible friction velocity (input QC)
+#'
+#' Two tests (spec 05; spec 02 Amendment 12), applied to the measured u*
+#' before any gap filling:
+#' 1. ratio test: `ustar / ws > opts$ustar_ws_max` where `ws >=
+#'    opts$ws_min_ratio_test` (not applied where `ws` is missing or low, where
+#'    the ratio is unstable). Over a rough surface in neutral conditions the log
+#'    law gives u*/U = k / ln((z - d) / z0), about 0.14-0.19 at a forest site
+#'    such as BE-Bra (z - d ~ 24 m, z0 ~ 1-3 m); instability raises the ratio,
+#'    but values above ~0.5 are not physical for a tower sonic (surface-layer
+#'    similarity, e.g. Panofsky & Dutton 1984; Kaimal & Finnigan 1994);
+#' 2. absolute cap: `ustar > opts$ustar_max` (u* of a few m s-1 over land
+#'    requires storm-force winds).
+#' Implausible u* also invalidates L (L = -u*^3 T_v / (k g w'theta_v')).
+#'
+#' @param ustar Friction velocity [m s-1].
+#' @param ws Wind speed of the same sonic (FLUXES `WS`) [m s-1].
+#' @param opts Output of [pblh_options()] (`ustar_ws_max` [-],
+#'   `ws_min_ratio_test` [m s-1], `ustar_max` [m s-1]; `Inf` disables a test).
+#' @return List of two logical vectors: `ratio` (rejected by the ratio test),
+#'   `cap` (rejected by the cap); a row is implausible if either is `TRUE`.
+ustar_implausible <- function(ustar, ws, opts = pblh_options()) {
+  ok <- !is.na(ustar)
+  ratio <- ok & !is.na(ws) & ws >= opts$ws_min_ratio_test & ustar / ws > opts$ustar_ws_max
+  cap <- ok & ustar > opts$ustar_max
+  list(ratio = ratio, cap = cap)
+}
+
 #' Prepare the PBLH model forcing
 #'
 #' Selects and combines the forcing variables (with fallbacks), derives air
 #' density, kinematic heat flux and Coriolis parameter, sets excluded rows to
 #' `NA` and fills short gaps by linear interpolation (L via 1/L).
 #'
-#' Rules (spec 02 section 3, Amendments 3-4):
+#' Rules (spec 02 section 3, Amendments 3-4, 12):
+#' - `ustar` and `L` are set to `NA` where u* is implausible
+#'   ([ustar_implausible()], FLUXES `WS`; `flag_ustar_implausible`), before
+#'   the short-gap interpolation below; `H` and the other inputs are untouched.
 #' - `H` by `opts$h_source`. `"H_F_MDS"`: `fn_H_F_MDS`, set to `NA` where
 #'   `fn_H_F_MDS_QC > opts$h_qc_max` (`flag_H_qc_masked`); where `fn_H_F_MDS` is
 #'   missing in the file, FLUXES `H` if `opts$h_fallback`. QC-masked rows stay `NA`.
@@ -62,6 +93,7 @@ interp_short_gaps <- function(x, max_gap, block = rep(FALSE, length(x))) {
 #'   `T_source`; `p_Pa` air pressure [Pa]; `p_source`; `rho` dry-air density
 #'   [kg m-3]; `wtheta` kinematic heat flux [K m s-1]; `f_cor` Coriolis
 #'   parameter [s-1, signed]; `is_day` [logical]; `excl_flag` [logical];
+#'   `WS` wind speed (FLUXES) [m s-1]; `flag_ustar_implausible`,
 #'   `flag_ustar_interp`, `flag_L_interp`, `flag_H_interp`, `flag_H_qc_masked`
 #'   [logical].
 prepare_pblh_forcing <- function(data, site_meta, opts = pblh_options()) {
@@ -138,6 +170,14 @@ prepare_pblh_forcing <- function(data, site_meta, opts = pblh_options()) {
   H_source[excl] <- NA
   T_source[excl] <- NA
   p_source[excl] <- NA
+  ws <- col_or_na(data, "WS")
+  ws[excl] <- NA
+
+  # --- u* plausibility (input QC, not output clipping; spec 02 Amendment 12) ---
+  rej <- ustar_implausible(ustar, ws, opts)
+  bad_u <- rej$ratio | rej$cap
+  ustar[bad_u] <- NA
+  L[bad_u] <- NA # L ~ u*^3: unusable when u* is
 
   # --- short gaps (never across excluded rows) ---
   mg <- opts$max_gap_interp
@@ -165,6 +205,7 @@ prepare_pblh_forcing <- function(data, site_meta, opts = pblh_options()) {
     timestamp_start_utc = data$timestamp_start_utc,
     timestamp_end_utc = data$timestamp_end_utc,
     ustar = iu$x,
+    WS = ws,
     L = L,
     H = H,
     H_source = H_source,
@@ -177,6 +218,7 @@ prepare_pblh_forcing <- function(data, site_meta, opts = pblh_options()) {
     f_cor = f_cor,
     is_day = is_day(data$timestamp_start_utc, data$timestamp_end_utc, site_meta$lat, site_meta$lon),
     excl_flag = excl,
+    flag_ustar_implausible = bad_u,
     flag_ustar_interp = iu$filled,
     flag_L_interp = fill_l,
     flag_H_interp = ih$filled,

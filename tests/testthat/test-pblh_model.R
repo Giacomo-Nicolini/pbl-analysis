@@ -236,3 +236,24 @@ test_that("non-regular input aborts", {
   d <- make_diurnal(1)[-5, ]
   expect_error(run(d), "30-min grid")
 })
+
+test_that("u* filter: Inf/Inf leaves the forcing raw; rejected rows change only through u* and L", {
+  d <- make_diurnal(3)
+  d$WS <- 3
+  bad <- c(30, 31, 80) # midday and night rows with implausible u*
+  d$USTAR[bad] <- 2.5  # u*/WS = 0.83
+  off <- run_pblh_model(d, site, pblh_options(ustar_ws_max = Inf, ustar_max = Inf))
+  expect_equal(off$ustar, d$USTAR)
+  expect_false(any(off$flag_ustar_implausible))
+  # without the WS column only the cap applies (2.5 < 3): identical to the disabled filter
+  same <- run_pblh_model(dplyr::select(d, -WS), site)
+  expect_identical(same$pblh_m, off$pblh_m)
+
+  on <- run_pblh_model(d, site)
+  expect_equal(which(on$flag_ustar_implausible), bad)
+  expect_equal(on$ustar[80], 0.3) # single row, interpolated
+  expect_equal(on$WS, rep(3, nrow(d)))
+  expect_true(all(c("WS", "flag_ustar_implausible") %in% names(on)))
+  unaffected <- setdiff(seq_len(nrow(d)), c(bad, 29:33, 79:81))
+  expect_equal(on$pblh_m[unaffected][1:20], off$pblh_m[unaffected][1:20])
+})

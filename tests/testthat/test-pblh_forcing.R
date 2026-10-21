@@ -97,3 +97,47 @@ test_that("pblh_options validates", {
   expect_equal(pblh_options()$gamma, 0.01)
   expect_equal(pblh_options(gamma = c(0.01, 0.02))$gamma, c(0.01, 0.02))
 })
+
+test_that("u* ratio test and cap: hand cases", {
+  o <- pblh_options()
+  # u* 2.5 / WS 4 = 0.625 > 0.5 -> rejected; 0.8 / 4 = 0.2 -> kept; 0.8 / 0.5 = 1.6 but WS < 1 -> kept;
+  # WS NA -> only the cap (u* 2.5 < 3: kept); 3.5 with WS 20 (ratio 0.175) -> rejected by the cap
+  r <- ustar_implausible(c(2.5, 0.8, 0.8, 2.5, 3.5, NA), c(4, 4, 0.5, NA, 20, 4), o)
+  expect_equal(r$ratio, c(TRUE, FALSE, FALSE, FALSE, FALSE, FALSE))
+  expect_equal(r$cap, c(FALSE, FALSE, FALSE, FALSE, TRUE, FALSE))
+  # WS exactly at the threshold is tested; ratio exactly 0.5 is kept (strict >)
+  r2 <- ustar_implausible(c(0.6, 0.5), c(1, 1), o)
+  expect_equal(r2$ratio, c(TRUE, FALSE))
+  none <- ustar_implausible(c(2.5, 49), c(4, 4), pblh_options(ustar_ws_max = Inf, ustar_max = Inf))
+  expect_false(any(none$ratio | none$cap))
+})
+
+test_that("rejected u*: u* and L set to NA, H untouched, flags; short gaps interpolated, long runs NA", {
+  d <- make_icos_like(10, USTAR = c(0.3, 2.5, 0.5, 0.3, 4, 4, 4, 0.3, 0.3, 0.3),
+                      WS = c(3, 4, 4, 3, 20, 20, 20, 3, 3, 3),
+                      MO_LENGTH = c(-100, -50, -80, -100, -60, -60, -60, -100, -100, -100),
+                      fn_H_F_MDS = 1:10 * 10)
+  f <- prepare_pblh_forcing(d, site, pblh_options(max_gap_interp = 0))
+  expect_equal(f$flag_ustar_implausible, c(FALSE, TRUE, FALSE, FALSE, TRUE, TRUE, TRUE, FALSE, FALSE, FALSE))
+  expect_equal(f$ustar, c(0.3, NA, 0.5, 0.3, NA, NA, NA, 0.3, 0.3, 0.3))
+  expect_true(all(is.na(f$L[c(2, 5:7)])))
+  expect_equal(f$H, 1:10 * 10)
+  expect_equal(f$WS, c(3, 4, 4, 3, 20, 20, 20, 3, 3, 3))
+
+  f2 <- prepare_pblh_forcing(d, site, pblh_options(max_gap_interp = 2))
+  # row 2: single rejected row, interpolated (0.3 -> 0.5), keeps both flags; L via 1/L
+  expect_equal(f2$ustar[2], 0.4)
+  expect_true(f2$flag_ustar_implausible[2] && f2$flag_ustar_interp[2] && f2$flag_L_interp[2])
+  expect_equal(f2$L[2], 1 / mean(c(1 / -100, 1 / -80)))
+  # rows 5-7: run of 3 > max_gap_interp, stay NA
+  expect_true(all(is.na(f2$ustar[5:7])) && all(is.na(f2$L[5:7])))
+  expect_false(any(f2$flag_ustar_interp[5:7]))
+})
+
+test_that("u* filter options are validated", {
+  expect_error(pblh_options(ustar_ws_max = 0), "ustar_ws_max")
+  expect_error(pblh_options(ustar_max = -1), "ustar_max")
+  expect_error(pblh_options(ws_min_ratio_test = NA_real_), "ws_min_ratio_test")
+  expect_error(pblh_options(ustar_ws_max = c(0.4, 0.5)), "ustar_ws_max")
+  expect_no_error(pblh_options(ustar_ws_max = Inf, ustar_max = Inf))
+})
