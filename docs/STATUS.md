@@ -18,13 +18,13 @@ Last update: 2026-10-21. Read this first in a new session, then `docs/project_pl
 |---|---|---|---|
 | 01 | Site metadata, time-varying heights, exclusions, ICOS L2 readers, unit checks | 0 | merged (`main`) |
 | 02 | PBLHmod v2 | 1 | merged (`main`, 58d45ad) |
-| 04 | ERA5 readers (3×3 cells, pressure levels, static), standard PBLH format, first PBLHmod vs ERA5 comparison at BE-Bra (amendments 1–7) | 0, 2, 3 (first step) | implemented on branch `spec-04-era5-compare`, under review |
+| 04 | ERA5 readers (3×3 cells, pressure levels, static), standard PBLH format, first PBLHmod vs ERA5 comparison at BE-Bra (amendments 1–8) | 0, 2, 3 (first step) | merged (`main`, aba3394) |
 | 03 | Legacy regression: reproduce operational PBLH from L2, port legacy code, attribute differences to PBLHmod v2 | 1 | drafted, not started |
 
 Phases (see `project_plan.md`): 0 done; 1 model done, legacy regression pending (spec 03); 2 standard format and
 three sources done (spec 04), measured PBLH pending; 3 started at BE-Bra only; 4–6 not started.
 
-- Tests: 593 passing (spec 04 branch). Environment: R 4.4.1 + renv (Posit Package Manager), same as the cluster.
+- Tests: 594 passing (`main`, after spec 04). Environment: R 4.4.1 + renv (Posit Package Manager), same as the cluster.
 - PBLHmod defaults: `stable_method = "nieuwstadt"` (B1), `neutral_method = "auto"` (B2 if 10 < N/|f| < 70, else
   B3), `combine = "bg_only"`, `gamma = 0.01` K/m, `h_source = "H_F_MDS"` with `h_qc_max = 1`, raw output (no
   smoothing, clipping or filling). Forcing T and p from measured meteo (FLUXNET `TA_F`/`PA_F` 2020–2025, METEO
@@ -38,7 +38,8 @@ three sources done (spec 04), measured PBLH pending; 3 started at BE-Bra only; 4
 
 ## Next steps
 
-1. Review and merge spec 04 (`spec-04-era5-compare`).
+1. ~~Review and merge spec 04 (`spec-04-era5-compare`).~~ Done (2026-10-21, `mad_log_ratio` switched to the scaled
+   MAD at review, amendment 8).
 2. Spec 03 — `docs/specs/03_legacy_regression.md`, branch `spec-03-legacy-regression`. Inputs of the ETC call
    confirmed by G (2026-10-17); only published L2 files are used: AT, AP, rho, cp (EddyPro ambient values, not in
    L2) are rebuilt from L2 with the EddyPro formulas; MOL gap-filled by LOCF before the call.
