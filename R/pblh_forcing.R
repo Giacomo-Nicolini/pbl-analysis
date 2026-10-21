@@ -63,16 +63,66 @@ ustar_implausible <- function(ustar, ws, opts = pblh_options()) {
   list(ratio = ratio, cap = cap)
 }
 
+#' Obukhov length from the forcing
+#'
+#' `L = - ustar^3 T / (k g wtheta)` (Obukhov 1946; Stull 1988, Sect. 5.7,
+#' Eq. 5.7c, with the air temperature in place of the virtual potential
+#' temperature and the kinematic heat flux in place of the buoyancy flux: the
+#' moisture contribution is neglected).
+#'
+#' @param ustar Friction velocity [m s-1].
+#' @param wtheta Kinematic heat flux [K m s-1].
+#' @param T_K Air temperature [K].
+#' @param const Constants from [pblh_constants()] (`k`, `g`).
+#' @return Obukhov length [m]; `NA` where not finite (e.g. `wtheta = 0`).
+obukhov_length <- function(ustar, wtheta, T_K, const = pblh_constants()) {
+  L <- -ustar^3 * T_K / (const$k * const$g * wtheta)
+  L[!is.finite(L)] <- NA_real_
+  L
+}
+
+#' Consistency of L2 Obukhov length with the forcing
+#'
+#' Spec 06 (spec 02 Amendment 13). A row is checked if `L`, `L_forcing` and
+#' `wtheta0` are available and `|wtheta0| > opts$l_check_wtheta_min` (near
+#' neutral, |L| is large and ill-determined in both estimates). A checked row
+#' is inconsistent if the signs differ (`"sign"`) or, with the same sign,
+#' `max(L / L_forcing, L_forcing / L) > opts$l_consistency_factor`
+#' (`"magnitude"`).
+#'
+#' @param L L2 Obukhov length [m].
+#' @param L_forcing Obukhov length from the forcing ([obukhov_length()]) [m].
+#' @param wtheta0 Kinematic heat flux of the same row [K m s-1].
+#' @param opts Output of [pblh_options()] (`l_consistency_factor` [-],
+#'   `l_check_wtheta_min` [K m s-1]).
+#' @return Character: `"not_checked"`, `"consistent"`, `"sign"`, `"magnitude"`.
+l_consistency <- function(L, L_forcing, wtheta0, opts = pblh_options()) {
+  checked <- !is.na(L) & !is.na(L_forcing) & !is.na(wtheta0) & abs(wtheta0) > opts$l_check_wtheta_min
+  sign_bad <- checked & sign(L) != sign(L_forcing)
+  ratio <- pmax(L / L_forcing, L_forcing / L)
+  mag_bad <- checked & !sign_bad & ratio > opts$l_consistency_factor
+  ifelse(!checked, "not_checked", ifelse(sign_bad, "sign", ifelse(mag_bad, "magnitude", "consistent")))
+}
+
 #' Prepare the PBLH model forcing
 #'
 #' Selects and combines the forcing variables (with fallbacks), derives air
 #' density, kinematic heat flux and Coriolis parameter, sets excluded rows to
 #' `NA` and fills short gaps by linear interpolation (L via 1/L).
 #'
-#' Rules (spec 02 section 3, Amendments 3-4, 12):
+#' Rules (spec 02 section 3, Amendments 3-4, 12, 13). Order: excluded rows ->
+#' u* filter -> L consistency check -> short-gap interpolation -> `rho`,
+#' `wtheta`.
 #' - `ustar` and `L` are set to `NA` where u* is implausible
 #'   ([ustar_implausible()], FLUXES `WS`; `flag_ustar_implausible`), before
 #'   the short-gap interpolation below; `H` and the other inputs are untouched.
+#' - L consistency (Amendment 13): on the not-yet-interpolated values,
+#'   `wtheta0 = H / (rho0 cp)`, `rho0 = p_Pa / (r_d T_K)`, `L_forcing` from
+#'   [obukhov_length()], `L_check` from [l_consistency()] (computed for every
+#'   `opts$l_source`). `"L2_checked"`: rows with `L_check` `"sign"` or
+#'   `"magnitude"` get `L = L_forcing` (`flag_L_replaced`); `"L2"`: L2 L as is;
+#'   `"forcing"`: `L = L_forcing` wherever available. Missing L2 L is never
+#'   filled from the forcing (only by the short-gap interpolation).
 #' - `H` by `opts$h_source`. `"H_F_MDS"`: `fn_H_F_MDS`, set to `NA` where
 #'   `fn_H_F_MDS_QC > opts$h_qc_max` (`flag_H_qc_masked`); where `fn_H_F_MDS` is
 #'   missing in the file, FLUXES `H` if `opts$h_fallback`. QC-masked rows stay `NA`.
@@ -93,9 +143,12 @@ ustar_implausible <- function(ustar, ws, opts = pblh_options()) {
 #'   `T_source`; `p_Pa` air pressure [Pa]; `p_source`; `rho` dry-air density
 #'   [kg m-3]; `wtheta` kinematic heat flux [K m s-1]; `f_cor` Coriolis
 #'   parameter [s-1, signed]; `is_day` [logical]; `excl_flag` [logical];
-#'   `WS` wind speed (FLUXES) [m s-1]; `flag_ustar_implausible`,
-#'   `flag_ustar_interp`, `flag_L_interp`, `flag_H_interp`, `flag_H_qc_masked`
-#'   [logical].
+#'   `WS` wind speed (FLUXES) [m s-1]; `L_l2` L2 `MO_LENGTH` after the u*
+#'   filter [m]; `L_forcing` [m]; `L_source` (`"L2"`, `"forcing"`,
+#'   `"interpolated"`, `NA`); `L_check` (`"not_checked"`, `"consistent"`,
+#'   `"sign"`, `"magnitude"`; `NA` on excluded rows); `flag_L_replaced`,
+#'   `flag_ustar_implausible`, `flag_ustar_interp`, `flag_L_interp`,
+#'   `flag_H_interp`, `flag_H_qc_masked` [logical].
 prepare_pblh_forcing <- function(data, site_meta, opts = pblh_options()) {
   const <- pblh_constants()
   if (nrow(site_meta) != 1 || is.na(site_meta$lat) || is.na(site_meta$lon)) {
@@ -179,6 +232,22 @@ prepare_pblh_forcing <- function(data, site_meta, opts = pblh_options()) {
   ustar[bad_u] <- NA
   L[bad_u] <- NA # L ~ u*^3: unusable when u* is
 
+  # --- Obukhov length: L2 vs forcing, before interpolation (spec 02 Amendment 13) ---
+  rho0 <- p_Pa / (const$r_d * T_K) # ideal gas law, dry air [kg m-3]
+  wtheta0 <- H / (rho0 * const$cp) # kinematic heat flux of the row [K m s-1]
+  L_forcing <- obukhov_length(ustar, wtheta0, T_K, const)
+  L_l2 <- L
+  L_check <- l_consistency(L, L_forcing, wtheta0, opts)
+  L_check[excl] <- NA
+  repl <- switch(opts$l_source,
+    L2_checked = !is.na(L_check) & L_check %in% c("sign", "magnitude"),
+    L2 = rep(FALSE, n),
+    forcing = !is.na(L_forcing)
+  )
+  if (opts$l_source == "forcing") L <- rep(NA_real_, n) # option D: L2 L not used at all
+  L[repl] <- L_forcing[repl]
+  L_source <- ifelse(repl, "forcing", ifelse(is.na(L), NA_character_, "L2"))
+
   # --- short gaps (never across excluded rows) ---
   mg <- opts$max_gap_interp
   iu <- interp_short_gaps(ustar, mg, excl)
@@ -187,6 +256,7 @@ prepare_pblh_forcing <- function(data, site_meta, opts = pblh_options()) {
   il <- interp_short_gaps(inv_l, mg, excl)
   fill_l <- il$filled & is.na(L)
   L[fill_l] <- 1 / il$x[fill_l] # 1/L = 0 gives L = Inf (neutral)
+  L_source[fill_l] <- "interpolated"
   ih <- interp_short_gaps(H, mg, excl)
   it <- interp_short_gaps(T_K, mg, excl)
   ip <- interp_short_gaps(p_Pa, mg, excl)
@@ -207,6 +277,10 @@ prepare_pblh_forcing <- function(data, site_meta, opts = pblh_options()) {
     ustar = iu$x,
     WS = ws,
     L = L,
+    L_l2 = L_l2,
+    L_forcing = L_forcing,
+    L_source = L_source,
+    L_check = L_check,
     H = H,
     H_source = H_source,
     T_K = T_K,
@@ -218,6 +292,7 @@ prepare_pblh_forcing <- function(data, site_meta, opts = pblh_options()) {
     f_cor = f_cor,
     is_day = is_day(data$timestamp_start_utc, data$timestamp_end_utc, site_meta$lat, site_meta$lon),
     excl_flag = excl,
+    flag_L_replaced = repl,
     flag_ustar_implausible = bad_u,
     flag_ustar_interp = iu$filled,
     flag_L_interp = fill_l,

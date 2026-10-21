@@ -258,3 +258,21 @@ Added output columns: `flag_polar_day`, `flag_no_positive_h`.
     ustar_max = Inf`) reproduces the previous default exactly.
 
 Added output columns: `WS` [m s-1], `flag_ustar_implausible`.
+
+13. **Consistency check of L2 `MO_LENGTH` against the forcing** (spec 06, option C, agreed with G 2026-10-21).
+    The model takes u*, H, T from the forcing but L from L2; they can disagree (BE-Bra: L2 H QC-rejected while
+    `MO_LENGTH`, from `H_UNCLEANED` ≈ 0, is kept: |L| ≈ 3e6 m with H_F_MDS ≈ 60 W m-2, B5 jump > 5 km). New step in
+    `prepare_pblh_forcing()` after the u* filter and before the short-gap interpolation, on that row's
+    not-yet-interpolated H, T, p: `wtheta0 = H / (rho0 cp)`, `rho0 = p / (r_d T)`,
+    `L_forcing = -u*^3 T / (k g wtheta0)` (`obukhov_length()`; Obukhov 1946; Stull 1988 Sect. 5.7 Eq. 5.7c, T in
+    place of θv: moisture neglected). `l_consistency()` labels each row `L_check`: `"not_checked"` (L2 L, u*,
+    wtheta0 or T missing, or |wtheta0| ≤ `l_check_wtheta_min`), `"sign"` (signs differ), `"magnitude"`
+    (max(L/L_forcing, L_forcing/L) > `l_consistency_factor`), `"consistent"`. Options: `l_source`
+    (`"L2_checked"` default: `"sign"`/`"magnitude"` rows get `L = L_forcing`, `flag_L_replaced`; `"L2"`: no
+    replacement = spec 05; `"forcing"`: `L = L_forcing` wherever available, option D, sensitivity),
+    `l_consistency_factor = 3`, `l_check_wtheta_min = 0.005` K m s-1. `L_check` is computed for every `l_source`
+    (G, 2026-10-21: added to the spec's output list to make every replacement auditable). Missing L2 L is never
+    filled from the forcing (only by the short-gap interpolation). **The default changes PBLHmod results**; case
+    `l_L2` reproduces spec 05, `nofilter_l2` reproduces spec 02.
+
+Added output columns: `L_l2`, `L_forcing` [m], `L_source`, `L_check`, `flag_L_replaced`.

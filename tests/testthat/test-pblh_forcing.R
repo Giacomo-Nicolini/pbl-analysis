@@ -65,13 +65,16 @@ test_that("short gaps interpolated and flagged; long gaps and edges not", {
 
 test_that("L is interpolated through 1/L", {
   # 1/L: 0.01, (0.015), 0.02 -> L = 66.67 m (linear in L would give 75 m)
+  # l_source = "L2": synthetic L not consistent with the constant H of the fixture (spec 06 check off)
+  o <- pblh_options(l_source = "L2")
   d <- make_icos_like(3, MO_LENGTH = c(100, NA, 50))
-  f <- prepare_pblh_forcing(d, site)
+  f <- prepare_pblh_forcing(d, site, o)
   expect_equal(f$L[2], 1 / 0.015)
   expect_equal(f$flag_L_interp, c(FALSE, TRUE, FALSE))
+  expect_equal(f$L_source, c("L2", "interpolated", "L2"))
   # across neutral: -1000, NA, 1000 -> 1/L = 0 -> L = Inf (neutral), not ~0
   d <- make_icos_like(3, MO_LENGTH = c(-1000, NA, 1000))
-  expect_equal(prepare_pblh_forcing(d, site)$L[2], Inf)
+  expect_equal(prepare_pblh_forcing(d, site, o)$L[2], Inf)
 })
 
 test_that("excluded rows: all forcing NA, never interpolated across", {
@@ -117,14 +120,14 @@ test_that("rejected u*: u* and L set to NA, H untouched, flags; short gaps inter
                       WS = c(3, 4, 4, 3, 20, 20, 20, 3, 3, 3),
                       MO_LENGTH = c(-100, -50, -80, -100, -60, -60, -60, -100, -100, -100),
                       fn_H_F_MDS = 1:10 * 10)
-  f <- prepare_pblh_forcing(d, site, pblh_options(max_gap_interp = 0))
+  f <- prepare_pblh_forcing(d, site, pblh_options(max_gap_interp = 0, l_source = "L2"))
   expect_equal(f$flag_ustar_implausible, c(FALSE, TRUE, FALSE, FALSE, TRUE, TRUE, TRUE, FALSE, FALSE, FALSE))
   expect_equal(f$ustar, c(0.3, NA, 0.5, 0.3, NA, NA, NA, 0.3, 0.3, 0.3))
   expect_true(all(is.na(f$L[c(2, 5:7)])))
   expect_equal(f$H, 1:10 * 10)
   expect_equal(f$WS, c(3, 4, 4, 3, 20, 20, 20, 3, 3, 3))
 
-  f2 <- prepare_pblh_forcing(d, site, pblh_options(max_gap_interp = 2))
+  f2 <- prepare_pblh_forcing(d, site, pblh_options(max_gap_interp = 2, l_source = "L2"))
   # row 2: single rejected row, interpolated (0.3 -> 0.5), keeps both flags; L via 1/L
   expect_equal(f2$ustar[2], 0.4)
   expect_true(f2$flag_ustar_implausible[2] && f2$flag_ustar_interp[2] && f2$flag_L_interp[2])
@@ -140,4 +143,83 @@ test_that("u* filter options are validated", {
   expect_error(pblh_options(ws_min_ratio_test = NA_real_), "ws_min_ratio_test")
   expect_error(pblh_options(ustar_ws_max = c(0.4, 0.5)), "ustar_ws_max")
   expect_no_error(pblh_options(ustar_ws_max = Inf, ustar_max = Inf))
+})
+
+test_that("L_forcing: hand case", {
+  # rho0 = 100000 / (287.05 * 293.15) = 1.188372 kg m-3
+  # wtheta0 = 200 / (1.188372 * 1005) = 0.167460 K m s-1
+  # L = -0.5^3 * 293.15 / (0.4 * 9.80665 * 0.167460) = -36.64375 / 0.656890 = -55.784 m
+  d <- make_icos_like(1, USTAR = 0.5, fn_H_F_MDS = 200, fn_TA_F_K = 293.15, fn_PA_F_PA = 1e5, MO_LENGTH = -50)
+  f <- prepare_pblh_forcing(d, site)
+  expect_equal(f$L_forcing, -55.7838, tolerance = 1e-5)
+  expect_equal(f$L_forcing, obukhov_length(0.5, 200 / (1e5 / (287.05 * 293.15) * 1005), 293.15))
+  expect_equal(f$L_check, "consistent") # -50 vs -55.8: ratio 1.12
+  expect_equal(f$L, -50)
+  expect_equal(f$L_source, "L2")
+  expect_true(is.na(obukhov_length(0.3, 0, 290)))
+})
+
+test_that("l_consistency: sign, magnitude (both directions), near-neutral not checked", {
+  o <- pblh_options()
+  lf <- rep(-50, 7)
+  # L2: +50 (sign); -145 (2.9x, kept); -155 (3.1x); -50/2.9 (kept); -50/3.1; -50 near neutral; NA
+  L <- c(50, -145, -155, -50 / 2.9, -50 / 3.1, -500, NA)
+  w <- c(0.1, 0.1, 0.1, 0.1, 0.1, 0.005, 0.1)
+  expect_equal(l_consistency(L, lf, w, o),
+               c("sign", "consistent", "magnitude", "consistent", "magnitude", "not_checked", "not_checked"))
+  expect_equal(l_consistency(-155, -50, 0.1, pblh_options(l_consistency_factor = 5)), "consistent")
+})
+
+test_that("inconsistent L2 L replaced by the forcing L and flagged; L_l2 kept", {
+  # H = 200 W m-2 (wtheta0 ~ 0.167), u* 0.5: L_forcing ~ -55.8 m
+  d <- make_icos_like(4, USTAR = 0.5, fn_H_F_MDS = 200, fn_TA_F_K = 293.15, fn_PA_F_PA = 1e5,
+                      MO_LENGTH = c(-50, 40, -3e6, -500))
+  f <- prepare_pblh_forcing(d, site)
+  expect_equal(f$L_check, c("consistent", "sign", "magnitude", "magnitude"))
+  expect_equal(f$flag_L_replaced, c(FALSE, TRUE, TRUE, TRUE))
+  expect_equal(f$L_source, c("L2", "forcing", "forcing", "forcing"))
+  expect_equal(f$L[2:4], f$L_forcing[2:4])
+  expect_equal(f$L_l2, c(-50, 40, -3e6, -500))
+  expect_false(any(f$flag_L_interp))
+})
+
+test_that("missing L2 L stays missing (never filled from the forcing), interpolated only in short gaps", {
+  d <- make_icos_like(8, USTAR = 0.5, fn_H_F_MDS = 200, fn_TA_F_K = 293.15, fn_PA_F_PA = 1e5,
+                      MO_LENGTH = c(-50, NA, -60, -50, NA, NA, NA, -50))
+  f <- prepare_pblh_forcing(d, site)
+  expect_equal(f$L_source, c("L2", "interpolated", "L2", "L2", NA, NA, NA, "L2"))
+  expect_true(all(is.na(f$L[5:7])))
+  expect_false(any(f$flag_L_replaced))
+  expect_equal(f$L_check[c(2, 5)], c("not_checked", "not_checked"))
+  expect_true(all(!is.na(f$L_forcing[5:7]))) # available, but not used
+})
+
+test_that("rows rejected by the u* filter: L NA, not checked", {
+  d <- make_icos_like(3, USTAR = c(0.5, 2.5, 0.5), WS = 4, fn_H_F_MDS = 200, MO_LENGTH = 30)
+  f <- prepare_pblh_forcing(d, site, pblh_options(max_gap_interp = 0))
+  expect_true(f$flag_ustar_implausible[2])
+  expect_true(is.na(f$L[2]) && is.na(f$L_l2[2]) && is.na(f$L_forcing[2]))
+  expect_equal(f$L_check[2], "not_checked")
+  expect_equal(f$L_check[c(1, 3)], c("sign", "sign"))
+})
+
+test_that("l_source L2 leaves L2 L as is; forcing uses L_forcing everywhere it exists", {
+  d <- make_icos_like(4, USTAR = 0.5, fn_H_F_MDS = c(200, 200, 0, 200), fn_TA_F_K = 293.15, fn_PA_F_PA = 1e5,
+                      MO_LENGTH = c(-50, 40, -3e6, NA))
+  a <- prepare_pblh_forcing(d, site, pblh_options(l_source = "L2", max_gap_interp = 0))
+  expect_equal(a$L, c(-50, 40, -3e6, NA))
+  expect_false(any(a$flag_L_replaced))
+  expect_equal(a$L_check, c("consistent", "sign", "not_checked", "not_checked")) # still reported
+  b <- prepare_pblh_forcing(d, site, pblh_options(l_source = "forcing", max_gap_interp = 0))
+  expect_equal(b$L[c(1, 2, 4)], b$L_forcing[c(1, 2, 4)]) # also where L2 L is missing
+  expect_true(is.na(b$L[3]))                              # wtheta0 = 0: NA
+  expect_equal(b$L_source, c("forcing", "forcing", NA, "forcing"))
+  expect_equal(b$flag_L_replaced, c(TRUE, TRUE, FALSE, TRUE))
+})
+
+test_that("L consistency options are validated", {
+  expect_error(pblh_options(l_source = "ERA5"), "l_source")
+  expect_error(pblh_options(l_consistency_factor = 1), "l_consistency_factor")
+  expect_error(pblh_options(l_check_wtheta_min = -0.1), "l_check_wtheta_min")
+  expect_no_error(pblh_options(l_consistency_factor = 1.5, l_check_wtheta_min = 0))
 })

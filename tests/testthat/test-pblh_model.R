@@ -171,12 +171,18 @@ test_that("sign inconsistency: h held and flagged", {
   day <- which(is_day(d$timestamp_start_utc, d$timestamp_end_utc, site$lat, site$lon))
   i <- day[10]
   d$MO_LENGTH[i] <- 30 # H > 0 with L > 0
-  out <- run(d)
+  # with the default (spec 06) this L2 L is replaced by the forcing L (sign check): no hold
+  def <- run(d)
+  expect_false(def$flag_sign_inconsistent[i])
+  expect_true(def$flag_L_replaced[i])
+  expect_equal(def$L_check[i], "sign")
+  # hold logic itself, with L2 L as is
+  out <- run(d, l_source = "L2")
   expect_true(out$flag_sign_inconsistent[i])
   expect_equal(sum(out$flag_sign_inconsistent), 1)
   expect_equal(out$regime[i], "convective")
   # held: h_bg[i] is the carried state, and interval i + 1 integrates from it
-  f <- prepare_pblh_forcing(d, site, pblh_options())
+  f <- prepare_pblh_forcing(d, site, pblh_options(l_source = "L2"))
   st <- bg_step(out$h_bg_m[i], f$wtheta[i + 1], f$ustar[i + 1], f$L[i + 1], f$T_K[i + 1], 0.01)
   expect_equal(out$h_bg_m[i + 1], st$h_mean)
   expect_gt(out$h_bg_m[i], out$h_bg_m[i - 1])
@@ -256,4 +262,30 @@ test_that("u* filter: Inf/Inf leaves the forcing raw; rejected rows change only 
   expect_true(all(c("WS", "flag_ustar_implausible") %in% names(on)))
   unaffected <- setdiff(seq_len(nrow(d)), c(bad, 29:33, 79:81))
   expect_equal(on$pblh_m[unaffected][1:20], off$pblh_m[unaffected][1:20])
+})
+
+test_that("BE-Bra jump case: L2 L = -3e6 m with H ~ 60 W m-2 inside the window is replaced; no explosive growth", {
+  d <- make_diurnal(1, h_max = 60)
+  day <- which(is_day(d$timestamp_start_utc, d$timestamp_end_utc, site$lat, site$lon))
+  i <- day[12] # mid-morning, inside the convective window
+  d$MO_LENGTH[i] <- -3e6 # EddyPro L from H_UNCLEANED ~ 0 while the forcing H_F_MDS is positive
+  old <- run(d, l_source = "L2")
+  new <- run(d)
+  expect_true(new$flag_L_replaced[i])
+  expect_equal(new$L_check[i], "magnitude")
+  jump_old <- old$h_bg_m[i] - old$h_bg_m[i - 1]
+  jump_new <- new$h_bg_m[i] - new$h_bg_m[i - 1]
+  expect_gt(jump_old, 1000) # the failure mode seen at BE-Bra
+  expect_lt(jump_new, 300)
+  expect_lt(max(new$pblh_m, na.rm = TRUE), 3000)
+})
+
+test_that("l_source L2 reproduces the run without the L check", {
+  d <- make_diurnal(2)
+  d$MO_LENGTH[c(30, 31)] <- c(40, -1e6)
+  a <- run(d, l_source = "L2")
+  expect_equal(a$L[c(30, 31)], c(40, -1e6))
+  expect_false(any(a$flag_L_replaced))
+  b <- run(d, l_source = "forcing")
+  expect_equal(b$L[!is.na(b$L_forcing)], b$L_forcing[!is.na(b$L_forcing)])
 })
