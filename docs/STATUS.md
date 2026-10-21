@@ -89,6 +89,10 @@ Literature: `docs/references/literature_review_pblh.md`, `pblh_literature_2026-1
 `pblh_collection.bib`. Key papers and ECMWF IFS Cy41r2 Part IV downloaded; second-wave papers: G will notify.
 Novelty check: no published network-scale evaluation of EC-derived PBLH against ERA5 and measurements.
 
+L2 data issues found so far (implausible USTAR, MO_LENGTH kept where H is QC-rejected, positive night-time H_F_MDS
+in winter 2022–23, sonic temperature offset) are collected for the ETC QC report in `docs/local/etc_qc_report.md`
+(local working file, not tracked); all open.
+
 ## Waiting on others
 
 - Second-wave papers (G).

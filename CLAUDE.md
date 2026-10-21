@@ -13,6 +13,7 @@ so code must be reproducible, documented and traceable to references.
 - Current status and next steps: `docs/STATUS.md`
 - Full design: `docs/project_plan.md` (source of truth for scientific choices)
 - Legacy code issues: `docs/legacy_review.md`
+- L2 data issues for the ETC QC report: `docs/local/etc_qc_report.md` (local working file, not tracked)
 - Task specs: `docs/specs/NN_*.md`. **Implement only what the current spec asks.**
 - Literature: `docs/references/` (`pblh_collection.bib`, `pblh_literature_2026-10.bib`, annotated notes in
   `literature_review_pblh.md`). Cite by BibTeX key in code comments where a formula comes from a paper.
