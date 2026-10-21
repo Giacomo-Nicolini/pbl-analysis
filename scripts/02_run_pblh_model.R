@@ -1,8 +1,12 @@
 # Spec 02: run PBLHmod v2 for the test site(s) and print a summary.
 # Runs: default (bg_only, neutral auto, gamma 0.01 K/m); gamma0025 (legacy gamma);
-# max_B2 (combine max, neutral B2: behaviour before amendment 11); max_auto.
-# Ends with a side-by-side table of quantiles per regime for all cases and the operational PBLH.
+# max_B2 (combine max, neutral B2: behaviour before amendment 11); max_auto;
+# u* filter sensitivity (spec 05, spec 02 amendment 12): ustar04 / ustar06 (u*/WS limit 0.4 / 0.6) and
+# nofilter (filter disabled = previous default). All other cases use the filter defaults.
+# Ends with a u* filter summary across cases and a side-by-side table of quantiles per regime.
 # Output: <derived_dir>/pblhmod/<site>_pblhmod_<label>.csv.gz
+# If <derived_dir>/pblhmod/pre_spec05/<site>_pblhmod_default.csv.gz exists (spec-02 output saved before
+# spec 05), the nofilter case is compared with it (must be identical, < 1e-9 m).
 #
 # Usage: Rscript scripts/02_run_pblh_model.R [SITE ...]
 #   Without arguments the sites in cfg$test_sites are used.
@@ -27,8 +31,25 @@ runs <- list(
   default = pblh_options(),
   gamma0025 = pblh_options(gamma = 0.0025, label = "gamma0025"),
   max_B2 = pblh_options(combine = "max", neutral_method = "B2", label = "max_B2"),
-  max_auto = pblh_options(combine = "max", neutral_method = "auto", label = "max_auto")
+  max_auto = pblh_options(combine = "max", neutral_method = "auto", label = "max_auto"),
+  ustar04 = pblh_options(ustar_ws_max = 0.4, label = "ustar04"),
+  ustar06 = pblh_options(ustar_ws_max = 0.6, label = "ustar06"),
+  nofilter = pblh_options(ustar_ws_max = Inf, ustar_max = Inf, label = "nofilter")
 )
+
+# u* filter accounting for one case (rule in ustar_implausible(), spec 02 amendment 12).
+ustar_report <- function(d, out, opts) {
+  ok <- !d$excl_flag & !is.na(d$USTAR)
+  r <- ustar_implausible(d$USTAR, d$WS, opts)
+  rej <- out$flag_ustar_implausible
+  data.frame(
+    case = opts$label, n_ustar = sum(ok),
+    ratio_only = sum(ok & r$ratio & !r$cap), cap_only = sum(ok & r$cap & !r$ratio), both = sum(ok & r$ratio & r$cap),
+    rejected = sum(rej), pct = round(100 * sum(rej) / sum(ok), 3),
+    interpolated = sum(rej & out$flag_ustar_interp), left_na = sum(rej & is.na(out$ustar)),
+    gt5km = sum(out$pblh_m > 5000, na.rm = TRUE), gt10km = sum(out$pblh_m > 10000, na.rm = TRUE)
+  )
+}
 probs <- c(0.01, 0.05, 0.25, 0.5, 0.75, 0.95, 0.99)
 
 print_tbl <- function(x) print(as.data.frame(x), row.names = FALSE, digits = 5)
@@ -65,6 +86,9 @@ for (site_id in site_ids) {
     path <- file.path(out_dir, paste0(site_id, "_pblhmod_", opts$label, ".csv.gz"))
     readr::write_csv(out, path)
     cli::cli_alert_success("Written {.path {path}}")
+
+    cli::cli_inform("u* filter (ustar_ws_max = {opts$ustar_ws_max}, ws_min_ratio_test = {opts$ws_min_ratio_test} m s-1, ustar_max = {opts$ustar_max} m s-1):")
+    print_tbl(ustar_report(d, out, opts))
 
     ok <- !out$excl_flag
     cli::cli_inform("Valid pblh_m: {round(100 * mean(!is.na(out$pblh_m)), 2)}% of all rows, {round(100 * mean(!is.na(out$pblh_m[ok])), 2)}% of non-excluded rows.")
@@ -105,6 +129,27 @@ for (site_id in site_ids) {
     print_tbl(count_tbl(out$p_source, "p_source"))
 
     if (lab == "default") {
+      # Conditions on rejected vs kept rows, to spot rejections in plausible conditions.
+      cli::cli_h2("u* filter: conditions on rejected vs kept rows (raw L2 values)")
+      ok <- !d$excl_flag & !is.na(d$USTAR)
+      r <- ustar_implausible(d$USTAR, d$WS, opts)
+      rho <- out$p_Pa / (pblh_constants()$r_d * out$T_K)
+      grp <- ifelse(!ok, NA, ifelse(r$ratio & r$cap, "both", ifelse(r$ratio, "ratio", ifelse(r$cap, "cap", "kept"))))
+      cond <- dplyr::tibble(grp = grp, ustar = d$USTAR, ws = d$WS, ratio = d$USTAR / d$WS,
+                            sw_us = d$W_SIGMA / d$USTAR, ustar_tau = sqrt(abs(d$TAU) / rho))
+      cond <- cond[!is.na(cond$grp), ]
+      med <- function(x) round(stats::median(x, na.rm = TRUE), 3)
+      print_tbl(dplyr::summarise(cond, .by = grp, n = dplyr::n(), ustar_med = med(ustar), ustar_p90 = round(stats::quantile(ustar, 0.9, na.rm = TRUE), 3),
+                                 ws_med = med(ws), ws_p90 = round(stats::quantile(ws, 0.9, na.rm = TRUE), 2), ratio_med = med(ratio),
+                                 sigw_ustar_med = med(sw_us), ustar_from_tau_med = med(ustar_tau)))
+      rr <- cond[cond$grp == "ratio", ]
+      cli::cli_inform(c(
+        "Ratio-rejected rows by wind speed (WS bins [m s-1]) and u*/WS just above the limit (0.5-0.6):",
+        paste(names(table(cut(rr$ws, c(1, 2, 4, 6, 8, Inf), right = FALSE))), table(cut(rr$ws, c(1, 2, 4, 6, 8, Inf), right = FALSE)),
+              sep = ": ", collapse = "; "),
+        "u*/WS in (0.5, 0.6]: {sum(rr$ratio <= 0.6)} rows, of which WS >= 6 m s-1: {sum(rr$ratio <= 0.6 & rr$ws >= 6)}; median sigma_w/u* on those: {med(rr$sw_us[rr$ratio <= 0.6])}."
+      ))
+
       cli::cli_h2("is_day vs FLUXNET SW_IN_POT > 0 (FLUXNET period)")
       sel <- d$src_fluxnet & !is.na(d$fn_SW_IN_POT) & !is.na(out$is_day)
       pot_day <- d$fn_SW_IN_POT > 0
@@ -122,6 +167,29 @@ for (site_id in site_ids) {
           "Max mismatches at one sunrise/sunset: {max(per_trans)} ({sum(per_trans > 1)} transitions with more than one)."
         ))
       }
+    }
+  }
+
+  cli::cli_h2("u* filter summary across cases (gt5km / gt10km: pblh_m > 5 / 10 km)")
+  print_tbl(do.call(rbind, lapply(names(outs), function(k) ustar_report(d, outs[[k]], runs[[k]]))))
+
+  ref <- file.path(out_dir, "pre_spec05", paste0(site_id, "_pblhmod_default.csv.gz"))
+  if (file.exists(ref)) {
+    cli::cli_h2("nofilter vs spec-02 default saved before spec 05")
+    old <- readr::read_csv(ref, show_col_types = FALSE, progress = FALSE, guess_max = 1e5)
+    nf <- outs$nofilter
+    same_rows <- nrow(old) == nrow(nf) && all(old$timestamp_start_utc == nf$timestamp_start_utc)
+    cmp <- vapply(c("pblh_m", "h_diag_m", "h_bg_m", "ustar", "L"), function(k) {
+      same_na <- identical(is.na(old[[k]]), is.na(nf[[k]]))
+      if (!same_na) return(Inf)
+      max(c(0, abs(old[[k]] - nf[[k]])), na.rm = TRUE)
+    }, numeric(1))
+    print_tbl(data.frame(column = names(cmp), max_abs_diff = cmp))
+    chr_same <- all(vapply(c("regime", "method"), function(k) identical(old[[k]], nf[[k]]), logical(1)))
+    if (same_rows && chr_same && all(cmp < 1e-9)) {
+      cli::cli_alert_success("nofilter reproduces the spec-02 default (max |diff| < 1e-9 m, same NA pattern, same regime/method).")
+    } else {
+      cli::cli_alert_danger("nofilter differs from the spec-02 default (rows {same_rows}, regime/method {chr_same}).")
     }
   }
 
