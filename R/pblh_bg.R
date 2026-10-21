@@ -30,10 +30,14 @@ bg_rate <- function(h, wtheta, ustar, L, T_K, gamma, const = pblh_constants()) {
 
 #' Integrate Eq. B5 over one averaging interval
 #'
-#' Classical 4th-order Runge-Kutta with `n_sub` explicit sub-steps, forcing
-#' held constant over the interval. If [bg_rate()] returns `NA` at any stage,
-#' `h` is held constant from that sub-step on and `ok = FALSE` (the caller
-#' flags it).
+#' `method = "rk4"` (default, PBLHmod v2): classical 4th-order Runge-Kutta with
+#' `n_sub` explicit sub-steps, forcing held constant over the interval.
+#' `method = "euler"` (legacy `calc_PBL_height()`, used only by the spec 03
+#' attribution; spec 03 Amendment 1): one explicit Euler step over the whole
+#' interval, `h_end = h0 + dt * rate(h0)`, and `h_mean = h_end` (the legacy
+#' reports the end-of-interval height). If [bg_rate()] returns `NA` at any
+#' stage, `h` is held constant from that (sub-)step on and `ok = FALSE` (the
+#' caller flags it).
 #'
 #' @param h0 Height at the start of the interval [m].
 #' @param wtheta Surface kinematic heat flux [K m s-1].
@@ -42,13 +46,14 @@ bg_rate <- function(h, wtheta, ustar, L, T_K, gamma, const = pblh_constants()) {
 #' @param T_K Air temperature [K].
 #' @param gamma Potential-temperature gradient above the boundary layer [K m-1] (scalar).
 #' @param dt Interval length [s]; default 1800.
-#' @param n_sub Number of sub-steps [-]; default 30 (60 s).
+#' @param n_sub Number of sub-steps [-]; default 30 (60 s); ignored by `"euler"`.
 #' @param const Output of [pblh_constants()].
+#' @param method `"rk4"` (default) or `"euler"`.
 #' @return List: `h_end` height at the end of the interval [m], `h_mean`
-#'   interval mean height (trapezoidal mean of the `n_sub + 1` nodes) [m],
-#'   `ok` [logical, `FALSE` if the rate was undefined].
+#'   interval mean height (trapezoidal mean of the `n_sub + 1` nodes; `"euler"`:
+#'   `h_end`) [m], `ok` [logical, `FALSE` if the rate was undefined].
 bg_step <- function(h0, wtheta, ustar, L, T_K, gamma, dt = 1800, n_sub = 30,
-                    const = pblh_constants()) {
+                    const = pblh_constants(), method = "rk4") {
   # Precompute the constant parts of Eq. B5 for speed (scalar forcing).
   A <- const$bg_A
   B <- const$bg_B
@@ -61,6 +66,13 @@ bg_step <- function(h0, wtheta, ustar, L, T_K, gamma, dt = 1800, n_sub = 30,
     if (is.na(d1) || is.na(d2) || d1 <= 0 || d2 <= 0) return(NA_real_)
     num / (h^2 / d1 + c2 / d2) # Kljun et al. 2015 Eq. B5
   }
+  if (identical(method, "euler")) {
+    r <- rate(h0)
+    if (is.na(r)) return(list(h_end = h0, h_mean = h0, ok = FALSE))
+    h1 <- h0 + dt * r # explicit Euler, one step per interval (legacy calc_PBL_height())
+    return(list(h_end = h1, h_mean = h1, ok = TRUE))
+  }
+  if (!identical(method, "rk4")) cli::cli_abort("{.arg method} must be {.val rk4} or {.val euler}.")
   hs <- dt / n_sub
   nodes <- numeric(n_sub + 1)
   nodes[1] <- h0

@@ -50,3 +50,21 @@ test_that("bg_step holds h and reports when the rate is undefined", {
   expect_true(s$ok)
   expect_equal(s$h_end, 300)
 })
+
+test_that("bg_step euler: one explicit step over the interval, h_mean = h_end", {
+  k <- pblh_constants()
+  # h0 = 500 m, wtheta 0.15 K m s-1, u* 0.4, L -50 m, T 293 K, gamma 0.01
+  r <- bg_rate(500, 0.15, 0.4, -50, 293, 0.01, k)
+  e <- bg_step(500, 0.15, 0.4, -50, 293, 0.01, dt = 1800, method = "euler")
+  expect_equal(e$h_end, 500 + 1800 * r)
+  expect_equal(e$h_mean, e$h_end)
+  expect_true(e$ok)
+  # undefined rate (second denominator <= 0 with L > 0 large): held, not ok
+  bad <- bg_step(10, 0.15, 0.4, 1e4, 293, 0.01, method = "euler")
+  expect_false(bad$ok)
+  expect_equal(bad$h_end, 10)
+  # rk4 default unchanged and different from euler
+  expect_false(isTRUE(all.equal(bg_step(500, 0.15, 0.4, -50, 293, 0.01)$h_end, e$h_end)))
+  expect_error(bg_step(500, 0.15, 0.4, -50, 293, 0.01, method = "midpoint"), "rk4")
+  expect_error(pblh_options(bg_integration = "midpoint"), "bg_integration")
+})

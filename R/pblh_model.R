@@ -20,6 +20,9 @@
 #'   - `max_gap_interp` [half-hours] longest forcing gap filled by linear
 #'     interpolation (default 2);
 #'   - `n_sub` [-] RK4 sub-steps per half-hour (default 30);
+#'   - `bg_integration` [`"rk4"` (default) or `"euler"`] integration of Eq. B5
+#'     ([bg_step()]); `"euler"` (one explicit step per half-hour, as the legacy
+#'     code) exists only for the spec 03 attribution (spec 03 Amendment 1);
 #'   - `n_neg_end` [half-hours] consecutive `wtheta <= 0` ending the convective
 #'     window (default 2);
 #'   - `neutral_method` [`"auto"` (default), `"B2"`, `"B3"`] neutral formula
@@ -56,6 +59,7 @@ pblh_options <- function(...) {
     max_gap_interp = 2,
     neutral_method = "auto",
     n_sub = 30,
+    bg_integration = "rk4",
     n_neg_end = 2,
     combine = "bg_only",
     ustar_ws_max = 0.5,
@@ -122,6 +126,7 @@ validate_pblh_options <- function(opts) {
     }
   }
   one_of("l_source", c("L2_checked", "L2", "forcing"))
+  one_of("bg_integration", c("rk4", "euler"))
   v <- opts$l_consistency_factor
   if (!(is.numeric(v) && length(v) == 1 && !is.na(v) && v > 1)) {
     cli::cli_abort("Option {.field l_consistency_factor} must be a single number > 1.")
@@ -279,7 +284,7 @@ run_pblh_model <- function(data, site_meta, opts = pblh_options()) {
           h_bg[i] <- h
         } else {
           st <- bg_step(h, w, f$ustar[i], f$L[i], f$T_K[i], gamma[i],
-                        dt = 1800, n_sub = opts$n_sub, const = const)
+                        dt = 1800, n_sub = opts$n_sub, const = const, method = opts$bg_integration)
           if (!st$ok) flag_sign[i] <- TRUE
           h_bg[i] <- st$h_mean
           h <- st$h_end

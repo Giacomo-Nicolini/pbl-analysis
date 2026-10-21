@@ -179,8 +179,9 @@ interface (coordinate with spec 04: one implementation only).
 ## Acceptance criteria
 
 - Tests pass (old and new).
-- Reproduction ≥ 99 % exact at BE-Bra with a documented input variant, fill values reproduced exactly; or a
-  stop-and-report if not.
+- Reproduction at BE-Bra with a documented input variant meets section 2 (median |relative difference| < 0.5 %,
+  p95 < 2 %, the four fill values within 0.5 %), with the share of rows within 0.01 m reported; or a
+  stop-and-report if not (Amendment 1; the earlier "≥ 99 % exact, fill values exact" criterion is withdrawn).
 - Port equal to the original (< 1e-6 m) on the full BE-Bra series.
 - Attribution tables and figures produced; summary printed.
 - Legacy files unchanged (`git diff legacy/` empty); no legacy code sourced outside the two allowed files.
@@ -195,3 +196,24 @@ As in `CLAUDE.md`, plus: the input variant that reproduces the operational colum
 reproduction statistics; the ranking of legacy choices by their effect on the median per regime (one at a time and
 along the cumulative path); the residual difference legacy-fully-switched vs PBLHmod v2 and its explanation; any
 legacy behaviour that the port had to emulate deliberately (quirks).
+
+## Amendment 1 (2026-10-21, agreed with G before implementation)
+
+1. **Acceptance of the reproduction** is the section 2 criterion: median |relative difference| < 0.5 %, p95 < 2 %,
+   the four fill values within 0.5 %; the share of rows within 0.01 m is reported. The "≥ 99 % exact, fill values
+   exact" line in the acceptance criteria is corrected accordingly (the ambient variables are rebuilt from L2, so an
+   exact match is not expected).
+2. **Processing runs.** Each run starts at its first row with data (first run: `TIMESTAMP_END` 2020-10-26 00:30,
+   the first FLUXES row with `MO_LENGTH`/`PBLH`; the FLUXES file starts on 2020-01-01 with empty rows, and the
+   operational column is `NA` before that date, so those rows were not in the operational run). Split at
+   `TIMESTAMP_START` 2026-01-01 00:00, local standard time (confirmed by G). The split must reproduce the four fill
+   values; otherwise stop and report.
+3. **Exception to "Out of scope" (changing PBLHmod v2):** `bg_step()` and `run_pblh_model()` get the option
+   `bg_integration = c("rk4", "euler")` (default `"rk4"`). `"euler"` (one explicit step per half-hour, end-of-interval
+   height, as the legacy code) is used only by the cumulative path of section 5, at the step where every other switch
+   already has its PBLHmod v2 value. The default output is unchanged: the regression chain (`nofilter_l2` = spec 02,
+   `l_L2` = spec 05, `l_check_allday` = spec 06 amendment 1) was rerun after the change and is identical
+   (< 1e-9 m, same NA, regime, method).
+4. **Input data facts found while planning (BE-Bra):** L2 `H2O` is in mmol mol-1 (median 9.75, range 4–17); L2
+   `T_SONIC` is 5.2 K above METEO `TA` (median, IQR 3.6–6.8 K), more than the ≈ 0.9 K humidity effect (sonic
+   temperature offset, inherited by the EddyPro ambient `AT`; item in the ETC QC report).
