@@ -18,9 +18,9 @@ as_utc_time <- function(x) {
 
 #' Standardize PBLHmod output
 #'
-#' `qc_flag`: 0 no flag; 1 forcing interpolated or u* rejected
-#' (`flag_ustar_interp`, `flag_L_interp`, `flag_H_interp` or
-#' `flag_ustar_implausible`, spec 02 Amendment 12); 2 h held by the model
+#' `qc_flag`: 0 no flag; 1 forcing interpolated or replaced, or u* rejected
+#' (`flag_ustar_interp`, `flag_L_interp`, `flag_H_interp`, `flag_L_replaced`
+#' or `flag_ustar_implausible`, spec 02 Amendments 12-13); 2 h held by the model
 #' (`flag_sign_inconsistent`); 3 below the measurement height
 #' (`flag_below_zm`); the highest applicable value wins. Rows in exclusion
 #' periods (`excl_flag`) are dropped and counted.
@@ -41,7 +41,8 @@ standardize_pblhmod <- function(out, label, opts = NULL) {
   d <- ex$data
   fl <- function(k) if (k %in% names(d)) !is.na(d[[k]]) & as.logical(d[[k]]) else rep(FALSE, nrow(d))
   qc <- integer(nrow(d))
-  qc[fl("flag_ustar_interp") | fl("flag_L_interp") | fl("flag_H_interp") | fl("flag_ustar_implausible")] <- 1L
+  qc[fl("flag_ustar_interp") | fl("flag_L_interp") | fl("flag_H_interp") | fl("flag_ustar_implausible") |
+       fl("flag_L_replaced")] <- 1L
   qc[fl("flag_sign_inconsistent")] <- 2L
   qc[fl("flag_below_zm")] <- 3L
 
@@ -75,8 +76,8 @@ standardize_pblhmod <- function(out, label, opts = NULL) {
     original_qc = "logical flags of run_pblh_model() (R/pblh_model.R)",
     qc_flag_meaning = list(
       `0` = "no flag",
-      `1` = paste("forcing interpolated or u* rejected as implausible",
-                  "(flag_ustar_interp, flag_L_interp, flag_H_interp or flag_ustar_implausible)"),
+      `1` = paste("forcing interpolated or replaced, or u* rejected as implausible (flag_ustar_interp,",
+                  "flag_L_interp, flag_H_interp, flag_L_replaced or flag_ustar_implausible)"),
       `2` = "h held by the model (flag_sign_inconsistent)",
       `3` = "below the measurement height (flag_below_zm)"
     ),
