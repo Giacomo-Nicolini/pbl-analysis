@@ -20,27 +20,32 @@ Last update: 2026-10-21. Read this first in a new session, then `docs/project_pl
 | 02 | PBLHmod v2 | 1 | merged (`main`, 58d45ad) |
 | 04 | ERA5 readers (3×3 cells, pressure levels, static), standard PBLH format, first PBLHmod vs ERA5 comparison at BE-Bra (amendments 1–8) | 0, 2, 3 (first step) | merged (`main`, aba3394) |
 | 05 | u* plausibility filter in the PBLHmod forcing (spec 02 amendment 12); local config override (`config.local.yml`, no cluster paths in tracked files) | 1 | merged (`main`, 25ae55c) |
-| 06 | Consistency check of L2 `MO_LENGTH` against the forcing (option C, G 2026-10-21): L2 L kept where consistent (same sign, within 3×), otherwise replaced by L from the forcing and flagged (spec 02 amendment 13); checked only where the heat flux is positive (spec 06 amendment 1) | 1 | merged (`main`, 2026-10-21) |
+| 06 | Consistency check of L2 `MO_LENGTH` against the forcing (option C, G 2026-10-21): L2 L kept where consistent (same sign, within 3×), otherwise replaced by L from the forcing and flagged (spec 02 amendment 13); checked only where the heat flux is positive (spec 06 amendment 1) and in daytime (amendment 2) | 1 | merged (`main`, 2026-10-21; amendment 2 merged 2026-10-21) |
 | 03 | Legacy regression: reproduce operational PBLH from L2, port legacy code, attribute differences to PBLHmod v2 | 1 | drafted, not started |
 
 Phases (see `project_plan.md`): 0 done; 1 model done, legacy regression pending (spec 03); 2 standard format and
 three sources done (spec 04), measured PBLH pending; 3 started at BE-Bra only; 4–6 not started.
 
-- Tests: 698 passing (`main`, after spec 06). Environment: R 4.4.1 + renv (Posit Package
+- Tests: 711 passing (`main`, after spec 06 amendment 2). Environment: R 4.4.1 + renv (Posit Package
   Manager), same as the cluster. Machine-specific paths in the untracked `config.local.yml` (template
   `config.local.yml.example`).
 - PBLHmod defaults: `stable_method = "nieuwstadt"` (B1), `neutral_method = "auto"` (B2 if 10 < N/|f| < 70, else
   B3), `combine = "bg_only"`, `gamma = 0.01` K/m, `h_source = "H_F_MDS"` with `h_qc_max = 1`; u* input filter
   `ustar_ws_max = 0.5` (where WS ≥ `ws_min_ratio_test = 1` m s-1), `ustar_max = 3` m s-1 (spec 02 amendment 12;
   u* and L set to NA, short gaps interpolated); L check `l_source = "L2_checked"` (`l_consistency_factor = 3`,
-  rows with wtheta0 > `l_check_wtheta_min = 0.005` K m s-1 only; inconsistent L2 L replaced by the forcing L;
-  spec 02 amendment 13, spec 06 amendment 1); raw output (no smoothing, clipping or filling). Forcing T and p from
+  daytime rows with wtheta0 > `l_check_wtheta_min = 0.005` K m s-1 only, `l_check_daytime_only = TRUE`;
+  inconsistent L2 L replaced by the forcing L; spec 02 amendment 13, spec 06 amendments 1–2); raw output (no smoothing, clipping or filling). Forcing T and p from
   measured meteo (FLUXNET `TA_F`/`PA_F` 2020–2025, METEO `TA`/`PA` 2026).
-- BE-Bra PBLHmod (default, spec 06): convective median 690 m (p5–p95 74–1575), stable 260 m, all rows 413 m;
-  γ = 0.0025 raises the convective median to 1095 m. Spec 05: 698 m (72–1586), 261 m, 413 m; 1104 m. Spec 02:
-  704 m (72–1609), 271 m, 423 m; 1109 m.
-- Spec 06 at BE-Bra (2026-10-21, V1): 26,652 rows checked, 2,476 replaced (sign 1,349, magnitude 1,127; 69 %
-  convective, 31 % unstable_diag; 88 % daytime; on 956 days; winter clusters, e.g. 2023-01-19 → 01-28); L2 L used
+- BE-Bra PBLHmod (default, spec 06 amendment 2): convective median 690 m (p5–p95 74–1575), stable 259 m, all rows
+  412 m; γ = 0.0025 raises the convective median to 1095 m. Spec 06 amendment 1: 690 m (74–1575), 260 m, 413 m;
+  1095 m. Spec 05: 698 m (72–1586), 261 m, 413 m; 1104 m. Spec 02: 704 m (72–1609), 271 m, 423 m; 1109 m.
+- Spec 06 amendment 2 at BE-Bra (2026-10-21): L check in daytime only. Rows checked 26,198; replaced 2,191 (sign
+  1,170, magnitude 1,021; convective 1,720, unstable_diag 471), night replacements 285 → 0 (all in Nov 2022–Jan
+  2023, positive gap-filled H_F_MDS with L2 H QC-rejected); `flag_sign_inconsistent` 335; values > 5 km 1.
+  Regression chain: `nofilter_l2` = spec 02, `l_L2` = spec 05, `l_check_allday` = amendment 1 (all < 1e-9 m).
+  Pair 1 vs ERA5 practically unchanged vs amendment 1 (RMSE 337.6 → 337.5 m; unstable_diag RMSE 449 → 454 m).
+- Spec 06 at BE-Bra (2026-10-21, amendment 1 = V1): 26,652 rows checked, 2,476 replaced (sign 1,349, magnitude
+  1,127; 69 % convective, 31 % unstable_diag; 88 % daytime; on 956 days; winter clusters, e.g. 2023-01-19 → 01-28); L2 L used
   on 96.5 % of rows with L; `flag_sign_inconsistent` 1,228 → 335. PBLHmod > 5 km: 11 → 1 (2024-01-05 09:30, B1,
   u* 2.67 m s-1: spec 05 filter limitation). Regression chain: `nofilter_l2` = spec 02 and `l_L2` = spec 05
   (max |diff| ≤ 4e-12 m). Pair 1 vs ERA5, spec 05 → 06: RMSE 349 → 338 m, Pearson 0.725 → 0.737, within a

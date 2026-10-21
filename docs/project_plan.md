@@ -194,11 +194,28 @@ The class is therefore not a stratum to compare against other classes; it tells 
     WS 6.2 m s-1), H missing so L not checked. Known limitation of the spec 05 u* filter (passes both tests).
   - u* of 2–3 m s-1 passes the filter at BE-Bra but is suspect (V2 in spec 06 amendment 1: a cap of 2 m s-1 removes
     all outliers): include in the report to ETC QC.
+  - ~~285 night-time L replacements under spec 06 amendment 1 (Nov 2022–Jan 2023), on rows with a positive
+    gap-filled H_F_MDS (QC ≤ 1) while H_UNCLEANED is negative.~~ Handled in the model by spec 06 amendment 2 (L check
+    in daytime only; 0 night replacements). Still in the ETC QC report list (below).
 - Source of zm, d, z0 and target area per site.
 - Measured PBLH datasets: to be collected; open data candidates: ACTRIS/Cloudnet, E-PROFILE, IGRA radiosondes.
 - ~~Literature: the current bib is footprint-focused. A PBL collection is needed.~~ Done (2026-10-15):
   `pblh_collection.bib` (Kljun App. B references) + `pblh_literature_2026-10.bib` and annotated
   `literature_review_pblh.md`. Keep extending as papers are added to `C:\WORK\bibliography_new_win11\`.
+
+## Points for the ETC QC report (BE-Bra, L2 2020–2026; found in specs 05–06)
+
+1. **Implausible `USTAR`.** Median 6.9 m s-1, max 49 m s-1 on the rows behind the PBLHmod values > 5 km; 2,149 of
+   100,186 values rejected by the spec 05 filter (u*/WS > 0.5 with WS ≥ 1 m s-1, or u* > 3 m s-1); `TAU` missing on
+   99 % of the rejected rows, so USTAR cannot be cross-checked there. u* of 2–3 m s-1 also passes the filter but is
+   suspect (a 2 m s-1 cap removes all remaining PBLHmod outliers; spec 06 amendment 1, V2).
+2. **`MO_LENGTH` kept where `H` is QC-rejected.** L2 L is computed from `H_UNCLEANED` ≈ 0 (|L| ≈ 3 × 10⁶ m) while H is
+   rejected (e.g. 2021-08-18, 2022-03-11); L2 `H` is QC-rejected on 47 % of the rows that have `MO_LENGTH`. Handled
+   in the model by the spec 06 consistency check.
+3. **Positive night-time `H_F_MDS` with QC ≤ 1 in winter 2022–23.** 285 half-hours (Nov 2022 76, Dec 2022 42,
+   Jan 2023 167) where L2 H is QC-rejected and the gap-filled H_F_MDS is positive (median +37 W m-2, max 189) while
+   `H_UNCLEANED` is negative (median −41 W m-2). Handled in the model by spec 06 amendment 2 (L check in daytime
+   only), but the gap-filled flux itself is suspect.
 
 ## Positioning in the literature (from the 2026-10-15 search; details in `docs/references/literature_review_pblh.md`)
 

@@ -146,3 +146,27 @@ The remaining value > 5 km with V1 (2024-01-05 09:30, B1, u* 2.67 m s-1, H missi
 limitation of the spec 05 u* filter (open point in `docs/project_plan.md`).
 
 Test added: a stable row with an inconsistent L2 L (magnitude or sign) is not checked and keeps L2 L.
+
+## Amendment 2 (2026-10-21, agreed with G)
+
+**The consistency check (and replacement) applies only to daytime rows**: a row is checked only if
+`wtheta0 > l_check_wtheta_min` **and** `is_day` is `TRUE` (solar elevation > 0 at the half-hour midpoint, as used by
+the model). Other rows: `L_check = "not_checked"`, L2 L kept. New option `l_check_daytime_only = TRUE` (default;
+logical); `FALSE` reproduces Amendment 1 (case `l_check_allday`, identical to the Amendment-1 default, < 1e-9 m).
+
+Reason: all 285 night replacements under Amendment 1 (BE-Bra, Nov 2022 76, Dec 2022 42, Jan 2023 167 half-hours)
+sit on rows where L2 `H` is QC-rejected and the forcing uses gap-filled `H_F_MDS` with QC ≤ 1 (all 285), positive
+(median +37 W m-2, max 189), while `H_UNCLEANED` is negative (median −41 W m-2; negative on 63 % of the rows) and
+L2 L is stable on 179 of the 285 rows. So the gap-filled H is wrong there, and the check replaced a plausible L2 L
+with an L of the wrong sign. The check is meant for the B5 side, which only runs in daytime. (Figures verified on
+the data at implementation; they correct the first description, which had H_F_MDS up to 99 W m-2 and L2 L stable on
+all rows.)
+
+BE-Bra (default), Amendment 1 → Amendment 2: rows checked 26,652 → 26,198; replaced 2,476 → 2,191 (sign 1,349 →
+1,170, magnitude 1,127 → 1,021; convective 1,720 → 1,720, unstable_diag 756 → 471); night replacements 285 → 0;
+`flag_sign_inconsistent` 335 → 335; values > 5 km 1 → 1. Pair 1 vs ERA5 tower cell: RMSE 337.6 → 337.5 m, Pearson
+0.737 → 0.737, within a factor 2 72.6 → 72.6 %; by regime unchanged except unstable_diag (4,180 → 4,060 hours,
+RMSE 449 → 454 m, median log ratio −0.153 → −0.167).
+
+Tests added: a night row with positive wtheta0 and an inconsistent L2 L is not checked; the same row in daytime is
+replaced; `l_check_daytime_only = FALSE` reproduces Amendment 1.

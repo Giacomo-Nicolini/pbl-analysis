@@ -41,6 +41,8 @@
 #'   - `l_check_wtheta_min` [K m s-1] only rows with wtheta above this
 #'     (positive heat flux) are checked; stable and near-neutral rows keep
 #'     L2 L (default 0.005; spec 06 Amendment 1);
+#'   - `l_check_daytime_only` [logical] check only daytime rows ([is_day()];
+#'     default `TRUE`, spec 06 Amendment 2; `FALSE` = Amendment 1 behaviour);
 #'   - `label` [character] run label (default `"default"`).
 #' @return Named list of options.
 pblh_options <- function(...) {
@@ -62,6 +64,7 @@ pblh_options <- function(...) {
     l_source = "L2_checked",
     l_consistency_factor = 3,
     l_check_wtheta_min = 0.005,
+    l_check_daytime_only = TRUE,
     label = "default"
   )
   user <- list(...)
@@ -126,6 +129,10 @@ validate_pblh_options <- function(opts) {
   v <- opts$l_check_wtheta_min
   if (!(is.numeric(v) && length(v) == 1 && is.finite(v) && v >= 0)) {
     cli::cli_abort("Option {.field l_check_wtheta_min} must be a single number >= 0 [K m s-1].")
+  }
+  if (!(is.logical(opts$l_check_daytime_only) && length(opts$l_check_daytime_only) == 1 &&
+        !is.na(opts$l_check_daytime_only))) {
+    cli::cli_abort("Option {.field l_check_daytime_only} must be TRUE or FALSE.")
   }
   if (!(is.character(opts$label) && length(opts$label) == 1 && nzchar(opts$label))) {
     cli::cli_abort("Option {.field label} must be a non-empty string.")

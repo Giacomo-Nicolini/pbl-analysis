@@ -8,7 +8,8 @@
 # Ends with u* filter and L check summaries across cases and a side-by-side table of quantiles per regime.
 # Output: <derived_dir>/pblhmod/<site>_pblhmod_<label>.csv.gz
 # Regression chain (if the backups exist in <derived_dir>/pblhmod/): nofilter_l2 vs pre_spec05/ (spec-02
-# default) and l_L2 vs pre_spec06/ (spec-05 default); both must be identical (< 1e-9 m, same NA, regime, method).
+# default), l_L2 vs pre_spec06/ (spec-05 default) and l_check_allday (L check also at night = spec 06
+# amendment 1) vs pre_spec06a2/; all must be identical (< 1e-9 m, same NA, regime, method).
 #
 # Usage: Rscript scripts/02_run_pblh_model.R [SITE ...]
 #   Without arguments the sites in cfg$test_sites are used.
@@ -41,7 +42,8 @@ runs <- list(
   l_forcing = pblh_options(l_source = "forcing", label = "l_forcing"),
   lcons2 = pblh_options(l_consistency_factor = 2, label = "lcons2"),
   lcons5 = pblh_options(l_consistency_factor = 5, label = "lcons5"),
-  nofilter_l2 = pblh_options(ustar_ws_max = Inf, ustar_max = Inf, l_source = "L2", label = "nofilter_l2")
+  nofilter_l2 = pblh_options(ustar_ws_max = Inf, ustar_max = Inf, l_source = "L2", label = "nofilter_l2"),
+  l_check_allday = pblh_options(l_check_daytime_only = FALSE, label = "l_check_allday")
 )
 
 # L consistency accounting for one case (rule in l_consistency(), spec 02 amendment 13).
@@ -246,6 +248,8 @@ for (site_id in site_ids) {
                   "nofilter_l2 vs spec-02 default (pre_spec05)")
   check_reference(outs$l_L2, file.path(out_dir, "pre_spec06", paste0(site_id, "_pblhmod_default.csv.gz")),
                   "l_L2 vs spec-05 default (pre_spec06)")
+  check_reference(outs$l_check_allday, file.path(out_dir, "pre_spec06a2", paste0(site_id, "_pblhmod_default.csv.gz")),
+                  "l_check_allday vs spec-06 amendment-1 default (pre_spec06a2)")
 
   cli::cli_h2("Side by side: quantiles per regime [m] (rows valid in all cases and in the operational PBLH)")
   reg <- outs[[1]]$regime # regimes do not depend on combine / neutral_method / gamma
