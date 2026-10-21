@@ -223,3 +223,15 @@ test_that("L consistency options are validated", {
   expect_error(pblh_options(l_check_wtheta_min = -0.1), "l_check_wtheta_min")
   expect_no_error(pblh_options(l_consistency_factor = 1.5, l_check_wtheta_min = 0))
 })
+
+test_that("stable rows are not checked: inconsistent L2 L kept (spec 06 amendment 1)", {
+  # H = -20 W m-2, u* 0.5: L_forcing ~ +560 m; L2 L = +50 (11x) or -50 (sign): both kept
+  d <- make_icos_like(3, USTAR = 0.5, fn_H_F_MDS = c(-20, -20, -5), fn_TA_F_K = 293.15, fn_PA_F_PA = 1e5,
+                      MO_LENGTH = c(50, -50, 40))
+  f <- prepare_pblh_forcing(d, site)
+  expect_true(all(f$L_forcing[1:2] > 0))
+  expect_equal(f$L_check, c("not_checked", "not_checked", "not_checked"))
+  expect_false(any(f$flag_L_replaced))
+  expect_equal(f$L, c(50, -50, 40))
+  expect_equal(l_consistency(c(50, -50), c(560, 560), c(-0.02, -0.02)), c("not_checked", "not_checked"))
+})

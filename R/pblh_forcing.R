@@ -83,9 +83,12 @@ obukhov_length <- function(ustar, wtheta, T_K, const = pblh_constants()) {
 
 #' Consistency of L2 Obukhov length with the forcing
 #'
-#' Spec 06 (spec 02 Amendment 13). A row is checked if `L`, `L_forcing` and
-#' `wtheta0` are available and `|wtheta0| > opts$l_check_wtheta_min` (near
-#' neutral, |L| is large and ill-determined in both estimates). A checked row
+#' Spec 06 (spec 02 Amendment 13; spec 06 Amendment 1). A row is checked if
+#' `L`, `L_forcing` and `wtheta0` are available and `wtheta0 >
+#' opts$l_check_wtheta_min`, i.e. positive heat flux only. Near-neutral rows
+#' (|L| large and ill-determined in both estimates) and stable rows keep L2 L:
+#' checking stable rows at BE-Bra replaced mostly ordinary night-time L2 L and
+#' produced B1 values near the neutral limit (spec 06 Amendment 1). A checked row
 #' is inconsistent if the signs differ (`"sign"`) or, with the same sign,
 #' `max(L / L_forcing, L_forcing / L) > opts$l_consistency_factor`
 #' (`"magnitude"`).
@@ -97,7 +100,7 @@ obukhov_length <- function(ustar, wtheta, T_K, const = pblh_constants()) {
 #'   `l_check_wtheta_min` [K m s-1]).
 #' @return Character: `"not_checked"`, `"consistent"`, `"sign"`, `"magnitude"`.
 l_consistency <- function(L, L_forcing, wtheta0, opts = pblh_options()) {
-  checked <- !is.na(L) & !is.na(L_forcing) & !is.na(wtheta0) & abs(wtheta0) > opts$l_check_wtheta_min
+  checked <- !is.na(L) & !is.na(L_forcing) & !is.na(wtheta0) & wtheta0 > opts$l_check_wtheta_min
   sign_bad <- checked & sign(L) != sign(L_forcing)
   ratio <- pmax(L / L_forcing, L_forcing / L)
   mag_bad <- checked & !sign_bad & ratio > opts$l_consistency_factor

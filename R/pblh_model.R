@@ -38,8 +38,9 @@
 #'     (spec 02 Amendment 13);
 #'   - `l_consistency_factor` [-] largest accepted ratio between L2 L and the
 #'     L of the forcing (default 3; > 1);
-#'   - `l_check_wtheta_min` [K m s-1] rows with |wtheta| at or below this are
-#'     not checked (default 0.005);
+#'   - `l_check_wtheta_min` [K m s-1] only rows with wtheta above this
+#'     (positive heat flux) are checked; stable and near-neutral rows keep
+#'     L2 L (default 0.005; spec 06 Amendment 1);
 #'   - `label` [character] run label (default `"default"`).
 #' @return Named list of options.
 pblh_options <- function(...) {

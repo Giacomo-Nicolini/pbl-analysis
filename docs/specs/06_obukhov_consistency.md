@@ -121,3 +121,28 @@ Filling missing L2 L from the forcing; moisture correction of L_forcing (θv, LE
 As in `CLAUDE.md`, plus: rows checked/replaced per case and by regime; share of L2 L used; remaining values > 5 km;
 `flag_sign_inconsistent` before/after; pair-1 metrics spec 05 vs spec 06; anything unexpected (e.g. many
 replacements at night, or clusters of replacements on specific days or periods).
+
+## Amendment 1 (2026-10-21, agreed with G after the first BE-Bra run)
+
+**The consistency check (and replacement) applies only where `wtheta0 > opts$l_check_wtheta_min`, i.e. positive
+heat flux.** Stable and near-neutral rows keep L2 L; `L_check = "not_checked"` for rows with
+`wtheta0 <= l_check_wtheta_min`.
+
+Reason: checking stable rows as first specified replaced 16,751 rows at BE-Bra (75 % stable, 57 % at night, mostly
+at ordinary u*: median 0.42 m s-1), raised the PBLHmod values > 5 km from 11 to 112 (B1 near its neutral limit,
+from L_forcing of 20–125 km with a small negative night H at u* 2.2–3.0 m s-1), and made pair 1 (PBLHmod default vs
+ERA5 tower cell) worse (RMSE 349 → 417 m). The B5 jumps that motivated the spec are on the unstable side.
+
+Variants tested on BE-Bra (exploratory runs, pair 1 = PBLHmod default vs ERA5 tower cell; RMSE in m):
+
+| variant | > 5 km | rows replaced | RMSE | Pearson r | within factor 2 | RMSE stable | RMSE convective |
+|---|---|---|---|---|---|---|---|
+| spec 05 (`l_source = "L2"`) | 11 | 0 | 349 | 0.725 | 72.4 % | 310 | 385 |
+| spec 06 as first specified | 112 | 16,751 | 417 | 0.675 | 70.3 % | 414 | 412 |
+| **V1: check only where wtheta0 > 0 (adopted)** | **1** | 2,476 | **338** | **0.737** | **72.6 %** | 309 | **353** |
+| V2: as first specified + `ustar_max = 2` | 0 | 16,487 | 360 | 0.718 | 70.6 % | 342 | 362 |
+
+The remaining value > 5 km with V1 (2024-01-05 09:30, B1, u* 2.67 m s-1, H missing so not checked) is a known
+limitation of the spec 05 u* filter (open point in `docs/project_plan.md`).
+
+Test added: a stable row with an inconsistent L2 L (magnitude or sign) is not checked and keeps L2 L.
