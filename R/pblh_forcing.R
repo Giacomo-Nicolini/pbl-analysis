@@ -97,10 +97,16 @@ obukhov_length <- function(ustar, wtheta, T_K, const = pblh_constants()) {
 #' @param L_forcing Obukhov length from the forcing ([obukhov_length()]) [m].
 #' @param wtheta0 Kinematic heat flux of the same row [K m s-1].
 #' @param opts Output of [pblh_options()] (`l_consistency_factor` [-],
-#'   `l_check_wtheta_min` [K m s-1]).
+#'   `l_check_wtheta_min` [K m s-1], `l_check_daytime_only` [logical]).
+#' @param is_day Daytime flag of each row ([is_day()]: solar elevation > 0
+#'   at the half-hour midpoint) [logical]. With `opts$l_check_daytime_only`
+#'   only daytime rows are checked (spec 06 Amendment 2: positive night-time
+#'   gap-filled H can be wrong, and the check is meant for the B5 side, which
+#'   runs in daytime only). `NULL` = no daytime restriction.
 #' @return Character: `"not_checked"`, `"consistent"`, `"sign"`, `"magnitude"`.
-l_consistency <- function(L, L_forcing, wtheta0, opts = pblh_options()) {
+l_consistency <- function(L, L_forcing, wtheta0, opts = pblh_options(), is_day = NULL) {
   checked <- !is.na(L) & !is.na(L_forcing) & !is.na(wtheta0) & wtheta0 > opts$l_check_wtheta_min
+  if (isTRUE(opts$l_check_daytime_only) && !is.null(is_day)) checked <- checked & is_day %in% TRUE
   sign_bad <- checked & sign(L) != sign(L_forcing)
   ratio <- pmax(L / L_forcing, L_forcing / L)
   mag_bad <- checked & !sign_bad & ratio > opts$l_consistency_factor
@@ -119,7 +125,9 @@ l_consistency <- function(L, L_forcing, wtheta0, opts = pblh_options()) {
 #' - `ustar` and `L` are set to `NA` where u* is implausible
 #'   ([ustar_implausible()], FLUXES `WS`; `flag_ustar_implausible`), before
 #'   the short-gap interpolation below; `H` and the other inputs are untouched.
-#' - L consistency (Amendment 13): on the not-yet-interpolated values,
+#' - L consistency (Amendment 13; spec 06 Amendments 1-2: positive heat flux
+#'   and, with `opts$l_check_daytime_only`, daytime rows only): on the
+#'   not-yet-interpolated values,
 #'   `wtheta0 = H / (rho0 cp)`, `rho0 = p_Pa / (r_d T_K)`, `L_forcing` from
 #'   [obukhov_length()], `L_check` from [l_consistency()] (computed for every
 #'   `opts$l_source`). `"L2_checked"`: rows with `L_check` `"sign"` or
@@ -240,7 +248,8 @@ prepare_pblh_forcing <- function(data, site_meta, opts = pblh_options()) {
   wtheta0 <- H / (rho0 * const$cp) # kinematic heat flux of the row [K m s-1]
   L_forcing <- obukhov_length(ustar, wtheta0, T_K, const)
   L_l2 <- L
-  L_check <- l_consistency(L, L_forcing, wtheta0, opts)
+  day <- is_day(data$timestamp_start_utc, data$timestamp_end_utc, site_meta$lat, site_meta$lon)
+  L_check <- l_consistency(L, L_forcing, wtheta0, opts, is_day = day)
   L_check[excl] <- NA
   repl <- switch(opts$l_source,
     L2_checked = !is.na(L_check) & L_check %in% c("sign", "magnitude"),
@@ -293,7 +302,7 @@ prepare_pblh_forcing <- function(data, site_meta, opts = pblh_options()) {
     rho = rho,
     wtheta = wtheta,
     f_cor = f_cor,
-    is_day = is_day(data$timestamp_start_utc, data$timestamp_end_utc, site_meta$lat, site_meta$lon),
+    is_day = day,
     excl_flag = excl,
     flag_L_replaced = repl,
     flag_ustar_implausible = bad_u,

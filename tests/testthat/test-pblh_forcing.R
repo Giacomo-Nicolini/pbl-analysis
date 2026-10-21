@@ -149,7 +149,7 @@ test_that("L_forcing: hand case", {
   # rho0 = 100000 / (287.05 * 293.15) = 1.188372 kg m-3
   # wtheta0 = 200 / (1.188372 * 1005) = 0.167460 K m s-1
   # L = -0.5^3 * 293.15 / (0.4 * 9.80665 * 0.167460) = -36.64375 / 0.656890 = -55.784 m
-  d <- make_icos_like(1, USTAR = 0.5, fn_H_F_MDS = 200, fn_TA_F_K = 293.15, fn_PA_F_PA = 1e5, MO_LENGTH = -50)
+  d <- make_icos_like(1, start = "2024-06-01 10:00:00", USTAR = 0.5, fn_H_F_MDS = 200, fn_TA_F_K = 293.15, fn_PA_F_PA = 1e5, MO_LENGTH = -50)
   f <- prepare_pblh_forcing(d, site)
   expect_equal(f$L_forcing, -55.7838, tolerance = 1e-5)
   expect_equal(f$L_forcing, obukhov_length(0.5, 200 / (1e5 / (287.05 * 293.15) * 1005), 293.15))
@@ -172,7 +172,7 @@ test_that("l_consistency: sign, magnitude (both directions), near-neutral not ch
 
 test_that("inconsistent L2 L replaced by the forcing L and flagged; L_l2 kept", {
   # H = 200 W m-2 (wtheta0 ~ 0.167), u* 0.5: L_forcing ~ -55.8 m
-  d <- make_icos_like(4, USTAR = 0.5, fn_H_F_MDS = 200, fn_TA_F_K = 293.15, fn_PA_F_PA = 1e5,
+  d <- make_icos_like(4, start = "2024-06-01 10:00:00", USTAR = 0.5, fn_H_F_MDS = 200, fn_TA_F_K = 293.15, fn_PA_F_PA = 1e5,
                       MO_LENGTH = c(-50, 40, -3e6, -500))
   f <- prepare_pblh_forcing(d, site)
   expect_equal(f$L_check, c("consistent", "sign", "magnitude", "magnitude"))
@@ -184,7 +184,7 @@ test_that("inconsistent L2 L replaced by the forcing L and flagged; L_l2 kept", 
 })
 
 test_that("missing L2 L stays missing (never filled from the forcing), interpolated only in short gaps", {
-  d <- make_icos_like(8, USTAR = 0.5, fn_H_F_MDS = 200, fn_TA_F_K = 293.15, fn_PA_F_PA = 1e5,
+  d <- make_icos_like(8, start = "2024-06-01 10:00:00", USTAR = 0.5, fn_H_F_MDS = 200, fn_TA_F_K = 293.15, fn_PA_F_PA = 1e5,
                       MO_LENGTH = c(-50, NA, -60, -50, NA, NA, NA, -50))
   f <- prepare_pblh_forcing(d, site)
   expect_equal(f$L_source, c("L2", "interpolated", "L2", "L2", NA, NA, NA, "L2"))
@@ -195,7 +195,7 @@ test_that("missing L2 L stays missing (never filled from the forcing), interpola
 })
 
 test_that("rows rejected by the u* filter: L NA, not checked", {
-  d <- make_icos_like(3, USTAR = c(0.5, 2.5, 0.5), WS = 4, fn_H_F_MDS = 200, MO_LENGTH = 30)
+  d <- make_icos_like(3, start = "2024-06-01 10:00:00", USTAR = c(0.5, 2.5, 0.5), WS = 4, fn_H_F_MDS = 200, MO_LENGTH = 30)
   f <- prepare_pblh_forcing(d, site, pblh_options(max_gap_interp = 0))
   expect_true(f$flag_ustar_implausible[2])
   expect_true(is.na(f$L[2]) && is.na(f$L_l2[2]) && is.na(f$L_forcing[2]))
@@ -204,7 +204,7 @@ test_that("rows rejected by the u* filter: L NA, not checked", {
 })
 
 test_that("l_source L2 leaves L2 L as is; forcing uses L_forcing everywhere it exists", {
-  d <- make_icos_like(4, USTAR = 0.5, fn_H_F_MDS = c(200, 200, 0, 200), fn_TA_F_K = 293.15, fn_PA_F_PA = 1e5,
+  d <- make_icos_like(4, start = "2024-06-01 10:00:00", USTAR = 0.5, fn_H_F_MDS = c(200, 200, 0, 200), fn_TA_F_K = 293.15, fn_PA_F_PA = 1e5,
                       MO_LENGTH = c(-50, 40, -3e6, NA))
   a <- prepare_pblh_forcing(d, site, pblh_options(l_source = "L2", max_gap_interp = 0))
   expect_equal(a$L, c(-50, 40, -3e6, NA))
@@ -226,7 +226,7 @@ test_that("L consistency options are validated", {
 
 test_that("stable rows are not checked: inconsistent L2 L kept (spec 06 amendment 1)", {
   # H = -20 W m-2, u* 0.5: L_forcing ~ +560 m; L2 L = +50 (11x) or -50 (sign): both kept
-  d <- make_icos_like(3, USTAR = 0.5, fn_H_F_MDS = c(-20, -20, -5), fn_TA_F_K = 293.15, fn_PA_F_PA = 1e5,
+  d <- make_icos_like(3, start = "2024-06-01 10:00:00", USTAR = 0.5, fn_H_F_MDS = c(-20, -20, -5), fn_TA_F_K = 293.15, fn_PA_F_PA = 1e5,
                       MO_LENGTH = c(50, -50, 40))
   f <- prepare_pblh_forcing(d, site)
   expect_true(all(f$L_forcing[1:2] > 0))
@@ -234,4 +234,27 @@ test_that("stable rows are not checked: inconsistent L2 L kept (spec 06 amendmen
   expect_false(any(f$flag_L_replaced))
   expect_equal(f$L, c(50, -50, 40))
   expect_equal(l_consistency(c(50, -50), c(560, 560), c(-0.02, -0.02)), c("not_checked", "not_checked"))
+})
+
+test_that("night rows are not checked (spec 06 amendment 2); same row in daytime replaced; FALSE = V1", {
+  # positive H (+35 W m-2 gap-filled at night) with a stable L2 L: sign inconsistent
+  mk <- function(start) make_icos_like(1, start = start, USTAR = 0.4, fn_H_F_MDS = 35, fn_TA_F_K = 275,
+                                       fn_PA_F_PA = 1e5, MO_LENGTH = 80)
+  night <- prepare_pblh_forcing(mk("2023-01-20 01:00:00"), site)
+  expect_false(night$is_day)
+  expect_equal(night$L_check, "not_checked")
+  expect_false(night$flag_L_replaced)
+  expect_equal(night$L, 80)
+  day <- prepare_pblh_forcing(mk("2023-01-20 11:00:00"), site)
+  expect_true(day$is_day)
+  expect_equal(day$L_check, "sign")
+  expect_true(day$flag_L_replaced)
+  expect_equal(day$L, day$L_forcing)
+  v1 <- prepare_pblh_forcing(mk("2023-01-20 01:00:00"), site, pblh_options(l_check_daytime_only = FALSE))
+  expect_equal(v1$L_check, "sign")
+  expect_true(v1$flag_L_replaced)
+  expect_error(pblh_options(l_check_daytime_only = NA), "l_check_daytime_only")
+  expect_error(pblh_options(l_check_daytime_only = "yes"), "l_check_daytime_only")
+  # l_consistency without is_day: no daytime restriction
+  expect_equal(l_consistency(80, -50, 0.03), "sign")
 })
