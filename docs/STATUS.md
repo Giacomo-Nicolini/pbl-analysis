@@ -19,13 +19,14 @@ Last update: 2026-10-21. Read this first in a new session, then `docs/project_pl
 | 01 | Site metadata, time-varying heights, exclusions, ICOS L2 readers, unit checks | 0 | merged (`main`) |
 | 02 | PBLHmod v2 | 1 | merged (`main`, 58d45ad) |
 | 04 | ERA5 readers (3×3 cells, pressure levels, static), standard PBLH format, first PBLHmod vs ERA5 comparison at BE-Bra (amendments 1–8) | 0, 2, 3 (first step) | merged (`main`, aba3394) |
-| 05 | u* plausibility filter in the PBLHmod forcing (spec 02 amendment 12); local config override (`config.local.yml`, no cluster paths in tracked files) | 1 | implemented on branch `spec-05-ustar-filter`, under review |
+| 05 | u* plausibility filter in the PBLHmod forcing (spec 02 amendment 12); local config override (`config.local.yml`, no cluster paths in tracked files) | 1 | merged (`main`, 25ae55c) |
+| 06 | L (Obukhov length) computed from the PBLHmod forcing instead of L2 `MO_LENGTH` (open point in `project_plan.md`) | 1 | to be drafted |
 | 03 | Legacy regression: reproduce operational PBLH from L2, port legacy code, attribute differences to PBLHmod v2 | 1 | drafted, not started |
 
 Phases (see `project_plan.md`): 0 done; 1 model done, legacy regression pending (spec 03); 2 standard format and
 three sources done (spec 04), measured PBLH pending; 3 started at BE-Bra only; 4–6 not started.
 
-- Tests: 645 passing (spec 05 branch; 594 on `main` after spec 04). Environment: R 4.4.1 + renv (Posit Package
+- Tests: 645 passing (`main`, after spec 05). Environment: R 4.4.1 + renv (Posit Package
   Manager), same as the cluster. Machine-specific paths in the untracked `config.local.yml` (template
   `config.local.yml.example`).
 - PBLHmod defaults: `stable_method = "nieuwstadt"` (B1), `neutral_method = "auto"` (B2 if 10 < N/|f| < 70, else
@@ -49,9 +50,12 @@ three sources done (spec 04), measured PBLH pending; 3 started at BE-Bra only; 4
 
 1. ~~Review and merge spec 04 (`spec-04-era5-compare`).~~ Done (2026-10-21, merged at aba3394; `mad_log_ratio`
    switched to the scaled MAD at review, amendment 8).
-2. Review and merge spec 05 (`spec-05-ustar-filter`). Runs before spec 03, because spec 03 compares the legacy
-   forcing with PBLHmod's (which now includes the u* filter).
-3. Spec 03 — `docs/specs/03_legacy_regression.md`, branch `spec-03-legacy-regression`. Inputs of the ETC call
+2. ~~Review and merge spec 05 (`spec-05-ustar-filter`).~~ Done (2026-10-21, merged at 25ae55c).
+3. Spec 06 — L computed from the PBLHmod forcing (H_F_MDS, u*, T, p) instead of L2 `MO_LENGTH`: at BE-Bra, 10 of
+   the 11 values > 5 km left after the u* filter come from B5 on days where L2 H is QC-rejected but `MO_LENGTH`
+   (from H_UNCLEANED ≈ 0, |L| ≈ 3e6 m) is kept; 1,237 convective rows have L2 L off by > 3× from the forcing L.
+   Before spec 03, which compares the legacy forcing with PBLHmod's.
+4. Spec 03 — `docs/specs/03_legacy_regression.md`, branch `spec-03-legacy-regression`. Inputs of the ETC call
    confirmed by G (2026-10-17); only published L2 files are used: AT, AP, rho, cp (EddyPro ambient values, not in
    L2) are rebuilt from L2 with the EddyPro formulas; MOL gap-filled by LOCF before the call.
    Already established: `proc_PBL_height.R` floors at 50 m (4,055 rows at BE-Bra) and fills NA with the day/night
