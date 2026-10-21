@@ -31,6 +31,13 @@ test_that("standardize_pblhmod maps flags to qc (highest wins) and drops exclude
   r3 <- suppressMessages(standardize_pblhmod(out, "default"))
   expect_equal(r3$data$qc_flag, c(1L, 1L, 3L, 2L, 2L))
   expect_match(r3$meta$qc_flag_meaning$`1`, "flag_ustar_implausible", fixed = TRUE)
+  # L replaced from the forcing alone gives qc 1 (spec 06)
+  out$flag_ustar_implausible <- FALSE
+  out$flag_L_replaced <- c(FALSE, FALSE, FALSE, FALSE, FALSE, FALSE)
+  out$flag_L_replaced[1] <- TRUE
+  r4 <- suppressMessages(standardize_pblhmod(out, "default"))
+  expect_equal(r4$data$qc_flag, c(1L, 1L, 3L, 2L, 2L))
+  expect_match(r4$meta$qc_flag_meaning$`1`, "replaced", fixed = TRUE)
 })
 
 test_that("standardize_pblhmod accepts the derived csv (character ISO times)", {

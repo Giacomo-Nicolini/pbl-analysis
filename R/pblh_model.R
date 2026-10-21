@@ -32,6 +32,15 @@
 #'     disables the ratio test), [ustar_implausible()], spec 02 Amendment 12;
 #'   - `ws_min_ratio_test` [m s-1] ratio test only where WS >= this (default 1);
 #'   - `ustar_max` [m s-1] absolute u* cap (default 3; `Inf` disables);
+#'   - `l_source` [`"L2_checked"` (default), `"L2"`, `"forcing"`] Obukhov
+#'     length: L2 `MO_LENGTH` replaced by the L of the forcing where
+#'     inconsistent ([l_consistency()]), L2 as is, or always from the forcing
+#'     (spec 02 Amendment 13);
+#'   - `l_consistency_factor` [-] largest accepted ratio between L2 L and the
+#'     L of the forcing (default 3; > 1);
+#'   - `l_check_wtheta_min` [K m s-1] only rows with wtheta above this
+#'     (positive heat flux) are checked; stable and near-neutral rows keep
+#'     L2 L (default 0.005; spec 06 Amendment 1);
 #'   - `label` [character] run label (default `"default"`).
 #' @return Named list of options.
 pblh_options <- function(...) {
@@ -50,6 +59,9 @@ pblh_options <- function(...) {
     ustar_ws_max = 0.5,
     ws_min_ratio_test = 1,
     ustar_max = 3,
+    l_source = "L2_checked",
+    l_consistency_factor = 3,
+    l_check_wtheta_min = 0.005,
     label = "default"
   )
   user <- list(...)
@@ -106,6 +118,15 @@ validate_pblh_options <- function(opts) {
       cli::cli_abort("Option {.field {k}} must be a single positive number or {.code Inf}.")
     }
   }
+  one_of("l_source", c("L2_checked", "L2", "forcing"))
+  v <- opts$l_consistency_factor
+  if (!(is.numeric(v) && length(v) == 1 && !is.na(v) && v > 1)) {
+    cli::cli_abort("Option {.field l_consistency_factor} must be a single number > 1.")
+  }
+  v <- opts$l_check_wtheta_min
+  if (!(is.numeric(v) && length(v) == 1 && is.finite(v) && v >= 0)) {
+    cli::cli_abort("Option {.field l_check_wtheta_min} must be a single number >= 0 [K m s-1].")
+  }
   if (!(is.character(opts$label) && length(opts$label) == 1 && nzchar(opts$label))) {
     cli::cli_abort("Option {.field label} must be a non-empty string.")
   }
@@ -145,9 +166,12 @@ validate_pblh_options <- function(opts) {
 #'   `"unstable_diag"`, `"convective"`, `"excluded"`, `NA`), `method` (`"B1"`,
 #'   `"B2"`, `"B3"`, `"B4"`, `"B5"`, `NA`), `h_diag_m` [m], `h_bg_m` [m, window only],
 #'   `day_id` [Date, local standard time], `is_day` [logical], `ustar` [m s-1],
-#'   `L` [m], `wtheta` [K m s-1], `T_K` [K], `p_Pa` [Pa], `H_source`,
+#'   `L` [m, used by the model], `L_l2`, `L_forcing` [m], `L_source`,
+#'   `L_check` (spec 02 Amendment 13, see [prepare_pblh_forcing()]),
+#'   `wtheta` [K m s-1], `T_K` [K], `p_Pa` [Pa], `H_source`,
 #'   `T_source`, `p_source`, `zm_m` [m], `WS` [m s-1], flags (logical):
-#'   `flag_ustar_implausible` (spec 02 Amendment 12), `flag_ustar_interp`,
+#'   `flag_L_replaced` (Amendment 13), `flag_ustar_implausible` (Amendment
+#'   12), `flag_ustar_interp`,
 #'   `flag_L_interp`, `flag_H_interp`, `flag_H_qc_masked`, `flag_no_h0`,
 #'   `flag_bg_stopped_gap`, `flag_sign_inconsistent`, `flag_no_positive_h`,
 #'   `flag_polar_day`, `flag_below_zm` (`pblh_m < zm_m`), and `excl_flag`.
@@ -291,6 +315,10 @@ run_pblh_model <- function(data, site_meta, opts = pblh_options()) {
     ustar = f$ustar,
     WS = f$WS,
     L = f$L,
+    L_l2 = f$L_l2,
+    L_forcing = f$L_forcing,
+    L_source = f$L_source,
+    L_check = f$L_check,
     wtheta = f$wtheta,
     T_K = f$T_K,
     p_Pa = f$p_Pa,
@@ -298,6 +326,7 @@ run_pblh_model <- function(data, site_meta, opts = pblh_options()) {
     T_source = f$T_source,
     p_source = f$p_source,
     zm_m = zm,
+    flag_L_replaced = f$flag_L_replaced,
     flag_ustar_implausible = f$flag_ustar_implausible,
     flag_ustar_interp = f$flag_ustar_interp,
     flag_L_interp = f$flag_L_interp,

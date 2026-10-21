@@ -2,11 +2,13 @@
 # Runs: default (bg_only, neutral auto, gamma 0.01 K/m); gamma0025 (legacy gamma);
 # max_B2 (combine max, neutral B2: behaviour before amendment 11); max_auto;
 # u* filter sensitivity (spec 05, spec 02 amendment 12): ustar04 / ustar06 (u*/WS limit 0.4 / 0.6) and
-# nofilter (filter disabled = previous default). All other cases use the filter defaults.
-# Ends with a u* filter summary across cases and a side-by-side table of quantiles per regime.
+# nofilter (u* filter disabled); L consistency (spec 06, spec 02 amendment 13): l_L2 (no check = spec 05),
+# l_forcing (L always from the forcing, option D), lcons2 / lcons5 (factor 2 / 5); nofilter_l2 (no u* filter,
+# no L check = spec 02). All other cases use the defaults (u* filter on, l_source = "L2_checked").
+# Ends with u* filter and L check summaries across cases and a side-by-side table of quantiles per regime.
 # Output: <derived_dir>/pblhmod/<site>_pblhmod_<label>.csv.gz
-# If <derived_dir>/pblhmod/pre_spec05/<site>_pblhmod_default.csv.gz exists (spec-02 output saved before
-# spec 05), the nofilter case is compared with it (must be identical, < 1e-9 m).
+# Regression chain (if the backups exist in <derived_dir>/pblhmod/): nofilter_l2 vs pre_spec05/ (spec-02
+# default) and l_L2 vs pre_spec06/ (spec-05 default); both must be identical (< 1e-9 m, same NA, regime, method).
 #
 # Usage: Rscript scripts/02_run_pblh_model.R [SITE ...]
 #   Without arguments the sites in cfg$test_sites are used.
@@ -34,8 +36,52 @@ runs <- list(
   max_auto = pblh_options(combine = "max", neutral_method = "auto", label = "max_auto"),
   ustar04 = pblh_options(ustar_ws_max = 0.4, label = "ustar04"),
   ustar06 = pblh_options(ustar_ws_max = 0.6, label = "ustar06"),
-  nofilter = pblh_options(ustar_ws_max = Inf, ustar_max = Inf, label = "nofilter")
+  nofilter = pblh_options(ustar_ws_max = Inf, ustar_max = Inf, label = "nofilter"),
+  l_L2 = pblh_options(l_source = "L2", label = "l_L2"),
+  l_forcing = pblh_options(l_source = "forcing", label = "l_forcing"),
+  lcons2 = pblh_options(l_consistency_factor = 2, label = "lcons2"),
+  lcons5 = pblh_options(l_consistency_factor = 5, label = "lcons5"),
+  nofilter_l2 = pblh_options(ustar_ws_max = Inf, ustar_max = Inf, l_source = "L2", label = "nofilter_l2")
 )
+
+# L consistency accounting for one case (rule in l_consistency(), spec 02 amendment 13).
+l_report <- function(out, opts) {
+  ok <- !out$excl_flag
+  chk <- out$L_check %in% c("consistent", "sign", "magnitude")
+  rp <- out$flag_L_replaced
+  data.frame(
+    case = opts$label, l_source = opts$l_source, checked = sum(chk),
+    repl_sign = sum(rp & out$L_check %in% "sign"), repl_magnitude = sum(rp & out$L_check %in% "magnitude"),
+    replaced = sum(rp), days_with_repl = length(unique(out$day_id[rp])),
+    pct_L_from_L2 = round(100 * sum(out$L_source %in% "L2" & ok) / sum(!is.na(out$L) & ok), 2),
+    sign_inconsistent = sum(out$flag_sign_inconsistent),
+    gt5km = sum(out$pblh_m > 5000, na.rm = TRUE), gt10km = sum(out$pblh_m > 10000, na.rm = TRUE)
+  )
+}
+
+# Compare a case with a saved reference output (regression chain).
+check_reference <- function(new, ref_path, what) {
+  if (!file.exists(ref_path)) {
+    cli::cli_alert_info("{what}: reference {.path {ref_path}} not found, check skipped.")
+    return(invisible(NA))
+  }
+  cli::cli_h2(what)
+  old <- readr::read_csv(ref_path, show_col_types = FALSE, progress = FALSE, guess_max = 1e5)
+  same_rows <- nrow(old) == nrow(new) && all(old$timestamp_start_utc == new$timestamp_start_utc)
+  cmp <- vapply(c("pblh_m", "h_diag_m", "h_bg_m", "ustar", "L"), function(k) {
+    if (!identical(is.na(old[[k]]), is.na(new[[k]]))) return(Inf)
+    max(c(0, abs(old[[k]] - new[[k]])), na.rm = TRUE)
+  }, numeric(1))
+  print_tbl(data.frame(column = names(cmp), max_abs_diff = cmp))
+  chr_same <- all(vapply(c("regime", "method"), function(k) identical(old[[k]], new[[k]]), logical(1)))
+  ok <- same_rows && chr_same && all(cmp < 1e-9)
+  if (ok) {
+    cli::cli_alert_success("{what}: identical (max |diff| < 1e-9 m, same NA pattern, same regime/method).")
+  } else {
+    cli::cli_alert_danger("{what}: differs (rows {same_rows}, regime/method {chr_same}).")
+  }
+  invisible(ok)
+}
 
 # u* filter accounting for one case (rule in ustar_implausible(), spec 02 amendment 12).
 ustar_report <- function(d, out, opts) {
@@ -173,25 +219,33 @@ for (site_id in site_ids) {
   cli::cli_h2("u* filter summary across cases (gt5km / gt10km: pblh_m > 5 / 10 km)")
   print_tbl(do.call(rbind, lapply(names(outs), function(k) ustar_report(d, outs[[k]], runs[[k]]))))
 
-  ref <- file.path(out_dir, "pre_spec05", paste0(site_id, "_pblhmod_default.csv.gz"))
-  if (file.exists(ref)) {
-    cli::cli_h2("nofilter vs spec-02 default saved before spec 05")
-    old <- readr::read_csv(ref, show_col_types = FALSE, progress = FALSE, guess_max = 1e5)
-    nf <- outs$nofilter
-    same_rows <- nrow(old) == nrow(nf) && all(old$timestamp_start_utc == nf$timestamp_start_utc)
-    cmp <- vapply(c("pblh_m", "h_diag_m", "h_bg_m", "ustar", "L"), function(k) {
-      same_na <- identical(is.na(old[[k]]), is.na(nf[[k]]))
-      if (!same_na) return(Inf)
-      max(c(0, abs(old[[k]] - nf[[k]])), na.rm = TRUE)
-    }, numeric(1))
-    print_tbl(data.frame(column = names(cmp), max_abs_diff = cmp))
-    chr_same <- all(vapply(c("regime", "method"), function(k) identical(old[[k]], nf[[k]]), logical(1)))
-    if (same_rows && chr_same && all(cmp < 1e-9)) {
-      cli::cli_alert_success("nofilter reproduces the spec-02 default (max |diff| < 1e-9 m, same NA pattern, same regime/method).")
-    } else {
-      cli::cli_alert_danger("nofilter differs from the spec-02 default (rows {same_rows}, regime/method {chr_same}).")
-    }
+  cli::cli_h2("L consistency summary across cases (checked: L_check consistent / sign / magnitude)")
+  print_tbl(do.call(rbind, lapply(names(outs), function(k) l_report(outs[[k]], runs[[k]]))))
+
+  # Default case: where and when L is replaced, and every value > 5 km that remains.
+  od <- outs$default
+  rp <- od$flag_L_replaced
+  cli::cli_h2("Default: L replacements by regime, day/night, year; days with most replacements")
+  cnt <- function(x, name) count_tbl(x, name)
+  print_tbl(merge(cnt(od$regime[rp], "regime"), cnt(od$regime[od$L_check %in% c("consistent", "sign", "magnitude")],
+                                                    "regime"), by = "regime", suffixes = c("_replaced", "_checked")))
+  print_tbl(cnt(ifelse(od$is_day[rp], "day", "night"), "is_day"))
+  print_tbl(cnt(format(od$timestamp_start_utc[rp], "%Y"), "year"))
+  top <- sort(table(od$day_id[rp]), decreasing = TRUE)[1:10]
+  print_tbl(data.frame(day_id = names(top), n_replaced = as.integer(top)))
+  big <- od[!is.na(od$pblh_m) & od$pblh_m > 5000, ]
+  cli::cli_h2("Default: rows with pblh_m > 5 km ({nrow(big)})")
+  if (nrow(big) > 0) {
+    print_tbl(dplyr::transmute(big, t_start = format(timestamp_start_utc, "%Y-%m-%d %H:%M"), pblh_m = round(pblh_m),
+                               regime, method, L = signif(L, 3), L_l2 = signif(L_l2, 3), L_forcing = signif(L_forcing, 3),
+                               L_check, wtheta = signif(wtheta, 3), ustar = round(ustar, 3), H_source))
   }
+
+  # Regression chain.
+  check_reference(outs$nofilter_l2, file.path(out_dir, "pre_spec05", paste0(site_id, "_pblhmod_default.csv.gz")),
+                  "nofilter_l2 vs spec-02 default (pre_spec05)")
+  check_reference(outs$l_L2, file.path(out_dir, "pre_spec06", paste0(site_id, "_pblhmod_default.csv.gz")),
+                  "l_L2 vs spec-05 default (pre_spec06)")
 
   cli::cli_h2("Side by side: quantiles per regime [m] (rows valid in all cases and in the operational PBLH)")
   reg <- outs[[1]]$regime # regimes do not depend on combine / neutral_method / gamma
