@@ -52,9 +52,9 @@ Replace `era5_dir` in `config.yml` (both profiles) with:
 
 | key | default (local) | cluster |
 |---|---|---|
-| `era5_sl_dir` | `data/raw/era5/{site}` | `/bigdata/c.trotta/era2oneflux_claude_zarr_giacomo/ERA5_surface_single_level/{site}` |
-| `era5_pl_dir` | `data/raw/era5_pressure_levels/{site}` | `/bigdata/c.trotta/era2oneflux_claude_zarr_giacomo/ERA5_pressure_levels/{site}` |
-| `era5_static_dir` | `data/raw/era5_single_levels` | `/bigdata/c.trotta/era2oneflux_claude_cds_giacomo_grib/out1/{var}` |
+| `era5_sl_dir` | `data/raw/era5/{site}` | cluster path: set in `config.local.yml` (see `config.local.yml.example`) |
+| `era5_pl_dir` | `data/raw/era5_pressure_levels/{site}` | cluster path: set in `config.local.yml` (see `config.local.yml.example`) |
+| `era5_static_dir` | `data/raw/era5_single_levels` | cluster path ending in `{var}`: set in `config.local.yml` (see `config.local.yml.example`) |
 
 Extend `resolve_path()` to substitute `{var}` (same mechanism as `{site}`; abort if a placeholder is left
 unresolved). Locally all static variables are in one folder (no `{var}`), on the cluster one folder per variable:

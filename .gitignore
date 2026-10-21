@@ -29,3 +29,6 @@ renv/local/
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# --- Machine-specific configuration (paths, user names) ---
+config.local.yml
