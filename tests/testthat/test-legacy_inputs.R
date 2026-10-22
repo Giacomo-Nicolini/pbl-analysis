@@ -64,3 +64,19 @@ test_that("legacy_inputs: runs split, trimmed to first data row, LOCF within eac
   expect_equal(attr(legacy_inputs(d, site, ambient = "rho_cp_legacy"), "pass_null"), c("rho", "cp"))
   expect_error(legacy_inputs(dplyr::select(d, -H2O), site), "H2O")
 })
+
+test_that("eddypro_ambient returns the engine RH; amb_na variant blanks AT, rho, cp", {
+  a <- eddypro_ambient(c(293.15, 293.15, 273.15), c(10, NA, 40), 16)
+  expect_equal(a$RH[1], 45.8176, tolerance = 1e-5) # hand case above
+  expect_true(is.na(a$RH[2]))                       # no H2O
+  expect_equal(a$RH[3], -9999)                      # supersaturated: engine error value
+  t <- as.POSIXct("2024-06-01 10:00:00", tz = "UTC") + 1800 * 0:2
+  d <- dplyr::tibble(timestamp_start_utc = t, timestamp_end_utc = t + 1800,
+                     TIMESTAMP_START = format(t + 3600, "%Y%m%d%H%M"), TIMESTAMP_END = format(t + 5400, "%Y%m%d%H%M"),
+                     MO_LENGTH = -50, USTAR = 0.4, H = 100, T_SONIC_K = c(293.15, 293.15, 273.15), H2O = c(10, NA, 40),
+                     zm_m = 30, canopy_height_m = 20)
+  x <- legacy_inputs(d, dplyr::tibble(altitude_m = 16), ambient = "amb_na")
+  expect_equal(is.na(x$AT), c(FALSE, TRUE, TRUE))
+  expect_equal(is.na(x$rho), c(FALSE, TRUE, TRUE))
+  expect_equal(is.na(x$cp), c(FALSE, TRUE, TRUE))
+})

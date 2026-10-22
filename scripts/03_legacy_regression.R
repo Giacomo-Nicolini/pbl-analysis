@@ -110,6 +110,26 @@ repro_stats <- function(leg, oper, year, regime, variant) {
 
 oper_fills <- c(1654.58, 843.07, 1591.68, 682.86) # operational fill values (STATUS; spec 04 amendment 7)
 
+# Fill counts (day / night, from the hour of TIMESTAMP_END) and operational fill blocks reproduced:
+# a block = run of consecutive operational fill rows; reproduced if >= 50 % (or 100 %) of its rows are
+# filled by the legacy run.
+fill_stats <- function(res, oper, inp, variant) {
+  hr <- as.integer(substr(inp$TIMESTAMP, 12, 13))
+  day <- hr >= 6 & hr <= 18
+  oper_fill <- !is.na(oper) & sprintf("%.2f", oper) %in% sprintf("%.2f", oper_fills)
+  r <- rle(oper_fill)
+  ends <- cumsum(r$lengths)
+  starts <- ends - r$lengths + 1
+  blk <- which(r$values)
+  share <- vapply(blk, function(b) mean(res$flag_fill[starts[b]:ends[b]]), numeric(1))
+  data.frame(variant = variant, stratum = "all",
+             statistic = c("n_fill_day", "n_fill_night", "n_oper_fill_day", "n_oper_fill_night",
+                           "n_oper_fill_blocks", "blocks_reproduced_50pct", "blocks_reproduced_100pct",
+                           "share_oper_fill_rows_filled"),
+             value = c(sum(res$flag_fill & day), sum(res$flag_fill & !day), sum(oper_fill & day), sum(oper_fill & !day),
+                       length(blk), sum(share >= 0.5), sum(share == 1), mean(res$flag_fill[oper_fill])))
+}
+
 for (site_id in site_ids) {
   t0 <- Sys.time()
   cli::cli_h1("Legacy regression: {site_id}")
@@ -126,6 +146,7 @@ for (site_id in site_ids) {
     AT_sonic = list(split = "202601010000", ambient = "AT_sonic"),
     AP_altitude = list(split = "202601010000", ambient = "AP_altitude"),
     rho_cp_legacy = list(split = "202601010000", ambient = "rho_cp_legacy"),
+    amb_na = list(split = "202601010000", ambient = "amb_na"),
     one_run = list(split = NULL, ambient = "rebuilt")
   )
   stats_all <- list()
@@ -137,7 +158,7 @@ for (site_id in site_ids) {
     oper <- d$PBLH[m]
     year <- as.integer(substr(d$TIMESTAMP_START[m], 1, 4))
     regime <- mod$regime[match(as.numeric(inp$timestamp_start_utc), as.numeric(mod$timestamp_start_utc))]
-    stats_all[[v]] <- repro_stats(res$pblh, oper, year, regime, v)
+    stats_all[[v]] <- rbind(repro_stats(res$pblh, oper, year, regime, v), fill_stats(res, oper, inp, v))
     fills_all[[v]] <- cbind(variant = v, res$fills)
     readr::write_csv(dplyr::tibble(timestamp_start_utc = inp$timestamp_start_utc, run_id = inp$run_id,
                                    pblh_legacy_m = res$pblh, flag_fill = res$flag_fill, pblh_oper_m = oper),

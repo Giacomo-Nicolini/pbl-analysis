@@ -54,7 +54,9 @@ eddypro_constants <- function() {
 #' @param altitude_m Site altitude [m a.s.l.] (scalar).
 #' @param ep Output of [eddypro_constants()].
 #' @return Tibble: `AT` air temperature [K], `AP` air pressure [Pa], `rho`
-#'   moist air density [kg m-3], `cp` moist air heat capacity [J kg-1 K-1].
+#'   moist air density [kg m-3], `cp` moist air heat capacity [J kg-1 K-1],
+#'   `RH` relative humidity of the engine's iteration [%; -9999 (engine error
+#'   value) outside 0..130 %, `NA` without H2O].
 eddypro_ambient <- function(t_sonic_K, h2o_mmol_mol, altitude_m, ep = eddypro_constants()) {
   if (length(altitude_m) != 1 || is.na(altitude_m)) cli::cli_abort("{.arg altitude_m} must be one value [m].")
   n <- length(t_sonic_K)
@@ -98,7 +100,8 @@ eddypro_ambient <- function(t_sonic_K, h2o_mmol_mol, altitude_m, ep = eddypro_co
   ta[nw] <- ts[nw]
   rho_a[nw] <- ap[nw] / (ep$Rd * ts[nw])
   cp[nw] <- cpd_fun(ts[nw])
-  dplyr::tibble(AT = ta, AP = ap, rho = rho_a, cp = cp)
+  rh[nw] <- NA_real_
+  dplyr::tibble(AT = ta, AP = ap, rho = rho_a, cp = cp, RH = rh)
 }
 
 #' Last observation carried forward
@@ -136,14 +139,16 @@ locf <- function(x) {
 #' @param ambient `"rebuilt"` (default, [eddypro_ambient()]) or a sensitivity
 #'   variant: `"AT_sonic"` (`AT = T_SONIC`), `"AP_altitude"` (`AP = NULL`: the
 #'   legacy computes it from altitude + zm), `"rho_cp_legacy"` (`rho`, `cp` =
-#'   `NULL`: computed inside the legacy function).
+#'   `NULL`: computed inside the legacy function), `"amb_na"` (hypothesis test,
+#'   spec 03: `AT`, `rho`, `cp` set to `NA` where L2 `H2O` is missing or the
+#'   engine's RH is outside 0..130 %).
 #' @return Tibble: `run_id` [integer], `timestamp_start_utc`,
 #'   `timestamp_end_utc` [POSIXct UTC], `TIMESTAMP` [character], `MOL` [m],
 #'   `ustar` [m s-1], `H` [W m-2], `AT` [K], `AP` [Pa], `rho` [kg m-3], `cp`
 #'   [J kg-1 K-1] (the last three `NA` columns when the variant passes `NULL`,
 #'   see attribute `pass_null`), `zm` [m], `d` [m].
 legacy_inputs <- function(d, site_meta, split_local = "202601010000",
-                          ambient = c("rebuilt", "AT_sonic", "AP_altitude", "rho_cp_legacy")) {
+                          ambient = c("rebuilt", "AT_sonic", "AP_altitude", "rho_cp_legacy", "amb_na")) {
   ambient <- match.arg(ambient)
   for (k in c("TIMESTAMP_START", "TIMESTAMP_END", "MO_LENGTH", "USTAR", "H", "T_SONIC_K", "H2O")) {
     if (!k %in% names(d)) cli::cli_abort("Column {.field {k}} not found in {.arg d}.")
@@ -161,6 +166,12 @@ legacy_inputs <- function(d, site_meta, split_local = "202601010000",
   run_id <- run_id[keep]
   amb <- eddypro_ambient(d$T_SONIC_K, d$H2O, site_meta$altitude_m)
   if (ambient == "AT_sonic") amb$AT <- d$T_SONIC_K
+  if (ambient == "amb_na") {
+    bad <- is.na(d$H2O) | d$H2O <= 0 | (!is.na(amb$RH) & amb$RH == -9999)
+    amb$AT[bad] <- NA_real_
+    amb$rho[bad] <- NA_real_
+    amb$cp[bad] <- NA_real_
+  }
   t_end <- as.POSIXct(d$TIMESTAMP_END, format = "%Y%m%d%H%M", tz = "UTC") # clock time, local standard
   mol <- d$MO_LENGTH
   for (r in unique(run_id)) mol[run_id == r] <- locf(mol[run_id == r])

@@ -217,3 +217,18 @@ legacy behaviour that the port had to emulate deliberately (quirks).
 4. **Input data facts found while planning (BE-Bra):** L2 `H2O` is in mmol mol-1 (median 9.75, range 4–17); L2
    `T_SONIC` is 5.2 K above METEO `TA` (median, IQR 3.6–6.8 K), more than the ≈ 0.9 K humidity effect (sonic
    temperature offset, inherited by the EddyPro ambient `AT`; item in the ETC QC report).
+5. **G's answers (2026-10-22), recorded here because no Amendment 2 was needed** (the hypothesis test below did
+   not change the inputs): (1) in the ETC cleanset, EddyPro −9999 values in `air_density`, `air_heat_capacity`,
+   `air_temperature` are converted to NA before `calc_PBL_height()` is called; (2) the operational `PBLH` was
+   computed from the same cleanset that became the published L2.
+6. **Hypothesis test `amb_na` (2026-10-22), rejected.** Hypothesis: the operational `AT`/`rho`/`cp` were NA where
+   EddyPro could not compute them, breaking the B&G chain and leaving the daytime NA blocks that
+   `proc_PBL_height()` fills. Note: in the engine source (flux_params.f90) neither a missing H2O nor an RH outside
+   0–130 % makes these three outputs −9999 (dry-air fallback; only RH becomes −9999), so the test is empirical.
+   BE-Bra results: of the 15,136 rows filled in the operational column but computed in the reproduction, 1.3 % have
+   L2 H2O missing and 1.2 % an engine RH outside 0–130 % (2.5 % either), vs 0.8 % / 0.7 % (1.4 %) on rows computed
+   in both. Variant `amb_na` (AT, rho, cp NA there) vs `rebuilt`: fills 4,898 / 1,738 (day / night) vs 4,884 /
+   1,732 (operational 18,298 / 3,166); operational fill blocks (1,342) reproduced ≥ 50 %: 336 vs 335, fully: 113 vs
+   113; fill values 1601.81 / 846.11 / 1584.28 / 705.30 m (operational 1654.58 / 843.07 / 1591.68 / 682.86); p95
+   |rel. diff| 49.4 %; within 0.01 m 9.5 %. Acceptance (section 2) still not met; part A stopped. Next: the ETC
+   inputs for one month from G.
