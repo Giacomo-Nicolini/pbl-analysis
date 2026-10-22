@@ -130,9 +130,13 @@ locf <- function(x) {
 #' the legacy code, which is computed but never used). Runs (Amendment 1):
 #' split at `TIMESTAMP_START` = `split_local` (local standard time); each run
 #' starts at its first FLUXES row with data (any of `MO_LENGTH`, `USTAR`, `H`,
-#' `T_SONIC` non-missing) and ends at the last row of the run.
+#' `T_SONIC` non-missing) and ends at the last row of the run, or at
+#' `TIMESTAMP_END` = `end_local` for the last run (Amendment 2: the
+#' operational run 2 ended at 2026-08-26 00:00 at BE-Bra).
 #'
 #' @param d Output of [read_icos_site()] (with `H2O`).
+#' @param end_local Last `TIMESTAMP_END` kept, `YYYYMMDDHHMM` local standard
+#'   time [character]; `NULL` = end of the data.
 #' @param site_meta One row of [read_sites()] (`altitude_m`).
 #' @param split_local Start of the second run, `YYYYMMDDHHMM` local standard
 #'   time [character]; `NULL` = one run.
@@ -146,12 +150,12 @@ locf <- function(x) {
 #'   wherever L2 `TAU` is missing [logical].
 #' @return Tibble: `run_id` [integer], `timestamp_start_utc`,
 #'   `timestamp_end_utc` [POSIXct UTC], `TIMESTAMP` [character], `MOL` [m],
-#'   `ustar` [m s-1], `H` [W m-2], `AT` [K], `AP` [Pa], `rho` [kg m-3], `cp`
+#'   `MOL_raw` (L2 L before LOCF) [m], `ustar` [m s-1], `H` [W m-2], `AT` [K], `AP` [Pa], `rho` [kg m-3], `cp`
 #'   [J kg-1 K-1] (the last three `NA` columns when the variant passes `NULL`,
 #'   see attribute `pass_null`), `zm` [m], `d` [m].
 legacy_inputs <- function(d, site_meta, split_local = "202601010000",
                           ambient = c("rebuilt", "AT_sonic", "AP_altitude", "rho_cp_legacy", "amb_na"),
-                          tau_na = FALSE) {
+                          tau_na = FALSE, end_local = NULL) {
   ambient <- match.arg(ambient)
   for (k in c("TIMESTAMP_START", "TIMESTAMP_END", "MO_LENGTH", "USTAR", "H", "T_SONIC_K", "H2O")) {
     if (!k %in% names(d)) cli::cli_abort("Column {.field {k}} not found in {.arg d}.")
@@ -166,6 +170,7 @@ legacy_inputs <- function(d, site_meta, split_local = "202601010000",
     first <- i[which(has_data[i])[1]]
     if (!is.na(first)) keep[i[i >= first]] <- TRUE
   }
+  if (!is.null(end_local)) keep <- keep & d$TIMESTAMP_END <= end_local
   d <- d[keep, ]
   run_id <- run_id[keep]
   amb <- eddypro_ambient(d$T_SONIC_K, d$H2O, site_meta$altitude_m)
@@ -186,6 +191,7 @@ legacy_inputs <- function(d, site_meta, split_local = "202601010000",
     timestamp_end_utc = d$timestamp_end_utc,
     TIMESTAMP = format(t_end, "%Y-%m-%d %H:%M:%S"),
     MOL = mol,
+    MOL_raw = d$MO_LENGTH,
     ustar = if (tau_na) ifelse(is.na(d$TAU), NA_real_, d$USTAR) else d$USTAR,
     H = d$H,
     AT = amb$AT,
@@ -239,6 +245,7 @@ legacy_inputs_cleanset <- function(cs, utc_offset_h, d = NULL) {
     timestamp_end_utc = ts_utc + 1800,
     TIMESTAMP = format(t_end, "%Y-%m-%d %H:%M:%S"),
     MOL = locf(cs$MO_LENGTH),
+    MOL_raw = cs$MO_LENGTH,
     ustar = cs$USTAR,
     H = cs$H,
     AT = cs$AT,
