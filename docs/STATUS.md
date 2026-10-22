@@ -21,7 +21,7 @@ Last update: 2026-10-21. Read this first in a new session, then `docs/project_pl
 | 04 | ERA5 readers (3×3 cells, pressure levels, static), standard PBLH format, first PBLHmod vs ERA5 comparison at BE-Bra (amendments 1–8) | 0, 2, 3 (first step) | merged (`main`, aba3394) |
 | 05 | u* plausibility filter in the PBLHmod forcing (spec 02 amendment 12); local config override (`config.local.yml`, no cluster paths in tracked files) | 1 | merged (`main`, 25ae55c) |
 | 06 | Consistency check of L2 `MO_LENGTH` against the forcing (option C, G 2026-10-21): L2 L kept where consistent (same sign, within 3×), otherwise replaced by L from the forcing and flagged (spec 02 amendment 13); checked only where the heat flux is positive (spec 06 amendment 1) and in daytime (amendment 2) | 1 | merged (`main`, 2026-10-21; amendment 2 merged 2026-10-21) |
-| 03 | Legacy regression: reproduce operational PBLH from L2, port legacy code, attribute differences to PBLHmod v2 | 1 | drafted, not started |
+| 03 | Legacy regression: reproduce operational PBLH from L2 (operational code `calc_PBL_height_operational.R` + `proc_PBL_height.R`), port it, attribute differences to PBLHmod v2 (amendments 1–2) | 1 | implemented on branch `spec-03-legacy-regression`, under review |
 
 Phases (see `project_plan.md`): 0 done; 1 model done, legacy regression pending (spec 03); 2 standard format and
 three sources done (spec 04), measured PBLH pending; 3 started at BE-Bra only; 4–6 not started.
@@ -70,12 +70,18 @@ three sources done (spec 04), measured PBLH pending; 3 started at BE-Bra only; 4
    1,770 convective days, because L2 H is QC-rejected on 47 % of rows with L; B (inconsistent L set to NA) on 268
    days; D (L always from the forcing) is kept as a sensitivity case (`l_forcing`). Checking stable rows too made
    results worse (spec 06 amendment 1).
-4. Spec 03 — `docs/specs/03_legacy_regression.md`, branch `spec-03-legacy-regression`. Inputs of the ETC call
-   confirmed by G (2026-10-17); only published L2 files are used: AT, AP, rho, cp (EddyPro ambient values, not in
-   L2) are rebuilt from L2 with the EddyPro formulas; MOL gap-filled by LOCF before the call.
-   Already established: `proc_PBL_height.R` floors at 50 m (4,055 rows at BE-Bra) and fills NA with the day/night
-   mean of each processing run (1654.58 / 843.07 m in the 2020–2025 run, 1591.68 / 682.86 m in the 2026 run; ≈ 18 %
-   of operational rows). PBLH is NA Jan–Oct 2020.
+4. Review and merge spec 03 (`spec-03-legacy-regression`). BE-Bra results (2026-10-22):
+   - Part A: the operational code on inputs rebuilt from L2 (EddyPro engine formulas for AT, AP, rho, cp) reproduces
+     the operational column: median |rel. diff| 0.009 %, p95 0.06 %, fill values within 0.006 %, 1,341 of 1,342 fill
+     blocks; the local cleanset gives 0.0004 % (remaining differences = rounding of the published inputs). Runs:
+     2020-10-26 → 2026-01-01 and 2026-01-01 → 2026-08-26 (local standard time). The development version is out of
+     scope (G, 2026-10-22).
+   - Part B: port = original (max |diff| 0 m on the full series, < 1e-8 m on the synthetic test).
+   - Part C (median PBLH all rows, operational legacy 1122 m → PBLHmod v2 412 m): largest one-at-a-time effects:
+     neutral formula −448 m (operational unstable bound −0.003 puts many daytime rows in the neutral class, 0.3
+     u*/|f| ≈ 1.3 km), run-mean fill −383 m, gap interpolation +186 m, smoothing −163 m, forcing −162 m; along the
+     cumulative path the fill (−383 m), smoothing (−186 m), forcing (+187 m), gamma (−96 m) and neutral formula
+     (−173 m) steps dominate; the last step equals pblhmod_default (residual 4.6e-13 m).
 
 ## Data
 

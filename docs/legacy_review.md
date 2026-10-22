@@ -7,7 +7,7 @@ Reviewed 2026-10-08. Reference only: new code goes in `R/` and `scripts/`.
 | File | Purpose | Reuse |
 |---|---|---|
 | `calc_PBL_height_operational.R` | **The version the ETC pipeline sources** (`FFP_analysis_dev.R` line 133) to produce the operational L2 `PBLH`. PBLH from EC data (L, u*, H, T) following Kljun et al. 2015 App. B: diagnostic formulas for neutral/stable, Batchvarova & Gryning (1991) slab model for convective conditions; stability classes from 1/L (Essa et al. 2006, with a modified bound). | Reference of spec 03 (reproduction, port, attribution). |
-| `calc_PBL_height_developing.R` | G's later development version (formerly `calc_PBL_height.R`; the one reviewed below and used in spec 03 until 2026-10-22). Differences from `_operational`: table below. | Step "operational → developing" in the spec 03 attribution. |
+| `calc_PBL_height_developing.R` | G's later development version (formerly `calc_PBL_height.R`; the one reviewed below and used in spec 03 until 2026-10-22). Differences from `_operational`: table below. | **Not used in this project** (G, 2026-10-22: out of scope in every phase and spec; only the operational code counts). Kept as a read-only record. |
 | `proc_PBL_height.R` | ETC operational post-processing of `calc_PBL_height()` output: negatives → NA, 50 m floor, NA → run day/night mean. Identical to the pipeline copy. | Reference for spec 03 (explains the operational `PBLH` column). |
 | `FFP_analysis_dev.R` | ETC pipeline script: reads the cleanset, calls `calc_PBL_height()` (line 984) and `proc_PBL_height()` (line 1003), writes the L2 column as `PBLH = round(PBL, 2)` (lines 1376, 1442). | Reference for the operational call (spec 03 section 1). |
 | `FFP_calc_parallel_dev.R` | ETC pipeline: parallel FFP computation. Line 155: `h = ifelse(is.na(PBL), 1000, PBL)`, i.e. a missing PBL is replaced by **1000 m** in the crosswind-integrated footprint. | Note for phase 5 (footprints). |
@@ -30,11 +30,21 @@ doi:10.5194/gmd-8-3695-2015. R code `calc_footprint_FFP.R` v1.3 (08/12/2017) and
 Kept locally only, not redistributed (copyright, no licence stated). The local climatology file is dated 2022-04:
 possible local modification by ETC, to be checked against the published v1.31 before phase 5.
 
-**Legacy-only R packages (spec 03).** `zoo`, `crayon`, `bigleaf`, `data.table` are in `renv.lock` only because the
-original legacy code `require()`s them (`_developing` loads all four, `_operational` only `zoo`); they are used only
-by `scripts/03_legacy_regression.R` and `tests/testthat/test-legacy_port.R`, never by `R/`.
+**Legacy-only R package (spec 03).** `zoo` is in `renv.lock` only because the operational legacy code `require()`s
+it; it is used only by `scripts/03_legacy_regression.R` and `tests/testthat/test-legacy_port.R`, never by `R/`.
+`bigleaf` and `data.table` (needed only by the development version) were removed from renv on 2026-10-22; `crayon`
+stays as a dependency of `readr`, `testthat` and others. `legacy/` is excluded from renv's dependency scan
+(`.renvignore`).
+
+**Latent bug in `calc_PBL_height_operational.R`** (pipeline code; listed in the local ETC QC report): the loop
+attempts a height where L **or** u* is present (`!is.na(1/MOL) | !is.na(1/ustar)`); where L is missing and u* present
+the class test `if (1/MOL[i] < -0.056)` evaluates `NA` and stops the function. In the pipeline this is masked
+because L is filled by LOCF before the call, so only leading rows of a run could trigger it (they never do when the
+run starts at its first data row). The spec 03 port returns `NA` there instead.
 
 ## `calc_PBL_height_operational.R` vs `calc_PBL_height_developing.R` (added 2026-10-22, spec 03 amendment 2)
+
+Record only: the development version is not used in this project (G, 2026-10-22).
 
 | Aspect | `_operational` (ETC pipeline) | `_developing` |
 |---|---|---|

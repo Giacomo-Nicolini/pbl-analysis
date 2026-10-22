@@ -273,3 +273,26 @@ legacy behaviour that the port had to emulate deliberately (quirks).
    (13 % of rows within 0.01 m) are therefore rounding of the published inputs, not code.
 4. **Port (part B)** emulates `_operational` by default, with switches for the five differences of item 1, so that
    part C can include "operational → developing" as a step.
+5. **Development version out of scope** (G, 2026-10-22): `calc_PBL_height_developing.R` is not used in this project,
+   in any phase or spec; only the operational code counts. Script 03 no longer sources it; there are no switches and
+   no attribution step for the operational/developing differences. The file stays in `legacy/` as a read-only
+   record (`docs/legacy_review.md`). Legacy-only packages: only `zoo` (needed by the operational version);
+   `bigleaf` and `data.table` removed from renv; `crayon` kept (dependency of `readr`, `testthat`).
+6. **Run 2 ends at the last operational row** (`TIMESTAMP_END` 2026-08-26 00:00, local standard time;
+   `legacy_inputs(end_local)`). Part A rerun: fills 18,298 / 3,165 day / night (operational 18,298 / 3,166), fill
+   values 1654.50 / 843.07 / 1591.59 / 682.86 m, median |rel. diff| 0.009 %, p95 0.06 %: accepted.
+7. **Port (part B), implementation notes.** `legacy_pblh(inp, site_meta, sw, forcing, icos)` takes the
+   `legacy_inputs()` table instead of the vectors of section 3 (the `forcing` switch needs the PBLHmod forcing and
+   the daily window needs the site data). Defaults reproduce `calc_PBL_height_operational.R` + `proc_PBL_height.R`:
+   synthetic 3-day series < 1e-8 m (test), full BE-Bra series max |diff| 0 m with the same NA pattern. Deviation
+   from the original only where it would stop (missing L with u* present: `NA`). Switch notes: `k` and `omega`
+   change together (`k_omega`); `convective_trigger` and `stability_classes` change together and, with the daily
+   window, the core is `run_pblh_model()` (PBLHmod v2 with the switch's `gamma` and `bg_integration`), which
+   requires the PBLHmod values of all other core switches, so they have no one-at-a-time variant;
+   `bg_integration = "rk4"` inside the legacy loop (one-at-a-time) keeps the end-of-interval height.
+8. **Attribution (part C), BE-Bra.** Cumulative path in the order of section 5; the last step equals
+   `pblhmod_default` (max |diff| 4.6e-13 m, same NA pattern): the residual is zero because, with all switches at
+   their PBLHmod values, the port delegates to `run_pblh_model()`; the structural differences (daily window, sunrise
+   h0, holds and stops, regime from the L sign, interpolation rules) are attributed to the
+   `convective_trigger_stability_classes` step. Results in `output/tables/03_variants_BE-Bra.csv` and the summary in
+   `docs/STATUS.md`.
