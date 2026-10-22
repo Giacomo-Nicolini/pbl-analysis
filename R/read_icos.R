@@ -318,7 +318,9 @@ read_icos_meteo <- function(path, utc_offset_h) {
 #' Read and merge all ICOS L2 data of a station
 #'
 #' Full outer join of FLUXES, FLUXNET and METEO on `timestamp_start_utc`, put on
-#' a complete 30-min grid, with site heights ([get_site_heights()], evaluated at
+#' a complete 30-min grid, restricted to the reference period: the first to the
+#' last row of the FLUXES file (CLAUDE.md, G 2026-10-22; FLUXNET / METEO rows
+#' outside it are dropped and counted in `read_info$n_rows_outside_ref`), with site heights ([get_site_heights()], evaluated at
 #' `timestamp_start_utc`) and exclusion flags ([flag_exclusions()]).
 #' `TIMESTAMP_START`/`TIMESTAMP_END` are coalesced from the files (priority
 #' FLUXES, FLUXNET, METEO) and are `NA` on rows absent from all files.
@@ -334,7 +336,10 @@ read_icos_meteo <- function(path, utc_offset_h) {
 #'   `src_fluxnet`, `src_meteo` [logical, row present in that file], the data
 #'   columns of the three readers, `zm_m` [m], `zm_source`, `canopy_height_m`
 #'   [m], `hc_source`, `excl_flag` [logical], `excl_reason`. Attribute
-#'   `read_info`: one row per file read (period, rows added, missing columns).
+#'   `read_info`: one row per file read (period, rows added, missing columns,
+#'   `n_rows_outside_ref` = rows dropped outside the reference period).
+#'   Attribute `reference_period_utc`: first and last FLUXES `timestamp_start_utc`
+#'   [POSIXct UTC].
 read_icos_site <- function(site_id, cfg, sites, sites_tv, exclusions) {
   meta <- sites[sites$site_id == site_id, ]
   if (nrow(meta) != 1) cli::cli_abort("Site {.val {site_id}} not found in site metadata.")
@@ -345,6 +350,23 @@ read_icos_site <- function(site_id, cfg, sites, sites_tv, exclusions) {
   if (!is.null(files$fluxnet)) tabs$fluxnet <- read_icos_fluxnet(files$fluxnet, off)
   if (!is.null(files$meteo)) tabs$meteo <- read_icos_meteo(files$meteo, off)
   info <- dplyr::bind_rows(lapply(tabs, attr, "read_info"))
+
+  # Reference period (CLAUDE.md, G 2026-10-22): first to last row of the FLUXES
+  # file; rows of FLUXNET / METEO outside it are dropped (counted per file).
+  ref <- range(tabs$fluxes$timestamp_start_utc)
+  info$n_rows_outside_ref <- vapply(tabs, function(x) {
+    sum(x$timestamp_start_utc < ref[1] | x$timestamp_start_utc > ref[2])
+  }, integer(1), USE.NAMES = FALSE)
+  for (k in names(tabs)) {
+    t0 <- tabs[[k]]$timestamp_start_utc
+    tabs[[k]] <- tabs[[k]][t0 >= ref[1] & t0 <= ref[2], ]
+  }
+  n_out <- sum(info$n_rows_outside_ref)
+  if (n_out > 0) {
+    cli::cli_inform(c(
+      "i" = "{site_id}: {n_out} row{?s} outside the FLUXES reference period dropped ({paste0(names(tabs), ' ', info$n_rows_outside_ref, collapse = ', ')})."
+    ))
+  }
 
   # Join: suffix time columns per table, coalesce afterwards.
   sfx <- c(fluxes = "fx", fluxnet = "fn", meteo = "met")
@@ -378,6 +400,7 @@ read_icos_site <- function(site_id, cfg, sites, sites_tv, exclusions) {
   d <- dplyr::bind_cols(d, h[c("zm_m", "zm_source", "canopy_height_m", "hc_source")])
   d <- flag_exclusions(d, site_id, exclusions, off, time_col = "timestamp_start_utc")
   attr(d, "read_info") <- info
+  attr(d, "reference_period_utc") <- ref
   d
 }
 

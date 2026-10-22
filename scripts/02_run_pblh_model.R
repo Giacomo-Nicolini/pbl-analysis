@@ -9,7 +9,8 @@
 # Output: <derived_dir>/pblhmod/<site>_pblhmod_<label>.csv.gz
 # Regression chain (if the backups exist in <derived_dir>/pblhmod/): nofilter_l2 vs pre_spec05/ (spec-02
 # default), l_L2 vs pre_spec06/ (spec-05 default) and l_check_allday (L check also at night = spec 06
-# amendment 1) vs pre_spec06a2/; all must be identical (< 1e-9 m, same NA, regime, method).
+# amendment 1) vs pre_spec06a2/, and every case vs pre_spec07/ (outputs before the reference-period rule,
+# spec 07 step 0); all must be identical (< 1e-9 m, same NA, regime, method).
 #
 # Usage: Rscript scripts/02_run_pblh_model.R [SITE ...]
 #   Without arguments the sites in cfg$test_sites are used.
@@ -250,6 +251,11 @@ for (site_id in site_ids) {
                   "l_L2 vs spec-05 default (pre_spec06)")
   check_reference(outs$l_check_allday, file.path(out_dir, "pre_spec06a2", paste0(site_id, "_pblhmod_default.csv.gz")),
                   "l_check_allday vs spec-06 amendment-1 default (pre_spec06a2)")
+  # Spec 07 step 0 (reference period = FLUXES range): every case vs its output before the change.
+  for (k in names(outs)) {
+    ref_k <- file.path(out_dir, "pre_spec07", paste0(site_id, "_pblhmod_", k, ".csv.gz"))
+    if (file.exists(ref_k)) check_reference(outs[[k]], ref_k, paste0(k, " vs before the reference period (pre_spec07)"))
+  }
 
   cli::cli_h2("Side by side: quantiles per regime [m] (rows valid in all cases and in the operational PBLH)")
   reg <- outs[[1]]$regime # regimes do not depend on combine / neutral_method / gamma

@@ -35,7 +35,7 @@ for (site_id in site_ids) {
   info_print <- dplyr::transmute(
     info, file,
     first_start = fmt_t(first_start_utc), last_start = fmt_t(last_start_utc),
-    n_rows_file, n_rows_added, missing_cols
+    n_rows_file, n_rows_added, n_rows_outside_ref, missing_cols
   )
   print_tbl(info_print)
   cli::cli_inform(c(

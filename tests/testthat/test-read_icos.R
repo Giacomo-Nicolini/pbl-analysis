@@ -127,13 +127,15 @@ test_that("read_icos_site merges the three files on a complete grid", {
   ex <- read_exclusions(fixture_path("exclusion_periods.csv"))
   d <- suppressWarnings(q(read_icos_site("XX-Tst", cfg, sites, sites_tv, ex)))
 
-  expect_equal(nrow(d), 8) # union of FLUXES (00:00-03:00) and METEO (00:00-03:30)
+  # FLUXES range 00:00-03:00 local (reference period): METEO 03:30 dropped
+  expect_equal(nrow(d), 7)
+  expect_equal(attr(d, "reference_period_utc"), utc(c("2019-12-31 23:00:00", "2020-01-01 02:00:00")))
   expect_false(anyDuplicated(d$timestamp_start_utc) > 0)
   expect_true(all(diff(as.numeric(d$timestamp_start_utc)) == 1800))
   expect_equal(d$site_id[1], "XX-Tst")
   expect_equal(sum(d$src_fluxes), 6)
   expect_equal(sum(d$src_fluxnet), 4)
-  expect_equal(sum(d$src_meteo), 8)
+  expect_equal(sum(d$src_meteo), 7)
   # 01:00 local is missing in FLUXES: TIMESTAMP_START coalesced from FLUXNET
   i <- which(d$timestamp_start_utc == utc("2020-01-01 00:00:00"))
   expect_equal(d$TIMESTAMP_START[i], "202001010100")
@@ -144,6 +146,33 @@ test_that("read_icos_site merges the three files on a complete grid", {
   expect_equal(unique(d$zm_source), "timevarying")
   expect_false(any(d$excl_flag))
   expect_equal(nrow(attr(d, "read_info")), 3)
+  expect_equal(attr(d, "read_info")$n_rows_outside_ref, c(0L, 0L, 1L))
+})
+
+test_that("read_icos_site drops FLUXNET / METEO rows outside the FLUXES range", {
+  sites <- read_sites(fixture_path("sites.csv"))
+  sites_tv <- read_sites_timevarying(fixture_path("sites_timevarying.csv"))
+  ex <- read_exclusions(fixture_path("exclusion_periods.csv"))
+  tmp <- withr::local_tempdir()
+  d_site <- file.path(tmp, "XX-Tst_output_L2I_2026")
+  dir.create(d_site)
+  file.copy(c(f_fluxnet, f_meteo), d_site)
+  # FLUXES starting at 01:30 local (first two rows removed)
+  fl <- readr::read_csv(f_fluxes, col_types = readr::cols(.default = "c"))
+  fl <- fl[-(1:2), ]
+  csv <- file.path(tmp, "ICOSETC_XX-Tst_FLUXES_INTERIM_L2.csv")
+  readr::write_csv(fl, csv)
+  utils::zip(file.path(d_site, "ICOSETC_XX-Tst_FLUXES_INTERIM_L2.zip"), csv, flags = "-j9Xq")
+
+  d <- suppressWarnings(q(read_icos_site("XX-Tst", list(icos_l2_dir = tmp), sites, sites_tv, ex)))
+  expect_equal(nrow(d), 4) # 01:30-03:00 local
+  expect_equal(min(d$timestamp_start_utc), utc("2020-01-01 00:30:00"))
+  expect_equal(max(d$timestamp_start_utc), utc("2020-01-01 02:00:00"))
+  expect_equal(sum(d$src_fluxnet), 1) # FLUXNET 01:30 only
+  # FLUXNET 00:00-01:00 (3 rows) and METEO 00:00-01:00 + 03:30 (4 rows) dropped
+  expect_equal(attr(d, "read_info")$n_rows_outside_ref, c(0L, 3L, 4L))
+  # inside the period FLUXNET still has priority over METEO for T
+  expect_equal(d$fn_TA_F_K[1], 6.5 + 273.15)
 })
 
 test_that("icos_range_report counts but never modifies", {
