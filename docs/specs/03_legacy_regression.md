@@ -7,7 +7,7 @@ Read first: `CLAUDE.md`, `docs/legacy_review.md` (all issues, including 11–15 
 ## Goal
 
 1. **Reproduce** the operational `PBLH` column of the ICOS L2 FLUXES file at BE-Bra by running the legacy code
-   (`legacy/calc_PBL_height.R` + `legacy/proc_PBL_height.R`) on the same inputs.
+   (`legacy/calc_PBL_height_operational.R` + `legacy/proc_PBL_height.R`, Amendment 2) on the same inputs.
 2. **Port** the legacy algorithm into new, testable code with switches, proven identical to the original.
 3. **Attribute** the difference between operational PBLH and PBLHmod v2 to individual legacy choices, by switching
    them one at a time (and cumulatively) from the legacy baseline towards PBLHmod v2.
@@ -20,9 +20,10 @@ column itself. This spec must reproduce them **from the inputs**.
 ## Exception to the `legacy/` rule
 
 `CLAUDE.md` rule 5 allows sourcing `legacy/` only in the explicit legacy regression. In this spec, only
-`scripts/03_legacy_regression.R` and `tests/testthat/test-legacy_port.R` may `source()` the two legacy files, into a
-dedicated environment (`sys.source(..., envir = legacy_env)`), never into the global environment, and never from
-`R/`. The legacy files are not edited.
+`scripts/03_legacy_regression.R` and `tests/testthat/test-legacy_port.R` may `source()` the legacy files
+`calc_PBL_height_operational.R`, `calc_PBL_height_developing.R` and `proc_PBL_height.R` (Amendment 2), into dedicated
+environments (`sys.source(..., envir = legacy_env)`), never into the global environment, and never from `R/`. The
+legacy files are not edited.
 
 Running the original requires packages it loads itself (`zoo`, `crayon`, `bigleaf`, `data.table`). Its code calls
 `install.packages()` for missing ones: **the script must check that all four are installed and abort otherwise**
@@ -179,8 +180,9 @@ interface (coordinate with spec 04: one implementation only).
 ## Acceptance criteria
 
 - Tests pass (old and new).
-- Reproduction ≥ 99 % exact at BE-Bra with a documented input variant, fill values reproduced exactly; or a
-  stop-and-report if not.
+- Reproduction at BE-Bra with a documented input variant meets section 2 (median |relative difference| < 0.5 %,
+  p95 < 2 %, the four fill values within 0.5 %), with the share of rows within 0.01 m reported; or a
+  stop-and-report if not (Amendment 1; the earlier "≥ 99 % exact, fill values exact" criterion is withdrawn).
 - Port equal to the original (< 1e-6 m) on the full BE-Bra series.
 - Attribution tables and figures produced; summary printed.
 - Legacy files unchanged (`git diff legacy/` empty); no legacy code sourced outside the two allowed files.
@@ -195,3 +197,125 @@ As in `CLAUDE.md`, plus: the input variant that reproduces the operational colum
 reproduction statistics; the ranking of legacy choices by their effect on the median per regime (one at a time and
 along the cumulative path); the residual difference legacy-fully-switched vs PBLHmod v2 and its explanation; any
 legacy behaviour that the port had to emulate deliberately (quirks).
+
+## Amendment 1 (2026-10-21, agreed with G before implementation)
+
+1. **Acceptance of the reproduction** is the section 2 criterion: median |relative difference| < 0.5 %, p95 < 2 %,
+   the four fill values within 0.5 %; the share of rows within 0.01 m is reported. The "≥ 99 % exact, fill values
+   exact" line in the acceptance criteria is corrected accordingly (the ambient variables are rebuilt from L2, so an
+   exact match is not expected).
+2. **Processing runs.** Each run starts at its first row with data (first run: `TIMESTAMP_END` 2020-10-26 00:30,
+   the first FLUXES row with `MO_LENGTH`/`PBLH`; the FLUXES file starts on 2020-01-01 with empty rows, and the
+   operational column is `NA` before that date, so those rows were not in the operational run). Split at
+   `TIMESTAMP_START` 2026-01-01 00:00, local standard time (confirmed by G). The split must reproduce the four fill
+   values; otherwise stop and report.
+3. **Exception to "Out of scope" (changing PBLHmod v2):** `bg_step()` and `run_pblh_model()` get the option
+   `bg_integration = c("rk4", "euler")` (default `"rk4"`). `"euler"` (one explicit step per half-hour, end-of-interval
+   height, as the legacy code) is used only by the cumulative path of section 5, at the step where every other switch
+   already has its PBLHmod v2 value. The default output is unchanged: the regression chain (`nofilter_l2` = spec 02,
+   `l_L2` = spec 05, `l_check_allday` = spec 06 amendment 1) was rerun after the change and is identical
+   (< 1e-9 m, same NA, regime, method).
+4. **Input data facts found while planning (BE-Bra):** L2 `H2O` is in mmol mol-1 (median 9.75, range 4–17); L2
+   `T_SONIC` is 5.2 K above METEO `TA` (median, IQR 3.6–6.8 K), more than the ≈ 0.9 K humidity effect (sonic
+   temperature offset, inherited by the EddyPro ambient `AT`; item in the ETC QC report).
+5. **G's answers (2026-10-22), recorded here because no Amendment 2 was needed** (the hypothesis test below did
+   not change the inputs): (1) in the ETC cleanset, EddyPro −9999 values in `air_density`, `air_heat_capacity`,
+   `air_temperature` are converted to NA before `calc_PBL_height()` is called; (2) the operational `PBLH` was
+   computed from the same cleanset that became the published L2.
+6. **Hypothesis test `amb_na` (2026-10-22), rejected.** Hypothesis: the operational `AT`/`rho`/`cp` were NA where
+   EddyPro could not compute them, breaking the B&G chain and leaving the daytime NA blocks that
+   `proc_PBL_height()` fills. Note: in the engine source (flux_params.f90) neither a missing H2O nor an RH outside
+   0–130 % makes these three outputs −9999 (dry-air fallback; only RH becomes −9999), so the test is empirical.
+   BE-Bra results: of the 15,136 rows filled in the operational column but computed in the reproduction, 1.3 % have
+   L2 H2O missing and 1.2 % an engine RH outside 0–130 % (2.5 % either), vs 0.8 % / 0.7 % (1.4 %) on rows computed
+   in both. Variant `amb_na` (AT, rho, cp NA there) vs `rebuilt`: fills 4,898 / 1,738 (day / night) vs 4,884 /
+   1,732 (operational 18,298 / 3,166); operational fill blocks (1,342) reproduced ≥ 50 %: 336 vs 335, fully: 113 vs
+   113; fill values 1601.81 / 846.11 / 1584.28 / 705.30 m (operational 1654.58 / 843.07 / 1591.68 / 682.86); p95
+   |rel. diff| 49.4 %; within 0.01 m 9.5 %. Acceptance (section 2) still not met; part A stopped. Next: the ETC
+   inputs for one month from G.
+7. **Hypothesis test `tau_na` (2026-10-22), rejected.** Hypothesis: in the cleanset, u* was removed where the
+   momentum flux failed QC (L2 `TAU` NA); in the legacy code a missing u* gives no h0 and no B5 step, so the
+   convective chain stops. Overlap: L2 `TAU` is NA on 31.2 % of the 15,136 "operational fill, reproduction
+   computes" rows vs 24.0 % of the 76,721 rows computed in both (29.6 % of all rows). Part A with `tau_na` (and
+   `tau_amb_na`): fills 17,607 / 17,755 day / night (operational 18,298 / 3,166); operational fill blocks reproduced
+   ≥ 50 %: 768 of 1,342 (57 %), fully: 383; share of operational fill rows filled 58 % (rebuilt 29 %); fill values
+   1590.24 / 796.62 / 1649.76 / 734.82 m (operational 1654.58 / 843.07 / 1591.68 / 682.86); median |rel. diff|
+   3.9 %, p95 1057 %; within 0.01 m 3.7 %. It reproduces more daytime blocks but creates about 14,600 night fills
+   that the operational column does not have, and moves all four fill values further away. Acceptance not met; part
+   A stopped. Next: the ETC cleanset inputs for one month from G.
+
+## Amendment 2 (2026-10-22, agreed with G)
+
+1. **Operational reference.** G reorganised `legacy/` (commit b020a93): `calc_PBL_height.R` →
+   `calc_PBL_height_developing.R` (G's later development version, used in spec 03 until now), new
+   `calc_PBL_height_operational.R` (the version the ETC pipeline sources), pipeline scripts `FFP_analysis_dev.R` and
+   `FFP_calc_parallel_dev.R`, Kljun's FFP code (local only, gitignored); `proc_PBL_height.R` unchanged. The
+   operational reference is `calc_PBL_height_operational.R` + `proc_PBL_height.R` (`FFP_analysis_dev.R` line 133;
+   output written as `round(PBL, 2)`, no other change). Parts A–C target it. The differences from `_developing` are
+   documented in `docs/legacy_review.md` (diff table): unstable class bound −0.003 instead of −0.016 (near-neutral
+   class unreachable); a height is computed if L **or** u* is present; Nieuwstadt fallback active; B&G uses the
+   gap-interpolated h0 for the previous step and skips row 1; gap filling and smoothing always on.
+2. **Part A rerun (2026-10-22), accepted** (operational version, rebuilt L2 inputs, two runs): median |relative
+   difference| 0.009 %, p95 0.06 %, rows within 0.01 m 13.3 %; fill values 1654.50 / 843.07 / 1591.59 / 682.86 m
+   (operational 1654.58 / 843.07 / 1591.68 / 682.86; max deviation 0.006 %); fills 18,454 / 3,297 day / night
+   (operational 18,298 / 3,166: the extra rows are after the end of the operational run 2, 2026-08-26 → 09-01,
+   where the operational column is NA; they do not change the fill means); fill blocks reproduced 1,341 of 1,342.
+   Ambient-variable variants change nothing material (`rho_cp_legacy`: within 0.01 m 16.0 %); one run over all
+   years: p95 2.1 %, fill values off by 0.4–2 %, so the two runs are confirmed. The development version on the same
+   inputs: p95 49 %, 75 % of the fill blocks not reproduced: the earlier part-A failure (Amendment 1, notes 5–7)
+   came from the code version, not from the inputs; `amb_na` and `tau_na` are moot.
+3. **Cleanset diagnostic** (local file `cfg$cleanset_file`, never committed; run 1 only, 2020-10-26 → 2026-01-01):
+   the operational version on the cleanset gives median |relative difference| 0.0004 %, p95 0.006 %, 77.9 % within
+   0.01 m, fill values 1654.51 / 843.07 m, 1,156 of 1,157 blocks. Cleanset vs L2 inputs: identical missing-value
+   patterns for MO_LENGTH, USTAR, H, AT, rho, cp (AP: NA on 1,991 rows in the cleanset, constant in the rebuild);
+   values differ only by rounding (median |diff|: MO_LENGTH 0.002 m, USTAR 0.00025 m s-1, H 0.0025 W m-2, AT
+   0.0025 K, rho 1e-5 kg m-3, cp 0.003 J kg-1 K-1; AP 0.47 Pa). The remaining L2-vs-operational differences
+   (13 % of rows within 0.01 m) are therefore rounding of the published inputs, not code.
+4. **Port (part B)** emulates `_operational` by default, with switches for the five differences of item 1, so that
+   part C can include "operational → developing" as a step.
+5. **Development version out of scope** (G, 2026-10-22): `calc_PBL_height_developing.R` is not used in this project,
+   in any phase or spec; only the operational code counts. Script 03 no longer sources it; there are no switches and
+   no attribution step for the operational/developing differences. The file stays in `legacy/` as a read-only
+   record (`docs/legacy_review.md`). Legacy-only packages: only `zoo` (needed by the operational version);
+   `bigleaf` and `data.table` removed from renv; `crayon` kept (dependency of `readr`, `testthat`).
+6. **Run 2 ends at the last operational row** (`TIMESTAMP_END` 2026-08-26 00:00, local standard time;
+   `legacy_inputs(end_local)`). Part A rerun: fills 18,298 / 3,165 day / night (operational 18,298 / 3,166), fill
+   values 1654.50 / 843.07 / 1591.59 / 682.86 m, median |rel. diff| 0.009 %, p95 0.06 %: accepted.
+7. **Port (part B), implementation notes.** `legacy_pblh(inp, site_meta, sw, forcing, icos)` takes the
+   `legacy_inputs()` table instead of the vectors of section 3 (the `forcing` switch needs the PBLHmod forcing and
+   the daily window needs the site data). Defaults reproduce `calc_PBL_height_operational.R` + `proc_PBL_height.R`:
+   synthetic 3-day series < 1e-8 m (test), full BE-Bra series max |diff| 0 m with the same NA pattern. Deviation
+   from the original only where it would stop (missing L with u* present: `NA`). Switch notes: `k` and `omega`
+   change together (`k_omega`); `convective_trigger` and `stability_classes` change together and, with the daily
+   window, the core is `run_pblh_model()` (PBLHmod v2 with the switch's `gamma` and `bg_integration`), which
+   requires the PBLHmod values of all other core switches, so they have no one-at-a-time variant;
+   `bg_integration = "rk4"` inside the legacy loop (one-at-a-time) keeps the end-of-interval height.
+8. **Attribution (part C), BE-Bra.** Cumulative path in the order of section 5; the last step equals
+   `pblhmod_default` (max |diff| 4.6e-13 m, same NA pattern): the residual is zero because, with all switches at
+   their PBLHmod values, the port delegates to `run_pblh_model()`; the structural differences (daily window, sunrise
+   h0, holds and stops, regime from the L sign, interpolation rules) are attributed to the
+   `convective_trigger_stability_classes` step. Results in `output/tables/03_variants_BE-Bra.csv` and the summary in
+   `docs/STATUS.md`.
+9. **Common-rows attribution (review 2026-10-22).** The medians of part C on all valid rows of each variant mix
+   value changes with sample changes (e.g. the run-mean fill "−383 m" is rows dropping out). Added: medians (overall
+   and by regime) on the rows valid in every variant of the analysis and in PBLHmod v2, with the number of valid rows
+   per variant (both versions in `03_variants_<site>.csv`, strata `common_one_at_a_time|...`,
+   `common_cumulative|...`; statistics `n_valid`, `n`). Figures: `03_waterfall_` and `03_one_at_a_time_` show the
+   common rows; `03_waterfall_allrows_`, `03_one_at_a_time_allrows_` the all-rows version with n per step.
+   BE-Bra, common rows (median PBLH, change in m; all / stable / unstable_diag / convective):
+   - One at a time (n = 79,263): baseline 707 / 379 / 1317 / 1652 m; neutral formula −211 / −40 / −595 / −740;
+     smoothing −192 / −71 / +179 / +50; gap interpolation +176 / +128 / +376 / +98; stable formula −38 / −50 / −9 /
+     −3; gamma −11 / 0 / −11 / −101; forcing −8 / +1 / +20 / +5; k/omega −2; bg_integration −1; fill, floor,
+     mol_locf, at_meteo 0. PBLHmod v2 on the same rows: 364 / 263 / 557 / 610 m.
+   - Cumulative (n = 75,689): baseline 724 m → PBLHmod v2 366 m; steps smoothing −206, neutral formula −82
+     (unstable_diag −1243, convective −970), stable formula −46, bg_integration −10, convective trigger + classes
+     −8, gamma −8 (convective −99); fill, floor, gap interpolation, mol_locf, forcing, k/omega ≤ 2 m.
+   On all valid rows the fill (−383 m) and forcing (±160–190 m) effects come from changed row sets; on common rows
+   both are near zero. The neutral formula (operational class bound −0.003 → 0.3 u*/|f| on many daytime rows) and
+   the 5-point smoothing remain the main legacy effects.
+10. **`at_meteo`** (one at a time; AT = METEO TA instead of the EddyPro AT, 2,247 rows without METEO TA keep the
+    EddyPro AT): negligible (22,341 rows change by > 0.01 m; relative change p95 0.0009 %, max 1.5 %; medians and
+    fill values unchanged). The sonic temperature offset (local ETC QC report, item 4) does not affect the
+    operational PBLH materially, because AT enters only the mechanical term of B&G.
+11. **Figures** are written as png only (`save_figure(formats = "png")` default since 2026-10-22; pdf only for paper
+    figures).

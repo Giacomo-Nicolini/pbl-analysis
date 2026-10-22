@@ -13,6 +13,7 @@ so code must be reproducible, documented and traceable to references.
 - Current status and next steps: `docs/STATUS.md`
 - Full design: `docs/project_plan.md` (source of truth for scientific choices)
 - Legacy code issues: `docs/legacy_review.md`
+- L2 data issues for the ETC QC report: `docs/local/etc_qc_report.md` (local working file, not tracked)
 - Task specs: `docs/specs/NN_*.md`. **Implement only what the current spec asks.**
 - Literature: `docs/references/` (`pblh_collection.bib`, `pblh_literature_2026-10.bib`, annotated notes in
   `literature_review_pblh.md`). Cite by BibTeX key in code comments where a formula comes from a paper.
@@ -25,7 +26,10 @@ so code must be reproducible, documented and traceable to references.
    Internally use SI: K for temperature, Pa for pressure, m, s. Convert at the reader boundary only.
 3. **References in code.** Every formula carries a comment with its source (author, year, equation number when known).
 4. **No hardcoded paths.** All paths come from `config.yml` (+ untracked `config.local.yml`) via `get_cfg()` (see Environment).
-5. `legacy/` is read-only reference. Never edit, source, or import from it in new code (except in the explicit legacy regression test).
+5. `legacy/` is read-only reference. Never edit, source, or import from it in new code. Exception (spec 03): only
+   `scripts/03_legacy_regression.R` and `tests/testthat/test-legacy_port.R` may source `calc_PBL_height_operational.R`,
+   `calc_PBL_height_developing.R` and `proc_PBL_height.R`, into dedicated environments. Kljun's FFP code in `legacy/`
+   is local only (gitignored).
 6. Never commit data, credentials or outputs (see `.gitignore`). Never print secrets.
 
 ## Environment
@@ -53,6 +57,12 @@ so code must be reproducible, documented and traceable to references.
   - Units: `TA*` in °C (convert to K); **`T_SONIC` already in K** (verified on BE-Bra, spec 01; rename only);
     `PA_F`, `PA` in kPa (convert to Pa); H in W m-2; USTAR in m s-1; MO_LENGTH in m.
     Readers check the median of each declared-unit column and abort if implausible.
+  - `H2O` (FLUXES) is a water vapour mole fraction in mmol mol-1 (median 9.75 at BE-Bra; spec 03).
+  - The QC of the FLUXNET files differs from that of the FLUXES file: FLUXNET additionally applies u* filtering, to
+    NEE only (G, 2026-10-22); H and LE, and so H_F_MDS used by PBLHmod, are not affected.
+  - ETC cleanset (G, 2026-10-22): EddyPro −9999 values in `air_density` / `air_heat_capacity` / `air_temperature`
+    are converted to NA before `calc_PBL_height()` is called; the operational `PBLH` was computed from the same
+    cleanset that became the published L2.
 - **ERA5 (current delivery, C. Trotta, Oct 2026; verified on BE-Bra 2026-10-15).** 0.25° grid. For every variable,
   9 files per station: the cell containing the tower plus its 8 neighbours. All times UTC.
   - Hourly single levels, 2020-01-01 00:00 → 2026-10-07 23:00, one file per variable × cell (all years in one file):
@@ -126,7 +136,7 @@ output/       figures/, tables/ (gitignored)
 - Vectorised code; avoid growing vectors in loops. Sequential integration (B&G) may loop, but preallocate.
 - Functions are pure: inputs in, data frame out. Plotting and file writing live in separate functions.
 - Every exported function has roxygen docs: purpose, params with units, return value with units, references.
-- Plots: `ggplot2`, publication style, saved via a helper to `output/figures/` (png + pdf). Never `windows()`.
+- Plots: `ggplot2`, publication style, saved via `save_figure()` to `output/figures/`: png by default; pdf only for paper figures (`formats = c("png", "pdf")`). Never `windows()`.
 
 ## Testing
 

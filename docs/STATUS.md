@@ -8,7 +8,7 @@ Last update: 2026-10-21. Read this first in a new session, then `docs/project_pl
 |---|---|---|---|
 | PBLHmod v2 | `pblhmod_default`, `pblhmod_gamma0025` | Our EC-based model (Kljun et al. 2015 App. B): stable B1 Nieuwstadt, neutral B2/B3 auto, convective B5 Batchvarova–Gryning slab daily cycle. `run_pblh_model()`, `R/pblh_*.R`; label = options case (γ = 0.01 default, 0.0025 sensitivity) | parameterisation |
 | ERA5 BLH | `era5_blh_center`, `era5_blh_bilinear` | ECMWF reanalysis diagnostic (bulk Ri = 0.25, IFS Cy41r2 §3.10.1); tower cell, or bilinear to the tower from 4 cells | model |
-| Operational ICOS PBLH | `icos_oper` | `PBLH` column of L2 FLUXES, produced by the ETC pipeline with `legacy/calc_PBL_height.R` + `legacy/proc_PBL_height.R`; `qc_flag` 1 = 50 m floor, 2 = run-mean fill | parameterisation |
+| Operational ICOS PBLH | `icos_oper` | `PBLH` column of L2 FLUXES, produced by the ETC pipeline with `legacy/calc_PBL_height_operational.R` + `legacy/proc_PBL_height.R`; `qc_flag` 1 = 50 m floor, 2 = run-mean fill | parameterisation |
 | Legacy (spec 03, to come) | `legacy_<variant>` | Port of the legacy code with switches, for the regression | parameterisation |
 | Measured PBLH (later) | – | Ceilometer / lidar / radiosonde (ACTRIS/Cloudnet, E-PROFILE, IGRA) | turbulence / aerosol / thermodynamic |
 
@@ -21,7 +21,7 @@ Last update: 2026-10-21. Read this first in a new session, then `docs/project_pl
 | 04 | ERA5 readers (3×3 cells, pressure levels, static), standard PBLH format, first PBLHmod vs ERA5 comparison at BE-Bra (amendments 1–8) | 0, 2, 3 (first step) | merged (`main`, aba3394) |
 | 05 | u* plausibility filter in the PBLHmod forcing (spec 02 amendment 12); local config override (`config.local.yml`, no cluster paths in tracked files) | 1 | merged (`main`, 25ae55c) |
 | 06 | Consistency check of L2 `MO_LENGTH` against the forcing (option C, G 2026-10-21): L2 L kept where consistent (same sign, within 3×), otherwise replaced by L from the forcing and flagged (spec 02 amendment 13); checked only where the heat flux is positive (spec 06 amendment 1) and in daytime (amendment 2) | 1 | merged (`main`, 2026-10-21; amendment 2 merged 2026-10-21) |
-| 03 | Legacy regression: reproduce operational PBLH from L2, port legacy code, attribute differences to PBLHmod v2 | 1 | drafted, not started |
+| 03 | Legacy regression: reproduce operational PBLH from L2 (operational code `calc_PBL_height_operational.R` + `proc_PBL_height.R`), port it, attribute differences to PBLHmod v2 (amendments 1–2) | 1 | implemented on branch `spec-03-legacy-regression`, under review |
 
 Phases (see `project_plan.md`): 0 done; 1 model done, legacy regression pending (spec 03); 2 standard format and
 three sources done (spec 04), measured PBLH pending; 3 started at BE-Bra only; 4–6 not started.
@@ -70,12 +70,21 @@ three sources done (spec 04), measured PBLH pending; 3 started at BE-Bra only; 4
    1,770 convective days, because L2 H is QC-rejected on 47 % of rows with L; B (inconsistent L set to NA) on 268
    days; D (L always from the forcing) is kept as a sensitivity case (`l_forcing`). Checking stable rows too made
    results worse (spec 06 amendment 1).
-4. Spec 03 — `docs/specs/03_legacy_regression.md`, branch `spec-03-legacy-regression`. Inputs of the ETC call
-   confirmed by G (2026-10-17); only published L2 files are used: AT, AP, rho, cp (EddyPro ambient values, not in
-   L2) are rebuilt from L2 with the EddyPro formulas; MOL gap-filled by LOCF before the call.
-   Already established: `proc_PBL_height.R` floors at 50 m (4,055 rows at BE-Bra) and fills NA with the day/night
-   mean of each processing run (1654.58 / 843.07 m in the 2020–2025 run, 1591.68 / 682.86 m in the 2026 run; ≈ 18 %
-   of operational rows). PBLH is NA Jan–Oct 2020.
+4. Review and merge spec 03 (`spec-03-legacy-regression`). BE-Bra results (2026-10-22):
+   - Part A: the operational code on inputs rebuilt from L2 (EddyPro engine formulas for AT, AP, rho, cp) reproduces
+     the operational column: median |rel. diff| 0.009 %, p95 0.06 %, fill values within 0.006 %, 1,341 of 1,342 fill
+     blocks; the local cleanset gives 0.0004 % (remaining differences = rounding of the published inputs). Runs:
+     2020-10-26 → 2026-01-01 and 2026-01-01 → 2026-08-26 (local standard time). The development version is out of
+     scope (G, 2026-10-22).
+   - Part B: port = original (max |diff| 0 m on the full series, < 1e-8 m on the synthetic test).
+   - Part C, on common rows (valid in every variant and in PBLHmod v2; spec 03 amendment 2 note 9). One at a
+     time (n = 79,263; baseline median 707 m, PBLHmod v2 364 m): neutral formula −211 m (convective −740 m: the
+     operational unstable bound −0.003 puts many daytime rows in the neutral class, 0.3 u*/|f| ≈ 1.3 km), smoothing
+     −192 m, gap interpolation +176 m, stable formula −38 m, gamma −11 m (convective −101 m); fill, floor, mol_locf,
+     forcing ≈ 0. Cumulative (n = 75,689; 724 → 366 m): smoothing −206 m, neutral formula −82 m (convective −970 m),
+     stable formula −46 m; the last step equals pblhmod_default (residual 4.6e-13 m). On all valid rows the fill
+     (−383 m) and forcing (±160–190 m) effects are row-set changes, not value changes. `at_meteo` (sonic temperature
+     offset): negligible.
 
 ## Data
 
@@ -88,6 +97,10 @@ tower, orography 8.9 m, lsm 0.96, sdor 7.6 m.
 Literature: `docs/references/literature_review_pblh.md`, `pblh_literature_2026-10.bib` (~50 verified papers),
 `pblh_collection.bib`. Key papers and ECMWF IFS Cy41r2 Part IV downloaded; second-wave papers: G will notify.
 Novelty check: no published network-scale evaluation of EC-derived PBLH against ERA5 and measurements.
+
+L2 data issues found so far (implausible USTAR, MO_LENGTH kept where H is QC-rejected, positive night-time H_F_MDS
+in winter 2022–23, sonic temperature offset) are collected for the ETC QC report in `docs/local/etc_qc_report.md`
+(local working file, not tracked); all open.
 
 ## Waiting on others
 

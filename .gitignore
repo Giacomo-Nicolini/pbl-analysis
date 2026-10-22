@@ -32,3 +32,7 @@ desktop.ini
 
 # --- Machine-specific configuration (paths, user names) ---
 config.local.yml
+
+# --- Third-party code kept locally only (copyright N. Kljun, no licence stated; docs/legacy_review.md) ---
+legacy/calc_footprint_FFP.R
+legacy/calc_footprint_FFP_climatology.R
