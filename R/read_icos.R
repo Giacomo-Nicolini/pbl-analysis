@@ -11,7 +11,7 @@ icos_cols <- list(
   fluxes = c(
     "TIMESTAMP_START", "TIMESTAMP_END", "H", "H_UNCLEANED", "H_SSITC_TEST", "USTAR",
     "MO_LENGTH", "ZL", "T_SONIC", "WS", "WD", "U_SIGMA", "V_SIGMA", "W_SIGMA", "TAU",
-    "TAU_SSITC_TEST", "PBLH", "FETCH_MAX", "FETCH_50", "FETCH_70", "FETCH_80",
+    "TAU_SSITC_TEST", "H2O", "PBLH", "FETCH_MAX", "FETCH_50", "FETCH_70", "FETCH_80",
     "FETCH_90", "FOOTPRINT_TA_CONTR", "FOOTPRINT_FLAG"
   ),
   fluxnet = c(
@@ -30,13 +30,16 @@ icos_cols <- list(
 icos_degc_cols <- c("TA_F", "TA", paste0("TA_", 1:10))
 icos_kelvin_cols <- c("T_SONIC")
 icos_kpa_cols <- c("PA_F", "PA")
+# H2O (FLUXES): water vapour mole fraction of wet air [mmol mol-1]; checked, not converted (spec 03).
+icos_mmolmol_cols <- c("H2O")
 
 # Plausible range of the column MEDIAN for each declared unit (unit sanity check,
-# not a data filter): degC [-40, 50], K [220, 330], kPa [50, 110].
+# not a data filter): degC [-40, 50], K [220, 330], kPa [50, 110], mmol mol-1 [1, 40].
 icos_unit_median_ranges <- list(
   degC = c(-40, 50),
   K = c(220, 330),
-  kPa = c(50, 110)
+  kPa = c(50, 110),
+  mmol_mol = c(1, 40)
 )
 
 # Time columns never prefixed / never unit-converted.
@@ -206,7 +209,7 @@ complete_halfhour_grid <- function(d, label) {
 # Unit sanity check on raw columns: abort if the median of a column is outside
 # the plausible range of its declared unit (icos_unit_median_ranges).
 check_icos_units <- function(d, label) {
-  declared <- list(degC = icos_degc_cols, K = icos_kelvin_cols, kPa = icos_kpa_cols)
+  declared <- list(degC = icos_degc_cols, K = icos_kelvin_cols, kPa = icos_kpa_cols, mmol_mol = icos_mmolmol_cols)
   for (u in names(declared)) {
     rng <- icos_unit_median_ranges[[u]]
     for (v in intersect(declared[[u]], names(d))) {
@@ -263,6 +266,7 @@ prefix_cols <- function(d, prefix) {
 #'   [kg m-1 s-2]; `PBLH` operational PBL height [m]; `FETCH_MAX`, `FETCH_50`,
 #'   `FETCH_70`, `FETCH_80`, `FETCH_90` footprint distances [m];
 #'   `FOOTPRINT_TA_CONTR` target-area contribution [%]; `FOOTPRINT_FLAG` [-];
+#'   `H2O` water vapour mole fraction [mmol mol-1];
 #'   `src_fluxes` [logical, row present in the file].
 read_icos_fluxes <- function(path, utc_offset_h) {
   d <- read_icos_csv(path, icos_cols$fluxes, utc_offset_h, label = "FLUXES")
