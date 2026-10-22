@@ -147,12 +147,15 @@ for (site_id in site_ids) {
     AP_altitude = list(split = "202601010000", ambient = "AP_altitude"),
     rho_cp_legacy = list(split = "202601010000", ambient = "rho_cp_legacy"),
     amb_na = list(split = "202601010000", ambient = "amb_na"),
+    tau_na = list(split = "202601010000", ambient = "rebuilt", tau_na = TRUE),
+    tau_amb_na = list(split = "202601010000", ambient = "amb_na", tau_na = TRUE),
     one_run = list(split = NULL, ambient = "rebuilt")
   )
   stats_all <- list()
   fills_all <- list()
   for (v in names(variants)) {
-    inp <- legacy_inputs(d, meta, split_local = variants[[v]]$split, ambient = variants[[v]]$ambient)
+    inp <- legacy_inputs(d, meta, split_local = variants[[v]]$split, ambient = variants[[v]]$ambient,
+                         tau_na = isTRUE(variants[[v]]$tau_na))
     tm <- system.time(res <- run_original(inp, meta))
     m <- match(as.numeric(inp$timestamp_start_utc), as.numeric(d$timestamp_start_utc))
     oper <- d$PBLH[m]

@@ -142,17 +142,21 @@ locf <- function(x) {
 #'   `NULL`: computed inside the legacy function), `"amb_na"` (hypothesis test,
 #'   spec 03: `AT`, `rho`, `cp` set to `NA` where L2 `H2O` is missing or the
 #'   engine's RH is outside 0..130 %).
+#' @param tau_na If `TRUE` (hypothesis test, spec 03), `ustar` is set to `NA`
+#'   wherever L2 `TAU` is missing [logical].
 #' @return Tibble: `run_id` [integer], `timestamp_start_utc`,
 #'   `timestamp_end_utc` [POSIXct UTC], `TIMESTAMP` [character], `MOL` [m],
 #'   `ustar` [m s-1], `H` [W m-2], `AT` [K], `AP` [Pa], `rho` [kg m-3], `cp`
 #'   [J kg-1 K-1] (the last three `NA` columns when the variant passes `NULL`,
 #'   see attribute `pass_null`), `zm` [m], `d` [m].
 legacy_inputs <- function(d, site_meta, split_local = "202601010000",
-                          ambient = c("rebuilt", "AT_sonic", "AP_altitude", "rho_cp_legacy", "amb_na")) {
+                          ambient = c("rebuilt", "AT_sonic", "AP_altitude", "rho_cp_legacy", "amb_na"),
+                          tau_na = FALSE) {
   ambient <- match.arg(ambient)
   for (k in c("TIMESTAMP_START", "TIMESTAMP_END", "MO_LENGTH", "USTAR", "H", "T_SONIC_K", "H2O")) {
     if (!k %in% names(d)) cli::cli_abort("Column {.field {k}} not found in {.arg d}.")
   }
+  if (tau_na && !"TAU" %in% names(d)) cli::cli_abort("Column {.field TAU} not found in {.arg d} (needed by {.arg tau_na}).")
   d <- d[order(d$timestamp_start_utc), ]
   run_id <- if (is.null(split_local)) rep(1L, nrow(d)) else ifelse(d$TIMESTAMP_START < split_local, 1L, 2L)
   has_data <- !is.na(d$MO_LENGTH) | !is.na(d$USTAR) | !is.na(d$H) | !is.na(d$T_SONIC_K)
@@ -182,7 +186,7 @@ legacy_inputs <- function(d, site_meta, split_local = "202601010000",
     timestamp_end_utc = d$timestamp_end_utc,
     TIMESTAMP = format(t_end, "%Y-%m-%d %H:%M:%S"),
     MOL = mol,
-    ustar = d$USTAR,
+    ustar = if (tau_na) ifelse(is.na(d$TAU), NA_real_, d$USTAR) else d$USTAR,
     H = d$H,
     AT = amb$AT,
     AP = amb$AP,
@@ -195,5 +199,6 @@ legacy_inputs <- function(d, site_meta, split_local = "202601010000",
     AP_altitude = "AP", rho_cp_legacy = c("rho", "cp"), character(0)
   )
   attr(out, "ambient") <- ambient
+  attr(out, "tau_na") <- tau_na
   out
 }

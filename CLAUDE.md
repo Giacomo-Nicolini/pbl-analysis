@@ -55,9 +55,8 @@ so code must be reproducible, documented and traceable to references.
     `PA_F`, `PA` in kPa (convert to Pa); H in W m-2; USTAR in m s-1; MO_LENGTH in m.
     Readers check the median of each declared-unit column and abort if implausible.
   - `H2O` (FLUXES) is a water vapour mole fraction in mmol mol-1 (median 9.75 at BE-Bra; spec 03).
-  - Fact stated by G (2026-10-22): "The QC of the FLUXNET files differs from that of the FLUXES file: FLUXNET
-    additionally applies u* filtering to NEE only. PBLHmod uses FLUXNET H_F_MDS, so its gap-filled share of H depends
-    on that filtering."
+  - The QC of the FLUXNET files differs from that of the FLUXES file: FLUXNET additionally applies u* filtering, to
+    NEE only (G, 2026-10-22); H and LE, and so H_F_MDS used by PBLHmod, are not affected.
   - ETC cleanset (G, 2026-10-22): EddyPro −9999 values in `air_density` / `air_heat_capacity` / `air_temperature`
     are converted to NA before `calc_PBL_height()` is called; the operational `PBLH` was computed from the same
     cleanset that became the published L2.

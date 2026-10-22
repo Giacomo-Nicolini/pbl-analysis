@@ -232,3 +232,13 @@ legacy behaviour that the port had to emulate deliberately (quirks).
    113; fill values 1601.81 / 846.11 / 1584.28 / 705.30 m (operational 1654.58 / 843.07 / 1591.68 / 682.86); p95
    |rel. diff| 49.4 %; within 0.01 m 9.5 %. Acceptance (section 2) still not met; part A stopped. Next: the ETC
    inputs for one month from G.
+7. **Hypothesis test `tau_na` (2026-10-22), rejected.** Hypothesis: in the cleanset, u* was removed where the
+   momentum flux failed QC (L2 `TAU` NA); in the legacy code a missing u* gives no h0 and no B5 step, so the
+   convective chain stops. Overlap: L2 `TAU` is NA on 31.2 % of the 15,136 "operational fill, reproduction
+   computes" rows vs 24.0 % of the 76,721 rows computed in both (29.6 % of all rows). Part A with `tau_na` (and
+   `tau_amb_na`): fills 17,607 / 17,755 day / night (operational 18,298 / 3,166); operational fill blocks reproduced
+   ≥ 50 %: 768 of 1,342 (57 %), fully: 383; share of operational fill rows filled 58 % (rebuilt 29 %); fill values
+   1590.24 / 796.62 / 1649.76 / 734.82 m (operational 1654.58 / 843.07 / 1591.68 / 682.86); median |rel. diff|
+   3.9 %, p95 1057 %; within 0.01 m 3.7 %. It reproduces more daytime blocks but creates about 14,600 night fills
+   that the operational column does not have, and moves all four fill values further away. Acceptance not met; part
+   A stopped. Next: the ETC cleanset inputs for one month from G.

@@ -80,3 +80,15 @@ test_that("eddypro_ambient returns the engine RH; amb_na variant blanks AT, rho,
   expect_equal(is.na(x$rho), c(FALSE, TRUE, TRUE))
   expect_equal(is.na(x$cp), c(FALSE, TRUE, TRUE))
 })
+
+test_that("tau_na: USTAR set to NA where L2 TAU is missing", {
+  t <- as.POSIXct("2024-06-01 10:00:00", tz = "UTC") + 1800 * 0:2
+  d <- dplyr::tibble(timestamp_start_utc = t, timestamp_end_utc = t + 1800,
+                     TIMESTAMP_START = format(t + 3600, "%Y%m%d%H%M"), TIMESTAMP_END = format(t + 5400, "%Y%m%d%H%M"),
+                     MO_LENGTH = -50, USTAR = c(0.4, 0.5, 0.6), TAU = c(-0.2, NA, -0.4), H = 100, T_SONIC_K = 293,
+                     H2O = 10, zm_m = 30, canopy_height_m = 20)
+  site <- dplyr::tibble(altitude_m = 16)
+  expect_equal(legacy_inputs(d, site, tau_na = TRUE)$ustar, c(0.4, NA, 0.6))
+  expect_equal(legacy_inputs(d, site)$ustar, c(0.4, 0.5, 0.6))
+  expect_error(legacy_inputs(dplyr::select(d, -TAU), site, tau_na = TRUE), "TAU")
+})
