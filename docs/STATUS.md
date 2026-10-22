@@ -21,12 +21,12 @@ Last update: 2026-10-21. Read this first in a new session, then `docs/project_pl
 | 04 | ERA5 readers (3×3 cells, pressure levels, static), standard PBLH format, first PBLHmod vs ERA5 comparison at BE-Bra (amendments 1–8) | 0, 2, 3 (first step) | merged (`main`, aba3394) |
 | 05 | u* plausibility filter in the PBLHmod forcing (spec 02 amendment 12); local config override (`config.local.yml`, no cluster paths in tracked files) | 1 | merged (`main`, 25ae55c) |
 | 06 | Consistency check of L2 `MO_LENGTH` against the forcing (option C, G 2026-10-21): L2 L kept where consistent (same sign, within 3×), otherwise replaced by L from the forcing and flagged (spec 02 amendment 13); checked only where the heat flux is positive (spec 06 amendment 1) and in daytime (amendment 2) | 1 | merged (`main`, 2026-10-21; amendment 2 merged 2026-10-21) |
-| 03 | Legacy regression: reproduce operational PBLH from L2 (operational code `calc_PBL_height_operational.R` + `proc_PBL_height.R`), port it, attribute differences to PBLHmod v2 (amendments 1–2) | 1 | implemented on branch `spec-03-legacy-regression`, under review |
+| 03 | Legacy regression: reproduce operational PBLH from L2 (operational code `calc_PBL_height_operational.R` + `proc_PBL_height.R`), port it, attribute differences to PBLHmod v2 (amendments 1–2) | 1 | merged (`main`, e224c4b) |
 
 Phases (see `project_plan.md`): 0 done; 1 model done, legacy regression pending (spec 03); 2 standard format and
 three sources done (spec 04), measured PBLH pending; 3 started at BE-Bra only; 4–6 not started.
 
-- Tests: 711 passing (`main`, after spec 06 amendment 2). Environment: R 4.4.1 + renv (Posit Package
+- Tests: 787 passing (`main`, after spec 03). Environment: R 4.4.1 + renv (Posit Package
   Manager), same as the cluster. Machine-specific paths in the untracked `config.local.yml` (template
   `config.local.yml.example`).
 - PBLHmod defaults: `stable_method = "nieuwstadt"` (B1), `neutral_method = "auto"` (B2 if 10 < N/|f| < 70, else
@@ -70,7 +70,7 @@ three sources done (spec 04), measured PBLH pending; 3 started at BE-Bra only; 4
    1,770 convective days, because L2 H is QC-rejected on 47 % of rows with L; B (inconsistent L set to NA) on 268
    days; D (L always from the forcing) is kept as a sensitivity case (`l_forcing`). Checking stable rows too made
    results worse (spec 06 amendment 1).
-4. Review and merge spec 03 (`spec-03-legacy-regression`). BE-Bra results (2026-10-22):
+4. ~~Review and merge spec 03 (`spec-03-legacy-regression`).~~ Done (2026-10-22, merged at e224c4b). BE-Bra results:
    - Part A: the operational code on inputs rebuilt from L2 (EddyPro engine formulas for AT, AP, rho, cp) reproduces
      the operational column: median |rel. diff| 0.009 %, p95 0.06 %, fill values within 0.006 %, 1,341 of 1,342 fill
      blocks; the local cleanset gives 0.0004 % (remaining differences = rounding of the published inputs). Runs:
