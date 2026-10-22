@@ -7,7 +7,8 @@
 #   sensitivity variants and a diagnostic run on the local ETC cleanset (cfg$cleanset_file; optional).
 # Part B: the port (R/legacy_port.R, default switches) equals the original on the full series.
 # Part C: attribution, from the operational baseline towards PBLHmod v2: one switch at a time and a
-#   cumulative path (spec 03 section 5); tables and figures (section 6).
+#   cumulative path (spec 03 section 5), medians on all valid rows and on common rows (amendment 2); tables and
+#   figures (section 6; png only).
 # This script and tests/testthat/test-legacy_port.R are the only places allowed to source legacy/
 #   (CLAUDE.md rule 5; spec 03), into a dedicated environment.
 # Outputs: output/tables/03_reproduction_<site>.csv, 03_cleanset_vs_l2_<site>.csv, 03_variants_<site>.csv
@@ -270,7 +271,8 @@ for (site_id in site_ids) {
   mi <- match(as.numeric(inp$timestamp_start_utc), as.numeric(mod$timestamp_start_utc))
   ref_mod <- mod$pblh_m[mi]
   regime <- mod$regime[mi]
-  oper <- d$PBLH[match(as.numeric(inp$timestamp_start_utc), as.numeric(d$timestamp_start_utc))]
+  md <- match(as.numeric(inp$timestamp_start_utc), as.numeric(d$timestamp_start_utc))
+  oper <- d$PBLH[md]
   pm <- legacy_switches_pblhmod()
   base <- legacy_switches()
   set_sw <- function(sw, keys) utils::modifyList(sw, pm[keys])
@@ -284,32 +286,69 @@ for (site_id in site_ids) {
                     stable_formula = "stable_formula",
                     convective_trigger_stability_classes = c("convective_trigger", "stability_classes"),
                     bg_integration = "bg_integration")
-  runs <- list(legacy_baseline = base)
-  for (k in names(one_keys)) runs[[paste0("legacy_", k)]] <- set_sw(base, one_keys[[k]])
+  runs <- list(legacy_baseline = list(sw = base, inp = inp))
+  for (k in names(one_keys)) runs[[paste0("legacy_", k)]] <- list(sw = set_sw(base, one_keys[[k]]), inp = inp)
+  # at_meteo (one at a time): AT = METEO TA instead of the EddyPro ambient AT (sonic temperature offset, local
+  # ETC QC report item 4); rows without METEO TA keep the EddyPro AT.
+  at_met <- d$met_TA_K[md]
+  inp_met <- inp
+  inp_met$AT <- ifelse(is.na(at_met), inp$AT, at_met)
+  n_at_fallback <- sum(is.na(at_met) & !is.na(inp$AT))
+  runs$legacy_at_meteo <- list(sw = base, inp = inp_met)
   cum <- base
   path_names <- character(0)
   for (j in seq_along(path_keys)) {
     cum <- set_sw(cum, path_keys[[j]])
     nm <- sprintf("cum_%02d_%s", j, names(path_keys)[j])
-    runs[[nm]] <- cum
+    runs[[nm]] <- list(sw = cum, inp = inp)
     path_names <- c(path_names, nm)
   }
+  one_v <- c(paste0("legacy_", names(one_keys)), "legacy_at_meteo")
   vstats <- list()
   vout <- list()
   for (v in names(runs)) {
-    tm <- system.time(o <- legacy_pblh(inp, meta, runs[[v]], forcing = forcing, icos = d))
+    tm <- system.time(o <- legacy_pblh(runs[[v]]$inp, meta, runs[[v]]$sw, forcing = forcing, icos = d))
     vout[[v]] <- o
     vstats[[v]] <- variant_stats(v, o$pblh_m, o$flag_floor, o$flag_fill, ref_mod, oper, regime)
     readr::write_csv(dplyr::bind_cols(dplyr::tibble(timestamp_start_utc = inp$timestamp_start_utc, run_id = inp$run_id), o),
                      file.path(derived_dir, "legacy", paste0(site_id, "_legacy_", v, ".csv.gz")))
-    s <- vstats[[v]]
-    cli::cli_inform("{v}: {round(tm[['elapsed']])} s; median {round(s$value[s$stratum == 'all' & s$statistic == 'p50'])} m; median log ratio to PBLHmod {signif(s$value[s$stratum == 'all' & s$statistic == 'median_log_ratio_pblhmod'], 3)}.")
+    cli::cli_inform("{v}: {round(tm[['elapsed']])} s.")
   }
   ref_stats <- variant_stats("pblhmod_default", ref_mod, rep(FALSE, length(ref_mod)), rep(FALSE, length(ref_mod)),
                              ref_mod, oper, regime)
   ops_stats <- variant_stats("operational", oper, !is.na(oper) & abs(oper - 50) < 1e-9,
                              !is.na(oper) & sprintf("%.2f", oper) %in% sprintf("%.2f", oper_fills), ref_mod, oper, regime)
-  vdf <- do.call(rbind, c(vstats, list(ref_stats, ops_stats)))
+
+  # Common rows (spec 03 amendment 2, review 2026-10-22): rows valid (pblh_m not NA) in every variant of the
+  # analysis and in PBLHmod v2, so that medians compare values, not row sets.
+  strata <- c("all", "stable", "unstable_diag", "convective")
+  in_stratum <- function(g) if (g == "all") rep(TRUE, length(regime)) else regime %in% g
+  common_mask <- function(vs) Reduce(`&`, c(lapply(vs, function(v) !is.na(vout[[v]]$pblh_m)), list(!is.na(ref_mod))))
+  analyses <- list(one_at_a_time = c("legacy_baseline", one_v), cumulative = c("legacy_baseline", path_names))
+  common_rows <- lapply(analyses, common_mask)
+  common_stats <- list()
+  for (an in names(analyses)) {
+    cm <- common_rows[[an]]
+    for (v in c(analyses[[an]], "pblhmod_default")) {
+      h <- if (v == "pblhmod_default") ref_mod else vout[[v]]$pblh_m
+      for (g in strata) {
+        s <- cm & in_stratum(g)
+        ok <- s & h > 0 & ref_mod > 0
+        common_stats[[length(common_stats) + 1]] <- data.frame(
+          variant = v, stratum = paste0("common_", an, "|", if (g == "all") "all" else paste0("regime=", g)),
+          statistic = c("n", "p50", "median_log_ratio_pblhmod"),
+          value = c(sum(s), stats::median(h[s]), stats::median(log(h[ok] / ref_mod[ok]))))
+      }
+    }
+  }
+  n_valid <- do.call(rbind, lapply(c(names(runs), "pblhmod_default"), function(v) {
+    h <- if (v == "pblhmod_default") ref_mod else vout[[v]]$pblh_m
+    do.call(rbind, lapply(strata, function(g) {
+      data.frame(variant = v, stratum = if (g == "all") "all" else paste0("regime=", g), statistic = "n_valid",
+                 value = sum(!is.na(h) & in_stratum(g)))
+    }))
+  }))
+  vdf <- do.call(rbind, c(vstats, list(ref_stats, ops_stats, n_valid), common_stats))
   readr::write_csv(vdf, file.path(tables_dir, paste0("03_variants_", site_id, ".csv")))
 
   # Residual of the last cumulative step vs pblhmod_default
@@ -319,55 +358,86 @@ for (site_id in site_ids) {
   cli::cli_h3("Residual of the fully switched legacy code vs pblhmod_default")
   cli::cli_inform("Same NA pattern: {res_same_na}; max |diff| = {signif(res_max, 3)} m.")
 
-  # Summary tables: median by regime and median log ratio to PBLHmod
-  get <- function(df, stat) {
-    x <- df[df$statistic == stat & df$stratum %in% c("all", "regime=stable", "regime=unstable_diag", "regime=convective"), ]
+  # Summary tables (wide: one column per stratum)
+  wide_tab <- function(df, stat, prefix = "") {
+    st <- paste0(prefix, c("all", "regime=stable", "regime=unstable_diag", "regime=convective"))
+    x <- df[df$statistic == stat & df$stratum %in% st, ]
     w <- stats::reshape(x[c("variant", "stratum", "value")], idvar = "variant", timevar = "stratum", direction = "wide")
-    names(w) <- sub("^value\\.(regime=)?", "", names(w))
-    w
+    names(w) <- sub("^value\\.", "", names(w))
+    names(w) <- sub(paste0("^", gsub("|", "\\|", prefix, fixed = TRUE)), "", names(w))
+    names(w) <- sub("^regime=", "", names(w))
+    w[c("variant", strata)]
   }
-  cli::cli_h3("Median PBLH [m] by regime (PBLHmod regime of the row)")
-  med_tab <- get(vdf, "p50")
-  print_tbl(med_tab)
-  cli::cli_h3("Median log(variant / PBLHmod v2) by regime")
-  lr_tab <- get(vdf, "median_log_ratio_pblhmod")
-  print_tbl(lr_tab)
-  cli::cli_h3("Ranking: change of the median [m] by regime")
-  one_v <- paste0("legacy_", names(one_keys))
-  bm <- med_tab[med_tab$variant == "legacy_baseline", -1]
-  rk_one <- data.frame(variant = one_v, med_tab[match(one_v, med_tab$variant), -1] - bm[rep(1, length(one_v)), ])
-  print_tbl(rk_one[order(-abs(rk_one$all)), ])
+  delta <- function(tab, rows, base_row) {
+    b <- tab[tab$variant == base_row, strata]
+    data.frame(variant = rows, round(tab[match(rows, tab$variant), strata] - b[rep(1, length(rows)), ], 1))
+  }
+  steps <- function(tab, vs) {
+    t2 <- tab[match(vs, tab$variant), strata]
+    data.frame(step = vs[-1], round(t2[-1, ] - t2[-nrow(t2), ], 1))
+  }
+  nv <- wide_tab(vdf, "n_valid")
+  cli::cli_h3("Valid rows (pblh_m not NA) per variant and regime")
+  print_tbl(nv)
+  med_all <- wide_tab(vdf, "p50")
   pv <- c("legacy_baseline", path_names)
-  pm_tab <- med_tab[match(pv, med_tab$variant), ]
-  rk_cum <- data.frame(step = path_names, pm_tab[-1, -1] - pm_tab[-nrow(pm_tab), -1])
-  print_tbl(rk_cum)
+  for (an in names(analyses)) {
+    pre <- paste0("common_", an, "|")
+    med_c <- wide_tab(vdf, "p50", pre)
+    n_c <- wide_tab(vdf, "n", pre)
+    cli::cli_h3("{an}: COMMON ROWS (n = {n_c$all[1]}; stable {n_c$stable[1]}, unstable_diag {n_c$unstable_diag[1]}, convective {n_c$convective[1]}): median PBLH [m] and change")
+    print_tbl(med_c)
+    if (an == "one_at_a_time") print_tbl(delta(med_c, one_v, "legacy_baseline")) else print_tbl(steps(med_c, pv))
+    cli::cli_h3("{an}: ALL VALID ROWS of each variant (row sets differ): change of the median [m]")
+    if (an == "one_at_a_time") print_tbl(delta(med_all, one_v, "legacy_baseline")) else print_tbl(steps(med_all, pv))
+  }
+  cli::cli_inform("at_meteo: METEO TA missing on {n_at_fallback} rows (EddyPro AT kept there).")
 
   # === Figures ===========================================================================
   cli::cli_h2("Figures")
   rr <- results$rebuilt
   figs <- list()
   figs$reproduction <- plot_legacy_reproduction(inp$timestamp_start_utc, oper, rr$pblh)
-  reg_long <- function(tab) {
-    do.call(rbind, lapply(c("all", "stable", "unstable_diag", "convective"), function(g) {
-      data.frame(step = tab$variant, regime = g, median = tab[[g]])
-    }))
+  reg_long <- function(tab, value = "median") {
+    out <- do.call(rbind, lapply(strata, function(g) data.frame(step = tab$variant, regime = g, v = tab[[g]])))
+    names(out)[3] <- value
+    out
   }
-  wf <- reg_long(pm_tab)
-  wf$step <- factor(sub("^cum_[0-9]+_", "", wf$step), levels = sub("^cum_[0-9]+_", "", pv))
-  ref_line <- reg_long(med_tab[med_tab$variant == "pblhmod_default", ])
-  figs$waterfall <- plot_legacy_waterfall(wf, ref_line[c("regime", "median")])
-  lr_one <- reg_long(lr_tab[lr_tab$variant %in% c("legacy_baseline", one_v), ])
-  names(lr_one)[names(lr_one) == "median"] <- "median_log_ratio"
-  names(lr_one)[names(lr_one) == "step"] <- "variant"
-  lr_one$variant <- factor(sub("^legacy_", "", lr_one$variant), levels = rev(sub("^legacy_", "", c("legacy_baseline", one_v))))
-  figs$one_at_a_time <- plot_legacy_one_at_a_time(lr_one)
+  short <- function(x) sub("^legacy_", "", sub("^cum_[0-9]+_", "", x))
+  n_lab <- function(vs) paste0(short(vs), "\n(n = ", format(nv$all[match(vs, nv$variant)], big.mark = ","), ")")
+  # waterfall: common rows (main) and all valid rows (secondary file, n per step on the axis)
+  med_cp <- wide_tab(vdf, "p50", "common_cumulative|")
+  n_cp <- wide_tab(vdf, "n", "common_cumulative|")$all[1]
+  wf <- reg_long(med_cp[match(pv, med_cp$variant), ])
+  wf$step <- factor(short(wf$step), levels = short(pv))
+  figs$waterfall <- plot_legacy_waterfall(wf, reg_long(med_cp[med_cp$variant == "pblhmod_default", ])[c("regime", "median")],
+                                          subtitle = sprintf("Common rows (valid in every step and in PBLHmod v2): n = %s",
+                                                             format(n_cp, big.mark = ",")))
+  wfa <- reg_long(med_all[match(pv, med_all$variant), ])
+  wfa$step <- factor(n_lab(wfa$step), levels = n_lab(pv))
+  figs$waterfall_allrows <- plot_legacy_waterfall(wfa, reg_long(med_all[med_all$variant == "pblhmod_default", ])[c("regime", "median")],
+                                                  subtitle = "All valid rows of each step (row sets differ; n per step)")
+  # one at a time: common rows (main) and all valid rows (secondary)
+  ov <- c("legacy_baseline", one_v)
+  lr_c <- wide_tab(vdf, "median_log_ratio_pblhmod", "common_one_at_a_time|")
+  n_co <- wide_tab(vdf, "n", "common_one_at_a_time|")$all[1]
+  lo <- reg_long(lr_c[match(ov, lr_c$variant), ], "median_log_ratio")
+  names(lo)[1] <- "variant"
+  lo$variant <- factor(short(lo$variant), levels = rev(short(ov)))
+  figs$one_at_a_time <- plot_legacy_one_at_a_time(lo, subtitle = sprintf("Common rows: n = %s", format(n_co, big.mark = ",")))
+  lr_a <- wide_tab(vdf, "median_log_ratio_pblhmod")
+  la <- reg_long(lr_a[match(ov, lr_a$variant), ], "median_log_ratio")
+  names(la)[1] <- "variant"
+  la$variant <- factor(n_lab(la$variant), levels = rev(n_lab(ov)))
+  figs$one_at_a_time_allrows <- plot_legacy_one_at_a_time(la, subtitle = "All valid rows of each variant (n per variant)")
   dw <- dplyr::tibble(timestamp_start_utc = inp$timestamp_start_utc, operational = oper,
                       legacy_baseline = vout$legacy_baseline$pblh_m, legacy_no_postproc = vout$cum_03_smoothing$pblh_m,
                       pblhmod_v2 = ref_mod)
   dw$season <- season_of(dw$timestamp_start_utc)
   dw$hour_utc <- as.integer(format(dw$timestamp_start_utc, "%H", tz = "UTC"))
   figs$diurnal <- plot_legacy_diurnal(diurnal_summary(dw, c("operational", "legacy_baseline", "legacy_no_postproc", "pblhmod_v2")))
-  sizes <- list(reproduction = c(24, 10), waterfall = c(18, 11), one_at_a_time = c(16, 11), diurnal = c(17, 13))
+  sizes <- list(reproduction = c(24, 10), waterfall = c(18, 11), waterfall_allrows = c(18, 12), one_at_a_time = c(16, 11),
+                one_at_a_time_allrows = c(16, 12), diurnal = c(17, 13))
   for (nm in names(figs)) {
     p <- save_figure(figs[[nm]], paste0("03_", nm, "_", site_id), sizes[[nm]][1], sizes[[nm]][2])
     cli::cli_alert_success("{.path {p[['png']]}}")

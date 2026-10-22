@@ -46,17 +46,23 @@ source_labels <- function() {
   )
 }
 
-#' Save a figure as png (300 dpi) and pdf
+#' Save a figure (png by default; pdf only for paper figures)
 #'
 #' A list of ggplot objects is laid out side by side (base `grid` viewports;
-#' no extra package).
+#' no extra package). PNG at 300 dpi by default; add `"pdf"` to `formats`
+#' only for the final paper figures (CLAUDE.md, Style).
 #'
 #' @param p A ggplot object or a list of them.
 #' @param name File name without extension [character].
 #' @param width_cm,height_cm Size [cm].
 #' @param dir Output directory; default `<output_dir>/figures` from `config.yml`.
-#' @return Paths of the two files, invisibly.
-save_figure <- function(p, name, width_cm = 16, height_cm = 10, dir = NULL) {
+#' @param formats Output formats, any of `"png"`, `"pdf"` [character];
+#'   default `"png"`.
+#' @return Named character vector of the written paths (names = formats),
+#'   invisibly.
+save_figure <- function(p, name, width_cm = 16, height_cm = 10, dir = NULL, formats = "png") {
+  bad <- setdiff(formats, c("png", "pdf"))
+  if (length(formats) == 0 || length(bad) > 0) cli::cli_abort("{.arg formats} must be any of {.val png}, {.val pdf}.")
   if (is.null(dir)) dir <- file.path(resolve_path(get_cfg()$output_dir, must_exist = FALSE), "figures")
   dir.create(dir, recursive = TRUE, showWarnings = FALSE)
   plots <- if (inherits(p, "ggplot")) list(p) else p
@@ -70,12 +76,17 @@ save_figure <- function(p, name, width_cm = 16, height_cm = 10, dir = NULL) {
   }
   w <- width_cm / 2.54
   h <- height_cm / 2.54
-  png_path <- file.path(dir, paste0(name, ".png"))
-  pdf_path <- file.path(dir, paste0(name, ".pdf"))
-  grDevices::png(png_path, width = w, height = h, units = "in", res = 300)
-  tryCatch(draw(), finally = grDevices::dev.off())
-  pdf_dev <- if (capabilities("cairo")) grDevices::cairo_pdf else grDevices::pdf
-  pdf_dev(pdf_path, width = w, height = h)
-  tryCatch(draw(), finally = grDevices::dev.off())
-  invisible(c(png = png_path, pdf = pdf_path))
+  paths <- c()
+  if ("png" %in% formats) {
+    paths["png"] <- file.path(dir, paste0(name, ".png"))
+    grDevices::png(paths[["png"]], width = w, height = h, units = "in", res = 300)
+    tryCatch(draw(), finally = grDevices::dev.off())
+  }
+  if ("pdf" %in% formats) {
+    paths["pdf"] <- file.path(dir, paste0(name, ".pdf"))
+    pdf_dev <- if (capabilities("cairo")) grDevices::cairo_pdf else grDevices::pdf
+    pdf_dev(paths[["pdf"]], width = w, height = h)
+    tryCatch(draw(), finally = grDevices::dev.off())
+  }
+  invisible(paths)
 }

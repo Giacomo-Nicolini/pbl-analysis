@@ -136,7 +136,7 @@ output/       figures/, tables/ (gitignored)
 - Vectorised code; avoid growing vectors in loops. Sequential integration (B&G) may loop, but preallocate.
 - Functions are pure: inputs in, data frame out. Plotting and file writing live in separate functions.
 - Every exported function has roxygen docs: purpose, params with units, return value with units, references.
-- Plots: `ggplot2`, publication style, saved via a helper to `output/figures/` (png + pdf). Never `windows()`.
+- Plots: `ggplot2`, publication style, saved via `save_figure()` to `output/figures/`: png by default; pdf only for paper figures (`formats = c("png", "pdf")`). Never `windows()`.
 
 ## Testing
 

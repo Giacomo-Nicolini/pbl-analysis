@@ -230,7 +230,7 @@ Comparisons to compute (pairs `mod` vs `ref`):
 
 ## 8. Figures (`R/plot_compare.R`, `R/plot_utils.R`)
 
-`save_figure(p, name, width_cm, height_cm)` → `output/figures/<name>.png` (300 dpi) and `.pdf`. Publication style
+`save_figure(p, name, width_cm, height_cm)` → `output/figures/<name>.png` (300 dpi) and `.pdf` (since 2026-10-22: png only by default, pdf on request via `formats`; CLAUDE.md, Style). Publication style
 (theme_bw or similar, readable fonts, units on axes, colour-blind-safe palette; one palette for the three sources
 across all figures). Figure functions return ggplot objects; no `windows()`.
 

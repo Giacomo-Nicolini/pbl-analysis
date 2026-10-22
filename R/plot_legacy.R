@@ -30,8 +30,9 @@ plot_legacy_reproduction <- function(t, oper, leg) {
 #'
 #' @param med Tibble `step` (ordered factor), `regime`, `median` [m].
 #' @param ref Tibble `regime`, `median` [m] of PBLHmod v2 (reference lines).
+#' @param subtitle Optional subtitle (e.g. the row set and n) [character].
 #' @return ggplot object.
-plot_legacy_waterfall <- function(med, ref) {
+plot_legacy_waterfall <- function(med, ref, subtitle = NULL) {
   ggplot2::ggplot(med, ggplot2::aes(step, median, colour = regime, group = regime)) +
     ggplot2::geom_hline(data = ref, ggplot2::aes(yintercept = median, colour = regime), linetype = "dashed",
                         linewidth = 0.3) +
@@ -39,7 +40,8 @@ plot_legacy_waterfall <- function(med, ref) {
     ggplot2::geom_point(size = 1.5) +
     ggplot2::scale_colour_manual(values = c(all = "black", stable = "#0072B2", unstable_diag = "#E69F00",
                                             convective = "#D55E00"), name = NULL) +
-    ggplot2::labs(x = "Cumulative change from the operational legacy code (dashed: PBLHmod v2)", y = "Median PBLH [m]") +
+    ggplot2::labs(x = "Cumulative change from the operational legacy code (dashed: PBLHmod v2)", y = "Median PBLH [m]",
+                  subtitle = subtitle) +
     theme_pub() +
     ggplot2::theme(axis.text.x = ggplot2::element_text(angle = 40, hjust = 1))
 }
@@ -47,14 +49,15 @@ plot_legacy_waterfall <- function(med, ref) {
 #' Median log ratio to PBLHmod v2 per switch, one at a time (figure 3)
 #'
 #' @param lr Tibble `variant`, `regime`, `median_log_ratio` [-].
+#' @param subtitle Optional subtitle (e.g. the row set and n) [character].
 #' @return ggplot object.
-plot_legacy_one_at_a_time <- function(lr) {
+plot_legacy_one_at_a_time <- function(lr, subtitle = NULL) {
   ggplot2::ggplot(lr, ggplot2::aes(median_log_ratio, variant, colour = regime)) +
     ggplot2::geom_vline(xintercept = 0, linewidth = 0.3) +
     ggplot2::geom_point(size = 2, position = ggplot2::position_dodge(width = 0.5)) +
     ggplot2::scale_colour_manual(values = c(all = "black", stable = "#0072B2", unstable_diag = "#E69F00",
                                             convective = "#D55E00"), name = NULL) +
-    ggplot2::labs(x = "Median log(variant / PBLHmod v2) [-]", y = NULL) +
+    ggplot2::labs(x = "Median log(variant / PBLHmod v2) [-]", y = NULL, subtitle = subtitle) +
     theme_pub()
 }
 

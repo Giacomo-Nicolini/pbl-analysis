@@ -1,6 +1,6 @@
 utc <- function(x) as.POSIXct(x, tz = "UTC")
 
-test_that("figure functions build and save_figure writes png and pdf", {
+test_that("figure functions build; save_figure writes png by default, pdf on request", {
   set.seed(1)
   t <- utc("2020-01-01 00:00:00") + 3600 * 0:(24 * 120 - 1)
   pt <- pair_table(
@@ -30,7 +30,13 @@ test_that("figure functions build and save_figure writes png and pdf", {
 
   dir <- withr::local_tempdir()
   paths <- save_figure(two, "test_fig", 16, 8, dir = dir)
-  expect_true(all(file.exists(paths)))
+  expect_equal(names(paths), "png") # default: png only
+  expect_true(file.exists(paths[["png"]]))
+  expect_false(file.exists(file.path(dir, "test_fig.pdf")))
   expect_gt(file.size(paths[["png"]]), 1000)
+  both <- save_figure(two, "test_fig2", 16, 8, dir = dir, formats = c("png", "pdf")) # paper figures
+  expect_equal(names(both), c("png", "pdf"))
+  expect_true(all(file.exists(both)))
+  expect_error(save_figure(two, "x", dir = dir, formats = "svg"), "formats")
   expect_equal(unname(names(source_palette())), unname(names(source_labels())))
 })
