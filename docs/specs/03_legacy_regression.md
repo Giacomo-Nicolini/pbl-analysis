@@ -7,7 +7,7 @@ Read first: `CLAUDE.md`, `docs/legacy_review.md` (all issues, including 11–15 
 ## Goal
 
 1. **Reproduce** the operational `PBLH` column of the ICOS L2 FLUXES file at BE-Bra by running the legacy code
-   (`legacy/calc_PBL_height.R` + `legacy/proc_PBL_height.R`) on the same inputs.
+   (`legacy/calc_PBL_height_operational.R` + `legacy/proc_PBL_height.R`, Amendment 2) on the same inputs.
 2. **Port** the legacy algorithm into new, testable code with switches, proven identical to the original.
 3. **Attribute** the difference between operational PBLH and PBLHmod v2 to individual legacy choices, by switching
    them one at a time (and cumulatively) from the legacy baseline towards PBLHmod v2.
@@ -20,9 +20,10 @@ column itself. This spec must reproduce them **from the inputs**.
 ## Exception to the `legacy/` rule
 
 `CLAUDE.md` rule 5 allows sourcing `legacy/` only in the explicit legacy regression. In this spec, only
-`scripts/03_legacy_regression.R` and `tests/testthat/test-legacy_port.R` may `source()` the two legacy files, into a
-dedicated environment (`sys.source(..., envir = legacy_env)`), never into the global environment, and never from
-`R/`. The legacy files are not edited.
+`scripts/03_legacy_regression.R` and `tests/testthat/test-legacy_port.R` may `source()` the legacy files
+`calc_PBL_height_operational.R`, `calc_PBL_height_developing.R` and `proc_PBL_height.R` (Amendment 2), into dedicated
+environments (`sys.source(..., envir = legacy_env)`), never into the global environment, and never from `R/`. The
+legacy files are not edited.
 
 Running the original requires packages it loads itself (`zoo`, `crayon`, `bigleaf`, `data.table`). Its code calls
 `install.packages()` for missing ones: **the script must check that all four are installed and abort otherwise**
@@ -242,3 +243,33 @@ legacy behaviour that the port had to emulate deliberately (quirks).
    3.9 %, p95 1057 %; within 0.01 m 3.7 %. It reproduces more daytime blocks but creates about 14,600 night fills
    that the operational column does not have, and moves all four fill values further away. Acceptance not met; part
    A stopped. Next: the ETC cleanset inputs for one month from G.
+
+## Amendment 2 (2026-10-22, agreed with G)
+
+1. **Operational reference.** G reorganised `legacy/` (commit b020a93): `calc_PBL_height.R` →
+   `calc_PBL_height_developing.R` (G's later development version, used in spec 03 until now), new
+   `calc_PBL_height_operational.R` (the version the ETC pipeline sources), pipeline scripts `FFP_analysis_dev.R` and
+   `FFP_calc_parallel_dev.R`, Kljun's FFP code (local only, gitignored); `proc_PBL_height.R` unchanged. The
+   operational reference is `calc_PBL_height_operational.R` + `proc_PBL_height.R` (`FFP_analysis_dev.R` line 133;
+   output written as `round(PBL, 2)`, no other change). Parts A–C target it. The differences from `_developing` are
+   documented in `docs/legacy_review.md` (diff table): unstable class bound −0.003 instead of −0.016 (near-neutral
+   class unreachable); a height is computed if L **or** u* is present; Nieuwstadt fallback active; B&G uses the
+   gap-interpolated h0 for the previous step and skips row 1; gap filling and smoothing always on.
+2. **Part A rerun (2026-10-22), accepted** (operational version, rebuilt L2 inputs, two runs): median |relative
+   difference| 0.009 %, p95 0.06 %, rows within 0.01 m 13.3 %; fill values 1654.50 / 843.07 / 1591.59 / 682.86 m
+   (operational 1654.58 / 843.07 / 1591.68 / 682.86; max deviation 0.006 %); fills 18,454 / 3,297 day / night
+   (operational 18,298 / 3,166: the extra rows are after the end of the operational run 2, 2026-08-26 → 09-01,
+   where the operational column is NA; they do not change the fill means); fill blocks reproduced 1,341 of 1,342.
+   Ambient-variable variants change nothing material (`rho_cp_legacy`: within 0.01 m 16.0 %); one run over all
+   years: p95 2.1 %, fill values off by 0.4–2 %, so the two runs are confirmed. The development version on the same
+   inputs: p95 49 %, 75 % of the fill blocks not reproduced: the earlier part-A failure (Amendment 1, notes 5–7)
+   came from the code version, not from the inputs; `amb_na` and `tau_na` are moot.
+3. **Cleanset diagnostic** (local file `cfg$cleanset_file`, never committed; run 1 only, 2020-10-26 → 2026-01-01):
+   the operational version on the cleanset gives median |relative difference| 0.0004 %, p95 0.006 %, 77.9 % within
+   0.01 m, fill values 1654.51 / 843.07 m, 1,156 of 1,157 blocks. Cleanset vs L2 inputs: identical missing-value
+   patterns for MO_LENGTH, USTAR, H, AT, rho, cp (AP: NA on 1,991 rows in the cleanset, constant in the rebuild);
+   values differ only by rounding (median |diff|: MO_LENGTH 0.002 m, USTAR 0.00025 m s-1, H 0.0025 W m-2, AT
+   0.0025 K, rho 1e-5 kg m-3, cp 0.003 J kg-1 K-1; AP 0.47 Pa). The remaining L2-vs-operational differences
+   (13 % of rows within 0.01 m) are therefore rounding of the published inputs, not code.
+4. **Port (part B)** emulates `_operational` by default, with switches for the five differences of item 1, so that
+   part C can include "operational → developing" as a step.

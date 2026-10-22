@@ -6,8 +6,12 @@ Reviewed 2026-10-08. Reference only: new code goes in `R/` and `scripts/`.
 
 | File | Purpose | Reuse |
 |---|---|---|
-| `calc_PBL_height.R` | Core function. PBLH from EC data (L, u*, H, T) following Kljun et al. 2015 App. B: diagnostic formulas for neutral/stable, Batchvarova & Gryning (1991) slab model for convective conditions. Stability classes from 1/L (Essa et al. 2006). | **Port and refactor.** Core science is here. |
-| `proc_PBL_height.R` | ETC operational post-processing of `calc_PBL_height()` output: negatives → NA, 50 m floor, NA → run day/night mean. | Reference for spec 03 only (explains the operational `PBLH` column). |
+| `calc_PBL_height_operational.R` | **The version the ETC pipeline sources** (`FFP_analysis_dev.R` line 133) to produce the operational L2 `PBLH`. PBLH from EC data (L, u*, H, T) following Kljun et al. 2015 App. B: diagnostic formulas for neutral/stable, Batchvarova & Gryning (1991) slab model for convective conditions; stability classes from 1/L (Essa et al. 2006, with a modified bound). | Reference of spec 03 (reproduction, port, attribution). |
+| `calc_PBL_height_developing.R` | G's later development version (formerly `calc_PBL_height.R`; the one reviewed below and used in spec 03 until 2026-10-22). Differences from `_operational`: table below. | Step "operational → developing" in the spec 03 attribution. |
+| `proc_PBL_height.R` | ETC operational post-processing of `calc_PBL_height()` output: negatives → NA, 50 m floor, NA → run day/night mean. Identical to the pipeline copy. | Reference for spec 03 (explains the operational `PBLH` column). |
+| `FFP_analysis_dev.R` | ETC pipeline script: reads the cleanset, calls `calc_PBL_height()` (line 984) and `proc_PBL_height()` (line 1003), writes the L2 column as `PBLH = round(PBL, 2)` (lines 1376, 1442). | Reference for the operational call (spec 03 section 1). |
+| `FFP_calc_parallel_dev.R` | ETC pipeline: parallel FFP computation. Line 155: `h = ifelse(is.na(PBL), 1000, PBL)`, i.e. a missing PBL is replaced by **1000 m** in the crosswind-integrated footprint. | Note for phase 5 (footprints). |
+| `calc_footprint_FFP.R`, `calc_footprint_FFP_climatology.R` | Kljun's FFP R code (see below). **Kept locally only, not in git** (`.gitignore`). | Phase 5 (footprints). |
 | `PBL_validation.R` | Validation at FI-Hyy (SMEAR II), 2016: Doppler lidar MLH (.mat), ceilometer cloud base, SMEAR fluxes and meteo. Diurnal cycles (year/season/month), Bland–Altman, error boxplots. | Reuse the analysis design. Rewrite the I/O. |
 | `PBL_ERA_comparison_test.R` | BE-Bra 2024: PBLH from ETC L2 footprint output vs ERA5 `boundary_layer_height`. Unfinished, does not run. | Reuse the idea (ERA5 as a second reference). |
 | `FFP_sens_to_PBL.R` | Sensitivity of the FFP (Kljun) 80% fetch to PBLH. Depends on external `calc_footprint_FFP*.R`. | Possible later module. |
@@ -18,6 +22,33 @@ Reviewed 2026-10-08. Reference only: new code goes in `R/` and `scripts/`.
 `PBL_ERA_comparison_test.R` contains two absolute cluster paths in comments (lines 7 and 13). `legacy/` is
 read-only (CLAUDE.md rule 5), so the file is kept unchanged; it is an accepted hit of the cluster-path and
 user-name checks of spec 05.
+
+**Kljun's FFP code (local only).** Kljun, N., Calanca, P., Rotach, M. W., Schmid, H. P. (2015): A simple
+two-dimensional parameterisation for Flux Footprint Prediction (FFP), Geosci. Model Dev., 8, 3695–3713,
+doi:10.5194/gmd-8-3695-2015. R code `calc_footprint_FFP.R` v1.3 (08/12/2017) and
+`calc_footprint_FFP_climatology.R` v1.31 (25/03/2018), © N. Kljun, from the FFP website (footprint.kljun.net).
+Kept locally only, not redistributed (copyright, no licence stated). The local climatology file is dated 2022-04:
+possible local modification by ETC, to be checked against the published v1.31 before phase 5.
+
+**Legacy-only R packages (spec 03).** `zoo`, `crayon`, `bigleaf`, `data.table` are in `renv.lock` only because the
+original legacy code `require()`s them (`_developing` loads all four, `_operational` only `zoo`); they are used only
+by `scripts/03_legacy_regression.R` and `tests/testthat/test-legacy_port.R`, never by `R/`.
+
+## `calc_PBL_height_operational.R` vs `calc_PBL_height_developing.R` (added 2026-10-22, spec 03 amendment 2)
+
+| Aspect | `_operational` (ETC pipeline) | `_developing` |
+|---|---|---|
+| Unstable class bound (1/L) | `-0.056 <= 1/L < -0.003`: the near-neutral class (`-0.016 <= 1/L < -0.004`) is **unreachable** (caught by "unstable"), and `[-0.004, -0.003)` is unstable too | `-0.056 <= 1/L < -0.016` |
+| When a height is computed | if **L or u\*** is present (`!is.na(1/MOL) \| !is.na(1/ustar)`); with u\* missing the formulas give NA; with L missing the class test errors (never reached with L filled by LOCF) | if L **and** u\* are present |
+| Nieuwstadt (1981) fallback for neutral / stable | **active** (used where the primary formula gives NA) | commented out |
+| B&G previous height | the gap-interpolated h0 (`PBL.h.0.int[i-1]`), else the B&G value; **row 1 skipped** (`i != 1`, no legacy issue 5) | the h0 after interpolation (same when `GF.PBL = TRUE`); row 1 with H > 0 errors |
+| Gap filling (`na.approx(maxgap = 2)`) and 5-point smoothing | **always on** (no options); `stats::filter` explicit | options `GF.PBL`, `smooth.PBL` (both TRUE in the ETC call); `filter()` can be masked by dplyr |
+| Packages | `zoo` only | `zoo`, `data.table`, `bigleaf`, `crayon` |
+| Other | `TIMESTAMP` may be POSIXlt; `PBL.dir` argument for plots / output; with neither `AP` nor altitude, `break()` (bug; not reached, AP passed) | `stop()` with a message |
+
+Effect at BE-Bra (spec 03 part A, rebuilt L2 inputs): `_operational` reproduces the operational column (median
+|relative difference| 0.009 %, p95 0.06 %, the four fill values within 0.006 %, 1,341 of 1,342 fill blocks), while
+`_developing` leaves 75 % of the fill blocks unexplained (p95 49 %, fill values off by up to 3.3 %).
 
 ## `proc_PBL_height.R` (added 2026-10-16): ETC post-processing of `calc_PBL_height()` output
 
@@ -38,7 +69,7 @@ constant. Reproduced exactly at BE-Bra with the hour of `TIMESTAMP_END` (local s
 14. **Upper bound missing.** No cap: implausible values (up to 91 km) pass and enter the fill means.
 15. `H.EC` is a free (global) variable in the histogram; `windows()` devices; plots always produced.
 
-## Issues found in `calc_PBL_height.R` and the validation script
+## Issues found in `calc_PBL_height_developing.R` (formerly `calc_PBL_height.R`) and the validation script
 
 1. **Temperature units (likely major).** The function expects `AT` in K, but `PBL_validation.R` passes `AT.24` in °C. In the B&G denominator the mechanical term `C·T·u*²` is then about 19× too small, so convective growth is overestimated. This may explain the TODO "PBL sovrastima molto".
 2. **Order of gap filling and B&G.** `na.approx(maxgap = 2)` is applied to `PBL.h.0` *before* the B&G step. Short convective runs (≤ 2 steps) get linearly interpolated instead of modelled.

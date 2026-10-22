@@ -26,7 +26,10 @@ so code must be reproducible, documented and traceable to references.
    Internally use SI: K for temperature, Pa for pressure, m, s. Convert at the reader boundary only.
 3. **References in code.** Every formula carries a comment with its source (author, year, equation number when known).
 4. **No hardcoded paths.** All paths come from `config.yml` (+ untracked `config.local.yml`) via `get_cfg()` (see Environment).
-5. `legacy/` is read-only reference. Never edit, source, or import from it in new code (except in the explicit legacy regression test).
+5. `legacy/` is read-only reference. Never edit, source, or import from it in new code. Exception (spec 03): only
+   `scripts/03_legacy_regression.R` and `tests/testthat/test-legacy_port.R` may source `calc_PBL_height_operational.R`,
+   `calc_PBL_height_developing.R` and `proc_PBL_height.R`, into dedicated environments. Kljun's FFP code in `legacy/`
+   is local only (gitignored).
 6. Never commit data, credentials or outputs (see `.gitignore`). Never print secrets.
 
 ## Environment

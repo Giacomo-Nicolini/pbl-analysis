@@ -8,7 +8,7 @@ Last update: 2026-10-21. Read this first in a new session, then `docs/project_pl
 |---|---|---|---|
 | PBLHmod v2 | `pblhmod_default`, `pblhmod_gamma0025` | Our EC-based model (Kljun et al. 2015 App. B): stable B1 Nieuwstadt, neutral B2/B3 auto, convective B5 Batchvarova–Gryning slab daily cycle. `run_pblh_model()`, `R/pblh_*.R`; label = options case (γ = 0.01 default, 0.0025 sensitivity) | parameterisation |
 | ERA5 BLH | `era5_blh_center`, `era5_blh_bilinear` | ECMWF reanalysis diagnostic (bulk Ri = 0.25, IFS Cy41r2 §3.10.1); tower cell, or bilinear to the tower from 4 cells | model |
-| Operational ICOS PBLH | `icos_oper` | `PBLH` column of L2 FLUXES, produced by the ETC pipeline with `legacy/calc_PBL_height.R` + `legacy/proc_PBL_height.R`; `qc_flag` 1 = 50 m floor, 2 = run-mean fill | parameterisation |
+| Operational ICOS PBLH | `icos_oper` | `PBLH` column of L2 FLUXES, produced by the ETC pipeline with `legacy/calc_PBL_height_operational.R` + `legacy/proc_PBL_height.R`; `qc_flag` 1 = 50 m floor, 2 = run-mean fill | parameterisation |
 | Legacy (spec 03, to come) | `legacy_<variant>` | Port of the legacy code with switches, for the regression | parameterisation |
 | Measured PBLH (later) | – | Ceilometer / lidar / radiosonde (ACTRIS/Cloudnet, E-PROFILE, IGRA) | turbulence / aerosol / thermodynamic |
 
