@@ -199,6 +199,9 @@ The class is therefore not a stratum to compare against other classes; it tells 
     in daytime only; 0 night replacements). Still in the ETC QC report list (below).
 - Source of zm, d, z0 and target area per site.
 - Measured PBLH datasets: to be collected; open data candidates: ACTRIS/Cloudnet, E-PROFILE, IGRA radiosondes.
+- Cloudnet ε files at Hyytiälä are volatile/experimental (2026-10); before paper results, re-check checksums against
+  the API, re-run if changed, and create a Cloudnet collection with a persistent identifier for the files used
+  (spec 07).
 - ~~Literature: the current bib is footprint-focused. A PBL collection is needed.~~ Done (2026-10-15):
   `pblh_collection.bib` (Kljun App. B references) + `pblh_literature_2026-10.bib` and annotated
   `literature_review_pblh.md`. Keep extending as papers are added to `C:\WORK\bibliography_new_win11\`.

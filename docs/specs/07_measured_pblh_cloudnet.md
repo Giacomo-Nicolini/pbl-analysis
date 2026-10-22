@@ -25,7 +25,7 @@ licence CC BY 4.0):
 |---|---|---|
 | FI-Hyy | `hyytiala` | co-located (SMEAR II) |
 | FI-Lom | `kenttarova` | Kenttärova is the ICOS station FI-Kef (not in this project); FI-Lom (Lompolojänkkä) ≈ 2 km away |
-| DE-RuS | `juelich` | JOYCE, ≈ 5 km |
+| DE-RuS | `juelich` | JOYCE, 5.26 km (Cloudnet API coordinates): daytime convective comparisons only |
 | SE-Nor | `norunda` | co-located (ICOS atmosphere NOR + ACTRIS) |
 | FR-Gri | `palaiseau` | SIRTA, ≈ 22 km: daytime convective comparisons only |
 
