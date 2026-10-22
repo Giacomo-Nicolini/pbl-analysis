@@ -92,3 +92,18 @@ test_that("tau_na: USTAR set to NA where L2 TAU is missing", {
   expect_equal(legacy_inputs(d, site)$ustar, c(0.4, 0.5, 0.6))
   expect_error(legacy_inputs(dplyr::select(d, -TAU), site, tau_na = TRUE), "TAU")
 })
+
+test_that("legacy_inputs_cleanset: cleanset columns, LOCF, trimmed to first data row", {
+  cs <- data.frame(TIMESTAMP_START = c("202010260000", "202010260030", "202010260100", "202010260130"),
+                   TIMESTAMP_END = c("202010260030", "202010260100", "202010260130", "202010260200"),
+                   MO_LENGTH = c(NA, 50, NA, -20), USTAR = c(NA, 0.3, 0.3, 0.4), H = c(NA, -10, NA, 5),
+                   AT = c(NA, 285, 285, 286), AP = c(NA, 101103, 101103, 101103), RHO = c(NA, 1.2, 1.2, 1.2),
+                   CP = c(NA, 1010, 1010, 1010))
+  x <- legacy_inputs_cleanset(cs, utc_offset_h = 1)
+  expect_equal(nrow(x), 3)
+  expect_equal(x$MOL, c(50, 50, -20))
+  expect_equal(x$TIMESTAMP[1], "2020-10-26 01:00:00")
+  expect_equal(x$timestamp_start_utc[1], as.POSIXct("2020-10-25 23:30:00", tz = "UTC"))
+  expect_equal(x$rho, c(1.2, 1.2, 1.2))
+  expect_error(legacy_inputs_cleanset(cs[, -9], 1), "CP")
+})

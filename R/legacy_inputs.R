@@ -202,3 +202,53 @@ legacy_inputs <- function(d, site_meta, split_local = "202601010000",
   attr(out, "tau_na") <- tau_na
   out
 }
+
+#' Inputs of the legacy call from the ETC cleanset (diagnostic)
+#'
+#' Same structure as [legacy_inputs()], built from the ETC cleanset (local
+#' diagnostic file, not published; spec 03 Amendment 2): `TIMESTAMP` =
+#' `TIMESTAMP_END` (local standard time); `MOL` = cleanset `MO_LENGTH` with
+#' [locf()]; `ustar`, `H`, `AT`, `AP`, `rho`, `cp` = cleanset `USTAR`, `H`,
+#' `AT`, `AP`, `RHO`, `CP` (EddyPro values, -9999 read as `NA`). One run, from
+#' the first row with data. `zm`, `d` as in [legacy_inputs()] (matched by
+#' time; not used by the legacy computation).
+#'
+#' @param cs Cleanset table (`TIMESTAMP_START`, `TIMESTAMP_END` [character,
+#'   YYYYMMDDHHMM local standard time], `MO_LENGTH` [m], `USTAR` [m s-1], `H`
+#'   [W m-2], `AT` [K], `AP` [Pa], `RHO` [kg m-3], `CP` [J kg-1 K-1]).
+#' @param utc_offset_h Site UTC offset [h].
+#' @param d Optional output of [read_icos_site()] for `zm_m`,
+#'   `canopy_height_m`.
+#' @return Tibble as [legacy_inputs()] (`run_id` = 1).
+legacy_inputs_cleanset <- function(cs, utc_offset_h, d = NULL) {
+  need <- c("TIMESTAMP_START", "TIMESTAMP_END", "MO_LENGTH", "USTAR", "H", "AT", "AP", "RHO", "CP")
+  miss <- setdiff(need, names(cs))
+  if (length(miss) > 0) cli::cli_abort("Cleanset columns missing: {.field {miss}}.")
+  cs <- cs[order(cs$TIMESTAMP_START), ]
+  has_data <- !is.na(cs$MO_LENGTH) | !is.na(cs$USTAR) | !is.na(cs$H) | !is.na(cs$AT)
+  first <- which(has_data)[1]
+  if (is.na(first)) cli::cli_abort("Cleanset has no data.")
+  cs <- cs[first:nrow(cs), ]
+  ts_utc <- icos_time_to_utc(as.character(cs$TIMESTAMP_START), utc_offset_h)
+  t_end <- as.POSIXct(as.character(cs$TIMESTAMP_END), format = "%Y%m%d%H%M", tz = "UTC")
+  m <- if (is.null(d)) rep(NA_integer_, nrow(cs)) else match(as.numeric(ts_utc), as.numeric(d$timestamp_start_utc))
+  col_d <- function(k) if (!is.null(d) && k %in% names(d)) d[[k]][m] else rep(NA_real_, nrow(cs))
+  out <- dplyr::tibble(
+    run_id = 1L,
+    timestamp_start_utc = ts_utc,
+    timestamp_end_utc = ts_utc + 1800,
+    TIMESTAMP = format(t_end, "%Y-%m-%d %H:%M:%S"),
+    MOL = locf(cs$MO_LENGTH),
+    ustar = cs$USTAR,
+    H = cs$H,
+    AT = cs$AT,
+    AP = cs$AP,
+    rho = cs$RHO,
+    cp = cs$CP,
+    zm = col_d("zm_m"),
+    d = 2 / 3 * col_d("canopy_height_m")
+  )
+  attr(out, "pass_null") <- character(0)
+  attr(out, "ambient") <- "cleanset"
+  out
+}

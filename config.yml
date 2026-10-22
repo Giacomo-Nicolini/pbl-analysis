@@ -10,6 +10,7 @@ default:
   era5_pl_dir: "data/raw/era5_pressure_levels/{site}"  # 6-hourly pressure levels
   era5_static_dir: "data/raw/era5_single_levels"       # static fields, all stations and variables in one folder
   target_areas_dir: "data/raw/target_areas"
+  cleanset_file: "data/{site}_cleanset.csv" # ETC cleanset (local diagnostic, spec 03; optional, never committed)
   standard_dir: "data/standard"
   derived_dir: "data/derived"
   output_dir: "output"

@@ -1,11 +1,15 @@
 # Spec 03: legacy regression (operational ICOS PBLH vs legacy code vs PBLHmod v2).
-# Part A: reproduce the operational FLUXES `PBLH` by running the original legacy
-#   calc_PBL_height() + proc_PBL_height() on inputs rebuilt from the published L2 files
-#   (R/legacy_inputs.R), per processing run (amendment 1), with sensitivity variants.
-# This script and tests/testthat/test-legacy_port.R are the only places allowed to
-# source legacy/ (CLAUDE.md rule 5; spec 03), into a dedicated environment.
+# Part A: reproduce the operational FLUXES `PBLH` by running the original legacy code on inputs
+#   rebuilt from the published L2 files (R/legacy_inputs.R), per processing run (amendment 1).
+#   Reference (amendment 2): legacy/calc_PBL_height_operational.R + legacy/proc_PBL_height.R, the
+#   versions sourced by the ETC pipeline (legacy/FFP_analysis_dev.R). Also run: the development
+#   version legacy/calc_PBL_height_developing.R (comparison), ambient-variable sensitivity variants,
+#   one run over all years, and a diagnostic run on the local ETC cleanset (cfg$cleanset_file,
+#   optional, never committed) with a comparison of cleanset and L2 inputs.
+# This script and tests/testthat/test-legacy_port.R are the only places allowed to source legacy/
+#   (CLAUDE.md rule 5; spec 03), into dedicated environments.
 # Outputs: output/tables/03_reproduction_<site>.csv (long: variant, stratum, statistic, value);
-#   <derived_dir>/legacy/<site>_legacy_reproduction_<variant>.csv.gz
+#   output/tables/03_cleanset_vs_l2_<site>.csv; <derived_dir>/legacy/<site>_legacy_reproduction_<variant>.csv.gz
 #
 # Usage: Rscript scripts/03_legacy_regression.R [SITE ...]  (default: cfg$test_sites)
 
@@ -26,9 +30,10 @@ if (length(missing_pkgs) > 0) {
                    "i" = "Install them with renv (they are in renv.lock); the legacy code must not install packages."))
 }
 if ("package:dplyr" %in% search()) cli::cli_abort("dplyr is attached: it would mask stats::filter() used by the legacy code.")
-legacy_env <- new.env(parent = globalenv())
-sys.source(here::here("legacy", "calc_PBL_height.R"), envir = legacy_env)
-sys.source(here::here("legacy", "proc_PBL_height.R"), envir = legacy_env)
+legacy_envs <- list(operational = new.env(parent = globalenv()), developing = new.env(parent = globalenv()))
+sys.source(here::here("legacy", "calc_PBL_height_operational.R"), envir = legacy_envs$operational)
+sys.source(here::here("legacy", "calc_PBL_height_developing.R"), envir = legacy_envs$developing)
+for (e in legacy_envs) sys.source(here::here("legacy", "proc_PBL_height.R"), envir = e)
 
 cfg <- get_cfg()
 args <- commandArgs(trailingOnly = TRUE)
@@ -42,25 +47,24 @@ dir.create(tables_dir, recursive = TRUE, showWarnings = FALSE)
 dir.create(file.path(derived_dir, "legacy"), recursive = TRUE, showWarnings = FALSE)
 print_tbl <- function(x) print(as.data.frame(x), row.names = FALSE, digits = 5)
 
-# Run the original legacy pipeline on one processing run. Returns the proc output,
+# Run the original legacy code (one version) on one processing run. Returns the proc output,
 # the calc output (before post-processing) and the fill values of the run.
-run_original_run <- function(inp, lat, altit) {
+run_original_run <- function(inp, lat, altit, version) {
+  env <- legacy_envs[[version]]
   pass_null <- attr(inp, "pass_null")
-  if (!is.na(inp$H[1]) && inp$H[1] > 0) {
-    cli::cli_abort("Run starts with H > 0 ({inp$TIMESTAMP[1]}): the legacy code fails there (legacy issue 5).")
+  if (version == "developing" && !is.na(inp$H[1]) && inp$H[1] > 0) {
+    cli::cli_abort("Run starts with H > 0 ({inp$TIMESTAMP[1]}): the developing version fails there (legacy issue 5).")
   }
   arg <- function(k) if (k %in% pass_null) NULL else inp[[k]]
-  calc <- suppressPackageStartupMessages(legacy_env$calc_PBL_height(
-    TIMESTAMP = inp$TIMESTAMP, LAT = lat, zm = inp$zm, d = inp$d,
-    MOL = inp$MOL, ustar = inp$ustar, H = inp$H, AT = inp$AT,
-    AP = arg("AP"), rho = arg("rho"), cp = arg("cp"), altit = altit,
-    GF.PBL = TRUE, smooth.PBL = TRUE, plot.atmc = FALSE, plot.PBL = FALSE, save.PBL = FALSE
-  ))
+  common <- list(TIMESTAMP = inp$TIMESTAMP, LAT = lat, zm = inp$zm, d = inp$d, MOL = inp$MOL, ustar = inp$ustar,
+                 H = inp$H, AT = inp$AT, AP = arg("AP"), rho = arg("rho"), cp = arg("cp"), altit = altit,
+                 plot.atmc = FALSE, plot.PBL = FALSE, save.PBL = FALSE)
+  if (version == "developing") common <- c(common, list(GF.PBL = TRUE, smooth.PBL = TRUE))
+  calc <- suppressPackageStartupMessages(do.call(env$calc_PBL_height, common))
   tmp <- tempfile("legacy_png_")
   dir.create(tmp)
   ts_proc <- as.POSIXct(inp$TIMESTAMP, format = "%Y-%m-%d %H:%M:%S", tz = "GMT")
-  proc <- legacy_env$proc_PBL_height(TIMESTAMP = ts_proc, PBL.h = calc, plot.PBL.h.freq = FALSE,
-                                     PBL.dir = paste0(tmp, "/"))
+  proc <- env$proc_PBL_height(TIMESTAMP = ts_proc, PBL.h = calc, plot.PBL.h.freq = FALSE, PBL.dir = paste0(tmp, "/"))
   unlink(tmp, recursive = TRUE)
   calc <- as.numeric(calc)
   proc <- as.numeric(proc)
@@ -71,7 +75,7 @@ run_original_run <- function(inp, lat, altit) {
        n_fill = c(day = sum(filled & day), night = sum(filled & !day)))
 }
 
-run_original <- function(inp, site_meta) {
+run_original <- function(inp, site_meta, version) {
   out <- rep(NA_real_, nrow(inp))
   flag_fill <- rep(NA, nrow(inp))
   fills <- list()
@@ -79,7 +83,7 @@ run_original <- function(inp, site_meta) {
     i <- which(inp$run_id == r)
     sub <- inp[i, ]
     attr(sub, "pass_null") <- attr(inp, "pass_null")
-    res <- run_original_run(sub, site_meta$lat, site_meta$altitude_m)
+    res <- run_original_run(sub, site_meta$lat, site_meta$altitude_m, version)
     out[i] <- res$proc
     flag_fill[i] <- res$filled
     fills[[length(fills) + 1]] <- data.frame(run_id = r, first = sub$TIMESTAMP[1], last = sub$TIMESTAMP[nrow(sub)],
@@ -130,6 +134,25 @@ fill_stats <- function(res, oper, inp, variant) {
                        length(blk), sum(share >= 0.5), sum(share == 1), mean(res$flag_fill[oper_fill])))
 }
 
+# Cleanset vs L2 inputs on common rows: missing-value patterns and differences per variable.
+compare_inputs <- function(cs_inp, l2_inp, cs_raw_mol, l2_raw_mol) {
+  m <- match(as.numeric(cs_inp$timestamp_start_utc), as.numeric(l2_inp$timestamp_start_utc))
+  pairs <- list(MO_LENGTH = list(cs_raw_mol, l2_raw_mol[m]), USTAR = list(cs_inp$ustar, l2_inp$ustar[m]),
+                H = list(cs_inp$H, l2_inp$H[m]), AT = list(cs_inp$AT, l2_inp$AT[m]),
+                AP = list(cs_inp$AP, l2_inp$AP[m]), rho = list(cs_inp$rho, l2_inp$rho[m]),
+                cp = list(cs_inp$cp, l2_inp$cp[m]))
+  do.call(rbind, lapply(names(pairs), function(k) {
+    a <- pairs[[k]][[1]]
+    b <- pairs[[k]][[2]]
+    both <- !is.na(a) & !is.na(b)
+    rel <- abs(a[both] - b[both]) / pmax(abs(a[both]), 1e-12)
+    data.frame(variable = k, n = length(a), both = sum(both), na_cleanset_only = sum(is.na(a) & !is.na(b)),
+               na_l2_only = sum(!is.na(a) & is.na(b)), na_both = sum(is.na(a) & is.na(b)),
+               identical_share = mean(a[both] == b[both]), median_abs_diff = stats::median(abs(a[both] - b[both])),
+               p99_rel_diff = stats::quantile(rel, 0.99, names = FALSE), max_rel_diff = max(rel))
+  }))
+}
+
 for (site_id in site_ids) {
   t0 <- Sys.time()
   cli::cli_h1("Legacy regression: {site_id}")
@@ -142,21 +165,38 @@ for (site_id in site_ids) {
   # --- Part A: reproduction --------------------------------------------------------
   cli::cli_h2("Part A: reproduction of the operational PBLH")
   variants <- list(
-    rebuilt = list(split = "202601010000", ambient = "rebuilt"),
-    AT_sonic = list(split = "202601010000", ambient = "AT_sonic"),
-    AP_altitude = list(split = "202601010000", ambient = "AP_altitude"),
-    rho_cp_legacy = list(split = "202601010000", ambient = "rho_cp_legacy"),
-    amb_na = list(split = "202601010000", ambient = "amb_na"),
-    tau_na = list(split = "202601010000", ambient = "rebuilt", tau_na = TRUE),
-    tau_amb_na = list(split = "202601010000", ambient = "amb_na", tau_na = TRUE),
-    one_run = list(split = NULL, ambient = "rebuilt")
+    rebuilt = list(version = "operational", split = "202601010000", ambient = "rebuilt"),
+    AT_sonic = list(version = "operational", split = "202601010000", ambient = "AT_sonic"),
+    AP_altitude = list(version = "operational", split = "202601010000", ambient = "AP_altitude"),
+    rho_cp_legacy = list(version = "operational", split = "202601010000", ambient = "rho_cp_legacy"),
+    one_run = list(version = "operational", split = NULL, ambient = "rebuilt"),
+    dev_rebuilt = list(version = "developing", split = "202601010000", ambient = "rebuilt")
   )
+  cs_path <- resolve_path(cfg$cleanset_file, site = site_id, must_exist = FALSE)
+  cs_inp <- NULL
+  if (file.exists(cs_path)) {
+    cs <- readr::read_csv(cs_path, col_select = c("TIMESTAMP_START", "TIMESTAMP_END", "MO_LENGTH", "USTAR", "H",
+                                                  "AT", "AP", "RHO", "CP"),
+                          col_types = readr::cols(TIMESTAMP_START = "c", TIMESTAMP_END = "c", .default = "d"),
+                          na = c("-9999", "-9999.0", "NA", ""), progress = FALSE)
+    cs_inp <- legacy_inputs_cleanset(cs, meta$utc_offset_h, d)
+    cs_raw_mol <- cs$MO_LENGTH[match(as.numeric(cs_inp$timestamp_start_utc),
+                                     as.numeric(icos_time_to_utc(cs$TIMESTAMP_START, meta$utc_offset_h)))]
+    variants$cleanset <- list(version = "operational", inputs = "cleanset")
+    cli::cli_inform("Cleanset: {nrow(cs_inp)} rows, {cs_inp$TIMESTAMP[1]} to {cs_inp$TIMESTAMP[nrow(cs_inp)]} (TIMESTAMP_END, local).")
+  } else {
+    cli::cli_alert_info("No cleanset file ({.path {cs_path}}): diagnostic run skipped.")
+  }
+
   stats_all <- list()
   fills_all <- list()
+  inputs <- list()
   for (v in names(variants)) {
-    inp <- legacy_inputs(d, meta, split_local = variants[[v]]$split, ambient = variants[[v]]$ambient,
-                         tau_na = isTRUE(variants[[v]]$tau_na))
-    tm <- system.time(res <- run_original(inp, meta))
+    vv <- variants[[v]]
+    inp <- if (identical(vv$inputs, "cleanset")) cs_inp else
+      legacy_inputs(d, meta, split_local = vv$split, ambient = vv$ambient, tau_na = isTRUE(vv$tau_na))
+    inputs[[v]] <- inp
+    tm <- system.time(res <- run_original(inp, meta, vv$version))
     m <- match(as.numeric(inp$timestamp_start_utc), as.numeric(d$timestamp_start_utc))
     oper <- d$PBLH[m]
     year <- as.integer(substr(d$TIMESTAMP_START[m], 1, 4))
@@ -167,7 +207,7 @@ for (site_id in site_ids) {
                                    pblh_legacy_m = res$pblh, flag_fill = res$flag_fill, pblh_oper_m = oper),
                      file.path(derived_dir, "legacy", paste0(site_id, "_legacy_reproduction_", v, ".csv.gz")))
     a <- stats_all[[v]][stats_all[[v]]$stratum == "all", ]
-    cli::cli_inform("{v}: {nrow(inp)} rows in {length(unique(inp$run_id))} run{?s}, {round(tm[['elapsed']])} s; within 0.01 m {round(100 * a$value[a$statistic == 'share_within_0.01m'], 2)} %, median |rel. diff| {signif(100 * a$value[a$statistic == 'median_abs_rel_diff'], 3)} %, p95 {signif(100 * a$value[a$statistic == 'p95_abs_rel_diff'], 3)} %.")
+    cli::cli_inform("{v} ({vv$version}): {nrow(inp)} rows in {length(unique(inp$run_id))} run{?s}, {round(tm[['elapsed']])} s; within 0.01 m {round(100 * a$value[a$statistic == 'share_within_0.01m'], 2)} %, median |rel. diff| {signif(100 * a$value[a$statistic == 'median_abs_rel_diff'], 3)} %, p95 {signif(100 * a$value[a$statistic == 'p95_abs_rel_diff'], 3)} %.")
   }
   stats_df <- do.call(rbind, stats_all)
   fills_df <- do.call(rbind, fills_all)
@@ -180,14 +220,30 @@ for (site_id in site_ids) {
 
   cli::cli_h3("Processing runs and fill values (operational: 1654.58 / 843.07 m, 1591.68 / 682.86 m)")
   print_tbl(fills_df)
-  cli::cli_h3("Reproduction statistics (rows with operational PBLH)")
-  wide <- stats::reshape(stats_df[stats_df$stratum %in% c("all") | grepl("^year=|^regime=", stats_df$stratum), ],
-                         idvar = c("variant", "stratum"), timevar = "statistic", direction = "wide")
+  cli::cli_h3("Reproduction statistics, all rows with operational PBLH")
+  keep <- c("n", "share_within_0.01m", "median_abs_rel_diff", "p95_abs_rel_diff", "n_fill_day", "n_fill_night",
+            "n_oper_fill_day", "n_oper_fill_night", "n_oper_fill_blocks", "blocks_reproduced_50pct",
+            "blocks_reproduced_100pct", "share_oper_fill_rows_filled")
+  sa <- stats_df[stats_df$stratum == "all" & stats_df$statistic %in% keep, ]
+  wa <- stats::reshape(sa, idvar = c("statistic"), timevar = "variant", direction = "wide", drop = "stratum")
+  names(wa) <- sub("^value\\.", "", names(wa))
+  print_tbl(wa[match(keep, wa$statistic), ])
+  cli::cli_h3("Operational version, rebuilt inputs, by year and regime")
+  wide <- stats::reshape(stats_df[stats_df$variant == "rebuilt" & grepl("^all$|^year=|^regime=", stats_df$stratum) &
+                                    stats_df$statistic %in% keep[1:4], ],
+                         idvar = "stratum", timevar = "statistic", direction = "wide", drop = "variant")
   names(wide) <- sub("^value\\.", "", names(wide))
-  print_tbl(wide[wide$variant == "rebuilt", ])
-  print_tbl(wide[wide$stratum == "all", ])
+  print_tbl(wide)
 
-  # Acceptance (spec 03 section 2, amendment 1), on the rebuilt variant with the two runs.
+  if (!is.null(cs_inp)) {
+    cli::cli_h3("Cleanset vs L2 inputs (rebuilt), common rows of run 1")
+    l2_raw_mol <- d$MO_LENGTH[match(as.numeric(inputs$rebuilt$timestamp_start_utc), as.numeric(d$timestamp_start_utc))]
+    cmp <- compare_inputs(cs_inp, inputs$rebuilt, cs_raw_mol, l2_raw_mol)
+    print_tbl(cmp)
+    readr::write_csv(cmp, file.path(tables_dir, paste0("03_cleanset_vs_l2_", site_id, ".csv")))
+  }
+
+  # Acceptance (spec 03 section 2, amendments 1-2): operational version, rebuilt L2 inputs, two runs.
   a <- stats_df[stats_df$variant == "rebuilt" & stats_df$stratum == "all", ]
   med <- a$value[a$statistic == "median_abs_rel_diff"]
   p95 <- a$value[a$statistic == "p95_abs_rel_diff"]
@@ -195,8 +251,13 @@ for (site_id in site_ids) {
   fill_rep <- c(fr$fill_day[1], fr$fill_night[1], fr$fill_day[2], fr$fill_night[2])
   fill_dev <- abs(fill_rep / oper_fills - 1)
   cli::cli_h3("Acceptance (median |rel| < 0.5 %, p95 < 2 %, fills within 0.5 %)")
-  print_tbl(data.frame(fill = c("run1 day", "run1 night", "run2 day", "run2 night"), operational = oper_fills,
-                       reproduced = round(fill_rep, 2), rel_dev_pct = round(100 * fill_dev, 3)))
+  fill_tab <- data.frame(fill = c("run1 day", "run1 night", "run2 day", "run2 night"), operational = oper_fills,
+                         rebuilt = round(fill_rep, 2), rel_dev_pct = round(100 * fill_dev, 3))
+  if (!is.null(cs_inp)) {
+    fc <- fills_df[fills_df$variant == "cleanset", ]
+    fill_tab$cleanset <- round(c(fc$fill_day[1], fc$fill_night[1], NA, NA), 2)
+  }
+  print_tbl(fill_tab)
   accepted <- med < 0.005 && p95 < 0.02 && all(fill_dev < 0.005)
   if (accepted) {
     cli::cli_alert_success("Part A accepted: median {signif(100 * med, 3)} %, p95 {signif(100 * p95, 3)} %, fills within {signif(100 * max(fill_dev), 3)} %.")
