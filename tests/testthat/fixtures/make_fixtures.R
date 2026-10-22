@@ -1,12 +1,12 @@
-# Rebuild the synthetic ICOS L2 and ERA5 test fixtures (tiny, no real data).
-# Run from the project root: Rscript tests/testthat/fixtures/make_fixtures.R [icos] [era5]
-# (no argument = both parts; rebuilding the ICOS zips changes their bytes even
+# Rebuild the synthetic ICOS L2, ERA5 and Cloudnet test fixtures (tiny, no real data).
+# Run from the project root: Rscript tests/testthat/fixtures/make_fixtures.R [icos] [era5] [cloudnet]
+# (no argument = all parts; rebuilding the ICOS zips changes their bytes even
 # when the content is unchanged, so rebuild only the part you need).
 # Requires a `zip` program for utils::zip() (on Windows: Rtools).
 # Synthetic site XX-Tst, UTC+1.
 
 parts <- commandArgs(trailingOnly = TRUE)
-if (length(parts) == 0) parts <- c("icos", "era5")
+if (length(parts) == 0) parts <- c("icos", "era5", "cloudnet")
 
 fx <- here::here("tests", "testthat", "fixtures")
 site <- "XX-Tst"
@@ -217,6 +217,33 @@ if ("era5" %in% parts) {
   }
   # Another station in the shared static folder: silently ignored.
   writeLines("# other station", st_file("XX-Oth", "z", 0, 0))
+}
+
+# ---- Cloudnet API, /api/files response (spec 07): synthetic, structure as the real API ----
+# 4 files: 2 epsilon-lidar days in 2022-01 (one volatile), 1 in 2022-03 (legacy), 1 of another instrument.
+if ("cloudnet" %in% parts) {
+  cn_dir <- file.path(fx, "cloudnet")
+  dir.create(cn_dir, recursive = TRUE, showWarnings = FALSE)
+  mk <- function(uuid, date, inst, pid, size, volatile, legacy, cov) {
+    list(
+      uuid = uuid, filename = paste0(gsub("-", "", date), "_testsite_epsilon-lidar_", substr(uuid, 1, 8), ".nc"),
+      version = if (volatile) "" else "v1", pid = if (volatile) "" else paste0("https://hdl.handle.net/x/", uuid),
+      volatile = volatile, legacy = legacy, measurementDate = date,
+      checksum = strrep(substr(uuid, 1, 1), 64), size = as.character(size), coverage = cov,
+      format = "HDF5 (NetCDF4)", errorLevel = "info",
+      site = list(id = "testsite", latitude = 50.0, longitude = 10.0, altitude = 100),
+      product = list(id = "epsilon-lidar", humanReadableName = "Turbulence (lidar)"),
+      instrument = list(uuid = paste0(inst, "-uuid"), pid = pid, name = inst, type = "Doppler lidar"),
+      downloadUrl = paste0("https://example.invalid/api/download/product/", uuid, ".nc")
+    )
+  }
+  files <- list(
+    mk("aaaa0001", "2022-01-01", "TEST HALO 1", "https://hdl.handle.net/x/halo1", 1000000, FALSE, FALSE, 0.5),
+    mk("bbbb0002", "2022-01-02", "TEST HALO 1", "https://hdl.handle.net/x/halo1", 2000000, TRUE, FALSE, 0.25),
+    mk("cccc0003", "2022-03-05", "TEST HALO 1", "https://hdl.handle.net/x/halo1", 500000, FALSE, TRUE, 1),
+    mk("dddd0004", "2022-01-02", "TEST HALO 2", "https://hdl.handle.net/x/halo2", 300000, FALSE, FALSE, 0.1)
+  )
+  jsonlite::write_json(files, file.path(cn_dir, "api_files_sample.json"), auto_unbox = TRUE, pretty = TRUE)
 }
 
 message("Fixtures written to ", fx, " (parts: ", paste(parts, collapse = ", "), ")")

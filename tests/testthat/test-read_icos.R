@@ -149,6 +149,11 @@ test_that("read_icos_site merges the three files on a complete grid", {
   expect_equal(attr(d, "read_info")$n_rows_outside_ref, c(0L, 0L, 1L))
 })
 
+test_that("icos_reference_period returns the FLUXES range", {
+  p <- icos_reference_period("XX-Tst", cfg, 1)
+  expect_equal(p, utc(c("2019-12-31 23:00:00", "2020-01-01 02:00:00")))
+})
+
 test_that("read_icos_site drops FLUXNET / METEO rows outside the FLUXES range", {
   sites <- read_sites(fixture_path("sites.csv"))
   sites_tv <- read_sites_timevarying(fixture_path("sites_timevarying.csv"))

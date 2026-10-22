@@ -1,0 +1,126 @@
+[
+  {
+    "uuid": "aaaa0001",
+    "filename": "20220101_testsite_epsilon-lidar_aaaa0001.nc",
+    "version": "v1",
+    "pid": "https://hdl.handle.net/x/aaaa0001",
+    "volatile": false,
+    "legacy": false,
+    "measurementDate": "2022-01-01",
+    "checksum": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "size": "1e+06",
+    "coverage": 0.5,
+    "format": "HDF5 (NetCDF4)",
+    "errorLevel": "info",
+    "site": {
+      "id": "testsite",
+      "latitude": 50,
+      "longitude": 10,
+      "altitude": 100
+    },
+    "product": {
+      "id": "epsilon-lidar",
+      "humanReadableName": "Turbulence (lidar)"
+    },
+    "instrument": {
+      "uuid": "TEST HALO 1-uuid",
+      "pid": "https://hdl.handle.net/x/halo1",
+      "name": "TEST HALO 1",
+      "type": "Doppler lidar"
+    },
+    "downloadUrl": "https://example.invalid/api/download/product/aaaa0001.nc"
+  },
+  {
+    "uuid": "bbbb0002",
+    "filename": "20220102_testsite_epsilon-lidar_bbbb0002.nc",
+    "version": "",
+    "pid": "",
+    "volatile": true,
+    "legacy": false,
+    "measurementDate": "2022-01-02",
+    "checksum": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "size": "2e+06",
+    "coverage": 0.25,
+    "format": "HDF5 (NetCDF4)",
+    "errorLevel": "info",
+    "site": {
+      "id": "testsite",
+      "latitude": 50,
+      "longitude": 10,
+      "altitude": 100
+    },
+    "product": {
+      "id": "epsilon-lidar",
+      "humanReadableName": "Turbulence (lidar)"
+    },
+    "instrument": {
+      "uuid": "TEST HALO 1-uuid",
+      "pid": "https://hdl.handle.net/x/halo1",
+      "name": "TEST HALO 1",
+      "type": "Doppler lidar"
+    },
+    "downloadUrl": "https://example.invalid/api/download/product/bbbb0002.nc"
+  },
+  {
+    "uuid": "cccc0003",
+    "filename": "20220305_testsite_epsilon-lidar_cccc0003.nc",
+    "version": "v1",
+    "pid": "https://hdl.handle.net/x/cccc0003",
+    "volatile": false,
+    "legacy": true,
+    "measurementDate": "2022-03-05",
+    "checksum": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "size": "5e+05",
+    "coverage": 1,
+    "format": "HDF5 (NetCDF4)",
+    "errorLevel": "info",
+    "site": {
+      "id": "testsite",
+      "latitude": 50,
+      "longitude": 10,
+      "altitude": 100
+    },
+    "product": {
+      "id": "epsilon-lidar",
+      "humanReadableName": "Turbulence (lidar)"
+    },
+    "instrument": {
+      "uuid": "TEST HALO 1-uuid",
+      "pid": "https://hdl.handle.net/x/halo1",
+      "name": "TEST HALO 1",
+      "type": "Doppler lidar"
+    },
+    "downloadUrl": "https://example.invalid/api/download/product/cccc0003.nc"
+  },
+  {
+    "uuid": "dddd0004",
+    "filename": "20220102_testsite_epsilon-lidar_dddd0004.nc",
+    "version": "v1",
+    "pid": "https://hdl.handle.net/x/dddd0004",
+    "volatile": false,
+    "legacy": false,
+    "measurementDate": "2022-01-02",
+    "checksum": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "size": "3e+05",
+    "coverage": 0.1,
+    "format": "HDF5 (NetCDF4)",
+    "errorLevel": "info",
+    "site": {
+      "id": "testsite",
+      "latitude": 50,
+      "longitude": 10,
+      "altitude": 100
+    },
+    "product": {
+      "id": "epsilon-lidar",
+      "humanReadableName": "Turbulence (lidar)"
+    },
+    "instrument": {
+      "uuid": "TEST HALO 2-uuid",
+      "pid": "https://hdl.handle.net/x/halo2",
+      "name": "TEST HALO 2",
+      "type": "Doppler lidar"
+    },
+    "downloadUrl": "https://example.invalid/api/download/product/dddd0004.nc"
+  }
+]

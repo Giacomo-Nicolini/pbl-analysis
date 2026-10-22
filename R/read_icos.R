@@ -404,6 +404,27 @@ read_icos_site <- function(site_id, cfg, sites, sites_tv, exclusions) {
   d
 }
 
+#' Reference period of a station (FLUXES time range), read cheaply
+#'
+#' Reads only `TIMESTAMP_START` of the FLUXES file and returns its first and last
+#' value (CLAUDE.md, G 2026-10-22: the reference period is the FLUXES range). Same
+#' period as the `reference_period_utc` attribute of [read_icos_site()].
+#'
+#' @param site_id Station code [character].
+#' @param cfg Configuration list with `icos_l2_dir`.
+#' @param utc_offset_h Site UTC offset [h, local standard time minus UTC].
+#' @return POSIXct UTC vector of length 2: first and last FLUXES
+#'   `timestamp_start_utc`.
+icos_reference_period <- function(site_id, cfg, utc_offset_h) {
+  files <- find_icos_files(site_id, cfg)
+  ts <- readr::read_csv(files$fluxes, col_select = "TIMESTAMP_START",
+                        col_types = readr::cols(TIMESTAMP_START = readr::col_character()),
+                        na = icos_na, progress = FALSE, show_col_types = FALSE)$TIMESTAMP_START
+  t <- icos_time_to_utc(ts, utc_offset_h)
+  if (length(t) == 0 || all(is.na(t))) cli::cli_abort("{site_id}: no valid TIMESTAMP_START in the FLUXES file.")
+  range(t, na.rm = TRUE)
+}
+
 #' Plausibility / coverage report for ICOS data (report only, never filters)
 #'
 #' Default ranges (spec 01, for reporting only; not physical filters):
