@@ -49,6 +49,12 @@ so code must be reproducible, documented and traceable to references.
 
 - ICOS L2, per station `XX-Yyy`, in `<icos_l2_dir>/XX-Yyy_output_L2I_2026/`:
   - `ICOSETC_XX-Yyy_FLUXES_INTERIM_L2.zip`: H, USTAR, MO_LENGTH, ZL, T_SONIC, WS, WD, V_SIGMA, PBLH (legacy operational output), FETCH_*, FOOTPRINT_*, QC flags
+  - **Reference period (G, 2026-10-22): the site-specific time range of the FLUXES file** (first to last row). Stations
+    were labelled at different times, so the range differs by site; never hard-code years. FLUXNET and METEO files
+    may cover a different range (e.g. FI-Hyy FLUXNET 2018–2026, BE-Bra 2020–2025): rows outside the FLUXES range are
+    dropped. Inside it, the forcing takes `TA_F`/`PA_F`/`H_F_MDS` from FLUXNET where FLUXNET covers the row, and
+    METEO `TA`/`PA` after the end of FLUXNET (at BE-Bra: 2026). Comparisons with other sources use the overlap with
+    this period (ERA5 starts 2020-01-01).
   - `ICOSETC_XX-Yyy_FLUXNET_FLUXMET_HH_<years>_v*.zip`: TA_F, PA_F, H_F_MDS, H_CORR, NIGHT, SW_IN_POT, WS_F, P_F
   - `ICOSETC_XX-Yyy_METEO_INTERIM_L2.zip`: TA, TA_1..TA_10 (profile), P, SW_IN
   - Files are zipped CSVs. Read directly from the zip (no permanent unzipping). Use only needed columns.
@@ -105,7 +111,6 @@ so code must be reproducible, documented and traceable to references.
     (`BE-Bra__ERA5__reanalysis-era5-single-levels__boundary_layer_height__2025__lon+0__lat+0.csv`) are no longer the
     source. Spec 04 replaced the reader (`R/read_era5.R`) and `config.yml` (`era5_sl_dir`, `era5_pl_dir`,
     `era5_static_dir`; `{var}` placeholder for the cluster static folders).
-  - `data/raw/era5_meteo_drivers/` (yearly ERA5 meteo drivers, wide format) is not used by this project.
 - Site metadata: `config/sites.csv` (lat, lon, altitude, UTC offset, zm, canopy height, d, z0...).
   Missing values allowed; functions must fail with an informative error only when a *required* value is missing.
   Time-varying zm / canopy height: `config/sites_timevarying.csv` (derived from `config/sites_H_EC_canopy_formBIF.csv`).
