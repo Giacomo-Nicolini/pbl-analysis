@@ -1,6 +1,6 @@
 # Project status (handover note)
 
-Last update: 2026-10-21. Read this first in a new session, then `docs/project_plan.md` and `CLAUDE.md`.
+Last update: 2026-10-22. Read this first in a new session, then `docs/project_plan.md` and `CLAUDE.md`.
 
 ## PBLH sources (names used in the code and in the standard files)
 
@@ -10,7 +10,8 @@ Last update: 2026-10-21. Read this first in a new session, then `docs/project_pl
 | ERA5 BLH | `era5_blh_center`, `era5_blh_bilinear` | ECMWF reanalysis diagnostic (bulk Ri = 0.25, IFS Cy41r2 §3.10.1); tower cell, or bilinear to the tower from 4 cells | model |
 | Operational ICOS PBLH | `icos_oper` | `PBLH` column of L2 FLUXES, produced by the ETC pipeline with `legacy/calc_PBL_height_operational.R` + `legacy/proc_PBL_height.R`; `qc_flag` 1 = 50 m floor, 2 = run-mean fill | parameterisation |
 | Legacy (spec 03, to come) | `legacy_<variant>` | Port of the legacy code with switches, for the regression | parameterisation |
-| Measured PBLH (later) | – | Ceilometer / lidar / radiosonde (ACTRIS/Cloudnet, E-PROFILE, IGRA) | turbulence / aerosol / thermodynamic |
+| Measured MLH, Cloudnet (spec 07) | `cloudnet_eps_mlh` | Surface-connected mixing from the Doppler-lidar dissipation rate ε (ε ≥ 1e-4 m² s⁻³ upward from the lowest reliable gate; Manninen et al. 2018); censored below the lowest gate (≈ 105 m) | turbulence |
+| Other measured PBLH (later) | – | PI data (SE-Htm, SE-Nor, SE-Svb, FI-Hyy, CZ-BK1 requested), ceilometer / radiosonde (E-PROFILE, IGRA) | aerosol / thermodynamic / turbulence |
 
 ## Specs
 
@@ -22,9 +23,10 @@ Last update: 2026-10-21. Read this first in a new session, then `docs/project_pl
 | 05 | u* plausibility filter in the PBLHmod forcing (spec 02 amendment 12); local config override (`config.local.yml`, no cluster paths in tracked files) | 1 | merged (`main`, 25ae55c) |
 | 06 | Consistency check of L2 `MO_LENGTH` against the forcing (option C, G 2026-10-21): L2 L kept where consistent (same sign, within 3×), otherwise replaced by L from the forcing and flagged (spec 02 amendment 13); checked only where the heat flux is positive (spec 06 amendment 1) and in daytime (amendment 2) | 1 | merged (`main`, 2026-10-21; amendment 2 merged 2026-10-21) |
 | 03 | Legacy regression: reproduce operational PBLH from L2 (operational code `calc_PBL_height_operational.R` + `proc_PBL_height.R`), port it, attribute differences to PBLHmod v2 (amendments 1–2) | 1 | merged (`main`, e224c4b) |
+| 07 | Cloudnet inventory (FI-Hyy, FI-Lom, DE-RuS, SE-Nor, FR-Gri); turbulence-based MLH from Doppler-lidar ε (Manninen et al. 2018) in the standard format; FI-Hyy runs (PBLHmod, ERA5) and first three-way comparison against measured MLH | 2, 3 | drafted 2026-10-22, next |
 
-Phases (see `project_plan.md`): 0 done; 1 model done, legacy regression pending (spec 03); 2 standard format and
-three sources done (spec 04), measured PBLH pending; 3 started at BE-Bra only; 4–6 not started.
+Phases (see `project_plan.md`): 0 done; 1 done (model, input QC, legacy regression); 2 standard format and three
+sources done (spec 04), measured PBLH started (spec 07); 3 BE-Bra done, FI-Hyy next (spec 07); 4–6 not started.
 
 - Tests: 787 passing (`main`, after spec 03). Environment: R 4.4.1 + renv (Posit Package
   Manager), same as the cluster. Machine-specific paths in the untracked `config.local.yml` (template
@@ -85,6 +87,12 @@ three sources done (spec 04), measured PBLH pending; 3 started at BE-Bra only; 4
      stable formula −46 m; the last step equals pblhmod_default (residual 4.6e-13 m). On all valid rows the fill
      (−383 m) and forcing (±160–190 m) effects are row-set changes, not value changes. `at_meteo` (sonic temperature
      offset): negligible.
+5. Spec 07 — `docs/specs/07_measured_pblh_cloudnet.md`, branch `spec-07-measured-cloudnet`. Measured PBLH first
+   (G, 2026-10-22), FI-Hyy first (co-located with Cloudnet Hyytiälä; HALO Doppler lidar, `epsilon-lidar` product).
+   G places the FI-Hyy ICOS L2 and ERA5 files under `data/raw/`. Distance rule for measured PBLH: < 5 km all regimes;
+   ≤ 25 km daytime convective only; 25–50 km daytime climatologies only; > 50 km not used. BE-Bra has no usable
+   measurement within 50 km (Uccle ≈ 58 km, Diepenbeek ≈ 74 km, Cabauw ≈ 78 km).
+6. After spec 07: the other Cloudnet sites (on the cluster), PI data into the standard format, ETC QC report.
 
 ## Data
 
