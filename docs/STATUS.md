@@ -77,11 +77,14 @@ three sources done (spec 04), measured PBLH pending; 3 started at BE-Bra only; 4
      2020-10-26 → 2026-01-01 and 2026-01-01 → 2026-08-26 (local standard time). The development version is out of
      scope (G, 2026-10-22).
    - Part B: port = original (max |diff| 0 m on the full series, < 1e-8 m on the synthetic test).
-   - Part C (median PBLH all rows, operational legacy 1122 m → PBLHmod v2 412 m): largest one-at-a-time effects:
-     neutral formula −448 m (operational unstable bound −0.003 puts many daytime rows in the neutral class, 0.3
-     u*/|f| ≈ 1.3 km), run-mean fill −383 m, gap interpolation +186 m, smoothing −163 m, forcing −162 m; along the
-     cumulative path the fill (−383 m), smoothing (−186 m), forcing (+187 m), gamma (−96 m) and neutral formula
-     (−173 m) steps dominate; the last step equals pblhmod_default (residual 4.6e-13 m).
+   - Part C, on common rows (valid in every variant and in PBLHmod v2; spec 03 amendment 2 note 9). One at a
+     time (n = 79,263; baseline median 707 m, PBLHmod v2 364 m): neutral formula −211 m (convective −740 m: the
+     operational unstable bound −0.003 puts many daytime rows in the neutral class, 0.3 u*/|f| ≈ 1.3 km), smoothing
+     −192 m, gap interpolation +176 m, stable formula −38 m, gamma −11 m (convective −101 m); fill, floor, mol_locf,
+     forcing ≈ 0. Cumulative (n = 75,689; 724 → 366 m): smoothing −206 m, neutral formula −82 m (convective −970 m),
+     stable formula −46 m; the last step equals pblhmod_default (residual 4.6e-13 m). On all valid rows the fill
+     (−383 m) and forcing (±160–190 m) effects are row-set changes, not value changes. `at_meteo` (sonic temperature
+     offset): negligible.
 
 ## Data
 

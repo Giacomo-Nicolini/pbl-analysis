@@ -296,3 +296,26 @@ legacy behaviour that the port had to emulate deliberately (quirks).
    h0, holds and stops, regime from the L sign, interpolation rules) are attributed to the
    `convective_trigger_stability_classes` step. Results in `output/tables/03_variants_BE-Bra.csv` and the summary in
    `docs/STATUS.md`.
+9. **Common-rows attribution (review 2026-10-22).** The medians of part C on all valid rows of each variant mix
+   value changes with sample changes (e.g. the run-mean fill "−383 m" is rows dropping out). Added: medians (overall
+   and by regime) on the rows valid in every variant of the analysis and in PBLHmod v2, with the number of valid rows
+   per variant (both versions in `03_variants_<site>.csv`, strata `common_one_at_a_time|...`,
+   `common_cumulative|...`; statistics `n_valid`, `n`). Figures: `03_waterfall_` and `03_one_at_a_time_` show the
+   common rows; `03_waterfall_allrows_`, `03_one_at_a_time_allrows_` the all-rows version with n per step.
+   BE-Bra, common rows (median PBLH, change in m; all / stable / unstable_diag / convective):
+   - One at a time (n = 79,263): baseline 707 / 379 / 1317 / 1652 m; neutral formula −211 / −40 / −595 / −740;
+     smoothing −192 / −71 / +179 / +50; gap interpolation +176 / +128 / +376 / +98; stable formula −38 / −50 / −9 /
+     −3; gamma −11 / 0 / −11 / −101; forcing −8 / +1 / +20 / +5; k/omega −2; bg_integration −1; fill, floor,
+     mol_locf, at_meteo 0. PBLHmod v2 on the same rows: 364 / 263 / 557 / 610 m.
+   - Cumulative (n = 75,689): baseline 724 m → PBLHmod v2 366 m; steps smoothing −206, neutral formula −82
+     (unstable_diag −1243, convective −970), stable formula −46, bg_integration −10, convective trigger + classes
+     −8, gamma −8 (convective −99); fill, floor, gap interpolation, mol_locf, forcing, k/omega ≤ 2 m.
+   On all valid rows the fill (−383 m) and forcing (±160–190 m) effects come from changed row sets; on common rows
+   both are near zero. The neutral formula (operational class bound −0.003 → 0.3 u*/|f| on many daytime rows) and
+   the 5-point smoothing remain the main legacy effects.
+10. **`at_meteo`** (one at a time; AT = METEO TA instead of the EddyPro AT, 2,247 rows without METEO TA keep the
+    EddyPro AT): negligible (22,341 rows change by > 0.01 m; relative change p95 0.0009 %, max 1.5 %; medians and
+    fill values unchanged). The sonic temperature offset (local ETC QC report, item 4) does not affect the
+    operational PBLH materially, because AT enters only the mechanical term of B&G.
+11. **Figures** are written as png only (`save_figure(formats = "png")` default since 2026-10-22; pdf only for paper
+    figures).
