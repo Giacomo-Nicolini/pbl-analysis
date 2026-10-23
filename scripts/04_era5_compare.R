@@ -1,5 +1,5 @@
 # Spec 04: ERA5 readers, standard PBLH files and a first, exploratory
-# comparison of PBLHmod vs ERA5 (and vs the operational ICOS PBLH).
+# comparison of PBLHmod vs ERA5 (and, with --with-oper, vs the operational ICOS PBLH).
 # Inputs: ICOS L2 (spec 01), ERA5 (hourly single levels, pressure levels,
 # static fields), PBLHmod outputs of scripts/02_run_pblh_model.R.
 # Outputs:
@@ -9,14 +9,20 @@
 #     04_H_metrics_<site>.csv, 04_gamma_850_700_<site>.csv
 #   <output_dir>/figures/04_*_<site>.png / .pdf (7 figures)
 #
-# Usage: Rscript scripts/04_era5_compare.R [SITE ...]
-#   Without arguments the sites in cfg$test_sites are used.
+# The operational ICOS PBLH standard file (icos_oper) is always written (spec 03 needs it); its comparison pairs
+# (4a, 4b, 5) and diurnal lines are computed only with --with-oper (off by default: project plan "Scope",
+# spec 07 amendment 1, G 2026-10-23).
+#
+# Usage: Rscript scripts/04_era5_compare.R [SITE ...] [--with-oper]
+#   Without sites the sites in cfg$test_sites are used.
 #   Profile: env var R_CONFIG_ACTIVE (default | cluster).
 
 for (f in list.files(here::here("R"), pattern = "\\.R$", full.names = TRUE)) source(f)
 
 cfg <- get_cfg()
 args <- commandArgs(trailingOnly = TRUE)
+with_oper <- "--with-oper" %in% args
+args <- setdiff(args, "--with-oper")
 site_ids <- if (length(args) > 0) args else unlist(cfg$test_sites)
 if (length(site_ids) == 0) {
   cli::cli_abort("No sites: pass station codes as arguments or set {.field test_sites} in {.file config.yml}.")
@@ -120,11 +126,11 @@ for (site_id in site_ids) {
     pair_table(h_def, era_c, "1_pblhmod_default_vs_era5_center"),
     pair_table(h_def, era_b, "2_pblhmod_default_vs_era5_bilinear"),
     pair_table(h_g, era_c, "3_pblhmod_gamma0025_vs_era5_center"),
-    pair_table(h_op_qc0, era_c, "4a_icos_oper_qc0_vs_era5_center"),
-    pair_table(h_op, era_c, "4b_icos_oper_all_vs_era5_center"),
+    if (with_oper) pair_table(h_op_qc0, era_c, "4a_icos_oper_qc0_vs_era5_center"),
+    if (with_oper) pair_table(h_op, era_c, "4b_icos_oper_all_vs_era5_center"),
     # pair 5: both half-hourly, compared on the half-hour (start time)
-    pair_table(def_hh, dplyr::rename(op_qc0_hh, timestamp_utc = timestamp_start_utc),
-               "5_pblhmod_default_vs_icos_oper_qc0_halfhourly")
+    if (with_oper) pair_table(def_hh, dplyr::rename(op_qc0_hh, timestamp_utc = timestamp_start_utc),
+                              "5_pblhmod_default_vs_icos_oper_qc0_halfhourly")
   )
   # PBLHmod regime as stratum for pairs 4a/4b (operational has no regime)
   reg_h <- stats::setNames(h_def$x_regime, as.character(as.numeric(h_def$timestamp_utc)))
@@ -133,18 +139,22 @@ for (site_id in site_ids) {
   metrics <- pblh_metrics_long(pairs)
   readr::write_csv(metrics, file.path(tables_dir, paste0("04_metrics_", site_id, ".csv")))
 
-  # Diurnal cycles over the overlap of PBLHmod (default), ERA5 (centre) and operational PBLH
+  # Diurnal cycles over the overlap of PBLHmod (default), ERA5 (centre) and, with --with-oper, operational PBLH
   per <- do.call(rbind, lapply(names(std), function(s) period_row(s, std[[s]]$data)))
-  ov_start <- max(as.POSIXct(per$first_utc[per$source %in% c("pblhmod_default", "era5_blh_center", "icos_oper")], tz = "UTC"))
-  ov_end <- min(as.POSIXct(per$last_utc[per$source %in% c("pblhmod_default", "era5_blh_center", "icos_oper")], tz = "UTC"))
+  ov_src <- c("pblhmod_default", "era5_blh_center", if (with_oper) "icos_oper")
+  ov_start <- max(as.POSIXct(per$first_utc[per$source %in% ov_src], tz = "UTC"))
+  ov_end <- min(as.POSIXct(per$last_utc[per$source %in% ov_src], tz = "UTC"))
   wide <- dplyr::tibble(timestamp_utc = hours, era5_blh_center = era_c$pblh_m[match(hours, era_c$timestamp_utc)])
   wide$pblhmod_default <- h_def$pblh_m[match(hours, h_def$timestamp_utc)]
-  wide$icos_oper_all <- h_op$pblh_m[match(hours, h_op$timestamp_utc)]
-  wide$icos_oper_qc0 <- ifelse(h_op$qc_flag[match(hours, h_op$timestamp_utc)] %in% 0L, wide$icos_oper_all, NA)
+  if (with_oper) {
+    wide$icos_oper_all <- h_op$pblh_m[match(hours, h_op$timestamp_utc)]
+    wide$icos_oper_qc0 <- ifelse(h_op$qc_flag[match(hours, h_op$timestamp_utc)] %in% 0L, wide$icos_oper_all, NA)
+  }
   wide <- wide[wide$timestamp_utc >= ov_start & wide$timestamp_utc <= ov_end, ]
   wide$season <- season_of(wide$timestamp_utc)
   wide$hour_utc <- as.integer(format(wide$timestamp_utc, "%H", tz = "UTC"))
-  ds <- diurnal_summary(wide, c("pblhmod_default", "era5_blh_center", "icos_oper_qc0", "icos_oper_all"))
+  ds <- diurnal_summary(wide, c("pblhmod_default", "era5_blh_center",
+                                if (with_oper) c("icos_oper_qc0", "icos_oper_all")))
   readr::write_csv(ds, file.path(tables_dir, paste0("04_diurnal_", site_id, ".csv")))
 
   # --- 6. Extras -------------------------------------------------------------------
@@ -198,7 +208,7 @@ for (site_id in site_ids) {
   cli::cli_h2("Summary: {site_id}")
   cli::cli_h3("Periods (valid PBLH) and overlap")
   print_tbl(per)
-  cli::cli_inform("Overlap of PBLHmod default, ERA5 centre and operational PBLH: {fmt_t(ov_start)} to {fmt_t(ov_end)} UTC.")
+  cli::cli_inform("Overlap of {paste(ov_src, collapse = ', ')}: {fmt_t(ov_start)} to {fmt_t(ov_end)} UTC.{if (with_oper) '' else ' Operational PBLH pairs not computed (use --with-oper).'}")
 
   cli::cli_h3("Rows dropped by exclusions")
   print_tbl(data.frame(source = names(std), n_excluded = vapply(std, function(s) as.integer(s$n_excluded), 1L)))
@@ -207,7 +217,10 @@ for (site_id in site_ids) {
   era_ok <- !is.na(era_c$pblh_m)
   lost <- function(h) sum(h$n_samples[match(era_c$timestamp_utc[era_ok], h$timestamp_utc)] == 1, na.rm = TRUE)
   mt <- dplyr::summarise(pairs, .by = pair, n_matched = dplyr::n())
-  mt$lost_require_both <- c(lost(h_def), lost(h_def), lost(h_g), NA, lost(h_op), NA)[match(mt$pair, unique(pairs$pair))]
+  lost_by_pair <- c(`1_pblhmod_default_vs_era5_center` = lost(h_def), `2_pblhmod_default_vs_era5_bilinear` = lost(h_def),
+                    `3_pblhmod_gamma0025_vs_era5_center` = lost(h_g), `4a_icos_oper_qc0_vs_era5_center` = NA,
+                    `4b_icos_oper_all_vs_era5_center` = lost(h_op), `5_pblhmod_default_vs_icos_oper_qc0_halfhourly` = NA)
+  mt$lost_require_both <- unname(lost_by_pair[mt$pair])
   print_tbl(mt)
   cli::cli_inform("lost_require_both: ERA5 hours with only one valid half-hour (NA for pairs 4a and 5: qc subset / half-hourly).")
 

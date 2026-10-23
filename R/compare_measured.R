@@ -28,12 +28,17 @@ measured_interval <- function(pblh_m, qc_flag, z_min) {
 #' Median of the survival curve fitted with
 #' `survival::survfit(Surv(left, right, type = "interval2") ~ 1)` (Turnbull
 #' estimator for interval-censored data). Lower bounds `[MLH, Inf)` are passed
-#' with a finite upper limit `upper_cap`: with `NA` / `Inf` upper limits and no
-#' interval-censored value, `survfit()` (survival 3.8) did not reproduce the
-#' Kaplan-Meier estimate on test data, while the finite cap does (test in
-#' `test-compare_measured.R`); the cap only places the unknown mass above all
-#' data. `NA` if the median falls above the largest finite limit (more than half
-#' the mass in lower bounds above it).
+#' with a finite upper limit `upper_cap`, a workaround checked on 2026-10-23 with
+#' survival 3.8-12: `Surv(l, NA, type = "interval2")` is coded correctly
+#' (status 0 = right-censored, as `Surv(time, event)`), but on data with only exact
+#' and right-censored values `survfit()` takes its interval-censored path and
+#' returns S = 0.787, 0.574, 0.235 (n.risk 6 for 5 values) instead of the
+#' Kaplan-Meier 0.8, 0.6, 0.3 (values 100, 200, 300+, 400, 900+); explicit
+#' `type = "interval"` coding gives the same. With a finite upper limit the fit
+#' equals Kaplan-Meier, and with interval-censored values present both codings
+#' agree (tests in `test-compare_measured.R`). The cap only places the unknown
+#' mass above all data. `NA` if the median falls above the largest finite limit
+#' (more than half the mass in lower bounds above it).
 #'
 #' @param left,right Interval limits as [measured_interval()] [m].
 #' @param upper_cap Upper limit used for lower bounds [m].
