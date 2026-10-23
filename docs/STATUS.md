@@ -29,7 +29,7 @@ Phases (see `project_plan.md`): 0 done; 1 done (model, input QC, legacy regressi
 sources (spec 04) and the first measured source (spec 07, FI-Hyy) done; 3 BE-Bra (vs ERA5) and FI-Hyy (vs ERA5 and
 measured MLH) done; 4–6 not started.
 
-- Tests: 955 passing (`spec-07-measured-cloudnet`). Environment: R 4.4.1 + renv (Posit Package
+- Tests: 968 passing (`spec-07-measured-cloudnet`). Environment: R 4.4.1 + renv (Posit Package
   Manager), same as the cluster. Machine-specific paths in the untracked `config.local.yml` (template
   `config.local.yml.example`).
 - PBLHmod defaults: `stable_method = "nieuwstadt"` (B1), `neutral_method = "auto"` (B2 if 10 < N/|f| < 70, else
@@ -75,6 +75,11 @@ measured MLH) done; 4–6 not started.
     26 % (ERA5 24 %); where it is only a lower bound, PBLHmod is below the bound on 40 % (JJA 62 %; ERA5 33 %, JJA
     45 %): "shallow too deep / deep too shallow", candidate finding. Outputs with the operational PBLH kept in
     `output/*/reference_spec07_with_oper/` (and `output/tables/reference_spec04_with_oper/`).
+  - Sensible-heat timing (`scripts/07d_h_timing.R`, 2020–2025, values at interval midpoints): ERA5 H earlier than
+    EC H, best-fit lag FI-Hyy 25–37 min (JJA 37), BE-Bra 16–25 min; FI-Hyy JJA afternoon crossings ≈ 63 min earlier,
+    morning ≈ 15–18 min (asymmetric). Adding the L2 storage term `SH` (air below the EC system, ±12 W m-2 at
+    FI-Hyy) reduces the lag (FI-Hyy 12–27 min, BE-Bra −1 to 14 min) but leaves the FI-Hyy afternoon difference at
+    51–64 min. Diagnostic only (open point in `project_plan.md`).
 - Spec 04 at BE-Bra (2026-10-17): overlap 2020-10-25 → 2026-08-25; PBLHmod default vs ERA5 tower cell 50,269 matched
   hours, bias −9 m, median log ratio −0.14, 72 % within a factor 2, Spearman 0.78; stable −0.23, convective −0.07;
   JJA evenings (19–22 UTC) PBLHmod ≈ half of ERA5. Operational PBLH vs ERA5: median log ratio +0.57 (qc 0).
@@ -108,7 +113,8 @@ measured MLH) done; 4–6 not started.
      offset): negligible.
 5. Spec 07 — implemented on `spec-07-measured-cloudnet` (2026-10-23), to review and merge. Scripts: 07a inventory,
    07b download (size report first, `--confirm`; `--match=PRODUCT`), 07c MLH (profiles in `data/derived/cloudnet/`,
-   standard file, sensitivity columns), 07 comparison; 04 with optional `--with-oper`. Distance rule and censoring
+   standard file, sensitivity columns), 07 comparison, 07d sensible-heat timing; 04 with optional `--with-oper`.
+   Diurnal figures place every value at its interval midpoint (hour bins centred on the full hour). Distance rule and censoring
    convention in `project_plan.md`; Cloudnet facts in `CLAUDE.md`; example in `docs/specs/standard_format.md`.
 6. After spec 07: the other Cloudnet sites (FI-Lom, DE-RuS, FR-Gri; on the cluster), PI data into the standard
    format, ETC QC report. Before paper results: re-check the volatile Cloudnet files and create a Cloudnet collection
@@ -123,7 +129,7 @@ SE-Myc uses the corrected coordinates; all stations structured like BE-Bra. BE-B
 tower, orography 8.9 m, lsm 0.96, sdor 7.6 m.
 
 Literature: `docs/references/literature_review_pblh.md`, `pblh_literature_2026-10.bib` (~50 verified papers),
-`pblh_collection.bib`. Key papers and ECMWF IFS Cy41r2 Part IV downloaded; second-wave papers: G will notify.
+`pblh_collection.bib`. Key papers and ECMWF IFS Cy41r2 Part IV downloaded; second-wave papers checked against the PDFs (2026-10-22; Durre2008 from Crossref only, no PDF).
 Novelty check: no published network-scale evaluation of EC-derived PBLH against ERA5 and measurements.
 
 FI-Hyy (spec 07): ICOS L2 (FLUXES, FLUXNET 2018–2026, METEO) and ERA5 (three families) under `data/raw/`; Cloudnet
@@ -136,7 +142,6 @@ collected for the ETC QC report in `docs/local/etc_qc_report.md` (local working 
 
 ## Waiting on others
 
-- Second-wave papers (G).
 - Relaxed FFP validity thresholds used at ETC (for the phase-5 spec).
 - Verification of forest canopy-height jumps (FR-Fon, FR-Hes, SE-Svb).
 

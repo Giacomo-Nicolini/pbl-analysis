@@ -136,3 +136,12 @@ test_that("gamma_850_700 from the pressure-level fixture", {
   expect_equal(gm$hour_utc, c(0L, 12L))
   expect_equal(gm$n, c(2L, 2L))
 })
+
+test_that("hour_bin_centred puts interval midpoints in bins centred on the full hour", {
+  t0 <- as.POSIXct("2022-06-01 11:30:00", tz = "UTC")
+  # half-hours starting 11:30, 12:00 (midpoints 11:45, 12:15) -> 12; 12:30 (12:45) -> 13; 23:30 (23:45) -> 0
+  expect_equal(hour_bin_centred(t0 + c(0, 1800, 3600) + 900), c(12L, 12L, 13L))
+  expect_equal(hour_bin_centred(as.POSIXct("2022-06-01 23:30:00", tz = "UTC") + 900), 0L)
+  # instantaneous value at 12:00 -> 12
+  expect_equal(hour_bin_centred(as.POSIXct("2022-06-01 12:00:00", tz = "UTC")), 12L)
+})

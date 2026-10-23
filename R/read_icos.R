@@ -285,10 +285,12 @@ prefix_cols <- function(d, prefix) {
 #'   [kg m-1 s-2]; `PBLH` operational PBL height [m]; `FETCH_MAX`, `FETCH_50`,
 #'   `FETCH_70`, `FETCH_80`, `FETCH_90` footprint distances [m];
 #'   `FOOTPRINT_TA_CONTR` target-area contribution [%]; `FOOTPRINT_FLAG` [-];
-#'   `H2O` water vapour mole fraction [mmol mol-1];
+#'   `H2O` water vapour mole fraction [mmol mol-1]; `SH` (if present) sensible-heat storage
+#'   flux in the air below the EC system [W m-2] (diagnostic only, spec 07; not
+#'   used by the PBLHmod forcing);
 #'   `src_fluxes` [logical, row present in the file].
 read_icos_fluxes <- function(path, utc_offset_h) {
-  d <- read_icos_csv(path, icos_cols$fluxes, utc_offset_h, label = "FLUXES")
+  d <- read_icos_csv(path, icos_cols$fluxes, utc_offset_h, label = "FLUXES", optional_pattern = "^SH$")
   info <- attr(d, "read_info")
   names(d)[names(d) == ".in_file"] <- "src_fluxes"
   attr(d, "read_info") <- info

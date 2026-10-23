@@ -235,6 +235,15 @@ values alone are biased towards "models too deep".
   (c) Cloudnet classification "drizzle/rain" near the ground on 15 % of profiles vs `rain_detected` 3.5 %: default
   precipitation flag = `rain_detected` (G), the other rules kept as sensitivity; (d) ±31 m ground reference (Cloudnet
   altitude 150 m vs ICOS 181 m; instruments ≈ 200 m from the main station, Sinclair et al. 2022).
+- Timing of EC vs ERA5 sensible heat (evaluation; possible error driver for the evening transition). EC timestamps
+  are correct (SW_IN_POT and EC H centred on solar noon within 4 min, Cowork 2026-10-23). With every value at its
+  interval midpoint (EC start + 15 min, ERA5 accumulation timestamp − 30 min), ERA5 H is earlier than EC H:
+  best-fit lag FI-Hyy 25–37 min, BE-Bra 16–25 min (`output/tables/07_h_timing_<site>.csv`, 2020–2025); at FI-Hyy in
+  JJA the afternoon decline is ≈ 63 min earlier, the morning rise ≈ 15–18 min (asymmetric: physical, consistent with
+  canopy heat storage at the tall forest, not a time convention). The L2 air-storage term `SH` reduces the lag
+  (FI-Hyy 12–27 min, BE-Bra −1 to 14 min) but not the FI-Hyy afternoon asymmetry (51–64 min); biomass/canopy storage
+  is not in `SH`. No change to the PBLHmod forcing for now; to examine with the evening-transition errors (PBLHmod
+  decay timing vs ERA5 and measured MLH).
 - Cloudnet ε files at Hyytiälä are volatile/experimental (2026-10); before paper results, re-check checksums against
   the API, re-run if changed, and create a Cloudnet collection with a persistent identifier for the files used
   (spec 07).

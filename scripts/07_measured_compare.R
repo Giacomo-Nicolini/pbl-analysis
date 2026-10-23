@@ -79,9 +79,9 @@ as_h <- function(e) {
 era_ch <- as_h(era_c)
 era_bh <- as_h(era_b)
 sources <- list(
-  `1_pblhmod_default_vs_measured` = list(x = mod_hh, m = mh, src = "PBLHmod", cls = "parameterisation vs turbulence"),
-  `2_era5_center_vs_measured` = list(x = era_ch, m = mhr, src = "ERA5 (tower cell)", cls = "cross-class: bulk Ri vs turbulence"),
-  `2b_era5_bilinear_vs_measured` = list(x = era_bh, m = mhr, src = "ERA5 (bilinear)", cls = "cross-class: bulk Ri vs turbulence")
+  `1_pblhmod_default_vs_measured` = list(x = mod_hh, m = mh, src = "PBLHmod", cls = "parameterisation vs turbulence", half = 900),
+  `2_era5_center_vs_measured` = list(x = era_ch, m = mhr, src = "ERA5 (tower cell)", cls = "cross-class: bulk Ri vs turbulence", half = 0),
+  `2b_era5_bilinear_vs_measured` = list(x = era_bh, m = mhr, src = "ERA5 (bilinear)", cls = "cross-class: bulk Ri vs turbulence", half = 0)
 )
 # Distance rule: restrict the regimes compared (spec 07, project plan).
 keep_regime <- function(r) {
@@ -94,6 +94,7 @@ pairs <- dplyr::bind_rows(lapply(names(sources), function(p) {
   s <- sources[[p]]
   ref <- s$m[s$m$kind %in% "exact", c("timestamp_utc", "pblh_m")]
   pt <- pair_table(s$x, ref, p)
+  pt$hour_utc <- hour_bin_centred(pt$timestamp_utc + s$half) # bins centred on the full hour (interval midpoint)
   pt[keep_regime(pt$regime), ]
 }))
 pairs$source <- vapply(sources, `[[`, "", "src")[pairs$pair]
@@ -112,7 +113,7 @@ for (p in names(sources)) {
   s <- sources[[p]]
   x <- dplyr::left_join(s$m, dplyr::transmute(s$x, timestamp_utc, mod = pblh_m, regime = x_regime), by = "timestamp_utc")
   x$season <- season_of(x$timestamp_utc)
-  x$hour_utc <- as.integer(format(x$timestamp_utc, "%H", tz = "UTC"))
+  x$hour_utc <- hour_bin_centred(x$timestamp_utc + s$half)
   x <- x[keep_regime(x$regime), ]
   xs[[p]] <- x
   xl <- x[x$kind %in% "lower_bound", ]
@@ -135,7 +136,7 @@ cb <- dplyr::bind_rows(cb)
 readr::write_csv(lb, file.path(tables_dir, paste0("07_lower_bound_", site_id, ".csv")))
 cens_meas <- dplyr::summarise(
   dplyr::group_by(dplyr::mutate(mh, season = as.character(season_of(timestamp_utc)),
-                                hour_utc = as.integer(format(timestamp_utc, "%H", tz = "UTC"))), season, hour_utc),
+                                hour_utc = hour_bin_centred(timestamp_utc + 900)), season, hour_utc),
   n_usable = sum(!is.na(kind)), n_below = sum(kind %in% "below"), n_lower_bound = sum(kind %in% "lower_bound"),
   pct_below = round(100 * n_below / max(1, n_usable), 1), pct_lower_bound = round(100 * n_lower_bound / max(1, n_usable), 1),
   .groups = "drop"
@@ -172,7 +173,7 @@ readr::write_csv(sd_tab, file.path(tables_dir, paste0("07_shallow_deep_", site_i
 
 # --- Diurnal cycles (on the measured usable half-hours / hours) ---
 mh$season <- season_of(mh$timestamp_utc)
-mh$hour_utc <- as.integer(format(mh$timestamp_utc, "%H", tz = "UTC"))
+mh$hour_utc <- hour_bin_centred(mh$timestamp_utc + 900) # half-hour midpoint, bin centred on the full hour
 dm <- measured_diurnal(mh)
 use_hh <- mh$timestamp_utc[!is.na(mh$kind)]
 use_h <- mhr$timestamp_utc[!is.na(mhr$kind)]
@@ -181,12 +182,12 @@ w_hh$pblhmod_default <- mod_hh$pblh_m[match(use_hh, mod_hh$timestamp_utc)]
 w_h <- dplyr::tibble(timestamp_utc = use_h)
 w_h$era5_blh_center <- era_ch$pblh_m[match(use_h, era_ch$timestamp_utc)]
 w_h$era5_blh_bilinear <- era_bh$pblh_m[match(use_h, era_bh$timestamp_utc)]
-for (nm in c("w_hh", "w_h")) {
-  w <- get(nm)
-  w$season <- season_of(w$timestamp_utc)
-  w$hour_utc <- as.integer(format(w$timestamp_utc, "%H", tz = "UTC"))
-  assign(nm, w)
-}
+# Values at the interval midpoint, hour bins centred on the full hour (G 2026-10-23): half-hours start + 15 min,
+# ERA5 BLH instantaneous at the timestamp.
+w_hh$season <- season_of(w_hh$timestamp_utc)
+w_hh$hour_utc <- hour_bin_centred(w_hh$timestamp_utc + 900)
+w_h$season <- season_of(w_h$timestamp_utc)
+w_h$hour_utc <- hour_bin_centred(w_h$timestamp_utc)
 ds <- dplyr::bind_rows(diurnal_summary(w_hh, "pblhmod_default"),
                        diurnal_summary(w_h, c("era5_blh_center", "era5_blh_bilinear")))
 readr::write_csv(dplyr::bind_rows(

@@ -27,7 +27,7 @@ plot_measured_diurnal <- function(dm, ds) {
     ggplot2::scale_colour_manual(values = pal, labels = lab, name = NULL) +
     ggplot2::scale_linetype_manual(values = lt, labels = lab, name = NULL) +
     ggplot2::scale_x_continuous(breaks = seq(0, 24, 6)) +
-    ggplot2::labs(x = "Hour [UTC]", y = "Median PBLH / MLH [m]") +
+    ggplot2::labs(x = "Hour [UTC, bin centred on the hour]", y = "Median PBLH / MLH [m]") +
     theme_pub() +
     ggplot2::guides(colour = ggplot2::guide_legend(nrow = 2), linetype = ggplot2::guide_legend(nrow = 2))
 }
@@ -51,7 +51,8 @@ plot_measured_scatter <- function(pt) {
     ggplot2::theme(legend.position = "right", aspect.ratio = 1)
 }
 
-#' Share of measured half-hours by qc flag, hour x season
+#' Share of measured half-hours by qc flag, hour x season (hour bins centred on the
+#' full hour, from the half-hour midpoint)
 #'
 #' @param hq Standard table `cloudnet_eps_mlh` (`timestamp_start_utc`, `qc_flag`).
 #' @return ggplot object.
@@ -59,7 +60,7 @@ plot_measured_qc <- function(hq) {
   qlab <- c(`0` = "0 measured", `2` = "2 partly censored", `3` = "3 signal-limited (lower bound)",
             `1` = "1 censored below z_min", `NA` = "NA coverage < min")
   d <- dplyr::tibble(season = season_of(hq$timestamp_start_utc),
-                     hour_utc = as.integer(format(hq$timestamp_start_utc, "%H", tz = "UTC")),
+                     hour_utc = hour_bin_centred(hq$timestamp_start_utc + 900), # midpoint, centred bins
                      qc = factor(ifelse(is.na(hq$qc_flag), "NA", hq$qc_flag), levels = names(qlab)))
   ggplot2::ggplot(d, ggplot2::aes(hour_utc, fill = qc)) +
     ggplot2::geom_bar(position = "fill", width = 0.9) +
@@ -68,7 +69,7 @@ plot_measured_qc <- function(hq) {
                                           `NA` = "#DDDDDD"), labels = qlab, name = NULL) +
     ggplot2::scale_x_continuous(breaks = seq(0, 24, 6)) +
     ggplot2::scale_y_continuous(labels = function(x) paste0(100 * x, " %")) +
-    ggplot2::labs(x = "Hour [UTC]", y = "Share of half-hours") +
+    ggplot2::labs(x = "Hour [UTC, bin centred on the hour]", y = "Share of half-hours") +
     theme_pub() +
     ggplot2::guides(fill = ggplot2::guide_legend(nrow = 2))
 }
@@ -87,6 +88,6 @@ plot_measured_logratio <- function(pt) {
     ggplot2::coord_cartesian(ylim = c(-3, 3)) +
     ggplot2::facet_wrap(~season, nrow = 2) +
     ggplot2::scale_x_discrete(breaks = as.character(seq(0, 21, 3))) +
-    ggplot2::labs(x = "Hour [UTC]", y = "log(source / measured MLH) [-]", fill = NULL) +
+    ggplot2::labs(x = "Hour [UTC, bin centred on the hour]", y = "log(source / measured MLH) [-]", fill = NULL) +
     theme_pub()
 }
