@@ -139,6 +139,16 @@ Tables: `07_metrics_FI-Hyy.csv` (long format), `07_censoring_FI-Hyy.csv`.
 Download and processing for sites other than FI-Hyy; radiosondes (IGRA) and ceilometer (aerosol) MLH; Manninen's
 full ABL classification (cloud-driven mixing, skewness, shear); triple collocation; any change to PBLHmod.
 
+## Amendment 1 (G, 2026-10-23): sources and ERA5 variant in the comparison
+
+- The operational ICOS PBLH (`icos_oper`) is removed from the measured comparison from now on (pair 3 and its lines in
+  the figures and tables). The FI-Hyy run already done with it is kept as a reference test (do not delete its
+  outputs; tag or move them, e.g. `output/*/reference_spec07_with_oper/`). The comparison scripts and functions
+  must no longer compute or plot it; the operational vs PBLHmod v2 comparison stays in spec 03 (phase 1).
+- Figures use ERA5 tower cell (`era5_blh_center`) only. `era5_blh_bilinear` stays in the metric tables (pair 2b)
+  and in no figure.
+- Same rules recorded in `docs/project_plan.md` ("Scope") for all later evaluation work.
+
 ## Summary to report back
 
 As in `CLAUDE.md`, plus: inventory highlights; the ε file structure and z_min used; MLH coverage and censoring at

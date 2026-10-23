@@ -15,6 +15,13 @@ Status: agreed design, v0.1 (2026-10-08). Living document: update as decisions c
 - Sites: ICOS ecosystem stations only, for now.
 - Language: R (a Python port is possible later; keep the logic language-agnostic and well documented).
 - Execution: developed locally (Windows, VS Code), run on the Unitus cluster.
+- Sources compared (G, 2026-10-23): the evaluation (phases 3–4) compares **PBLHmod, ERA5 and measured PBLH only**.
+  The operational ICOS PBLH (`icos_oper`) is used only in the phase-1 regression (operational vs PBLHmod v2,
+  spec 03); it is not part of the three-way comparison, its figures or its tables. The FI-Hyy spec-07 results that
+  include it are kept as a reference test.
+- ERA5 in figures (G, 2026-10-23): tower cell only (`era5_blh_center`). The bilinear values (`era5_blh_bilinear`)
+  appear in the numerical results (tables) only; at FI-Hyy the two differ very little (convective pair vs measured:
+  bias +111 vs +113 m, median log ratio +0.32 both), which is itself a result to report.
 
 ## Phases
 
