@@ -307,17 +307,32 @@ cloudnet_download <- function(plan, retries = 1, pause_s = 0.5) {
 #' @param precip_classes Cloudnet `target_classification` values counted as
 #'   precipitation (2 = drizzle or rain, 3 = drizzle or rain coexisting with
 #'   droplets; Cloudnet classification product).
-#' @param precip_top_agl Top of the layer checked for precipitation [m above
-#'   ground]: a profile is flagged if any classification gate with centre at or
-#'   below this height shows a precipitation class.
+#' @param precip_rule Precipitation rule (spec 07, G 2026-10-23):
+#'   `"column"` (default): `rain_detected`, or a precipitation class in a
+#'   classification gate from z_min up to one lidar gate above the gate where
+#'   the upward search stopped (censored / no-signal profiles: up to one gate
+#'   above z_min); `"strict"`: a precipitation class at or below
+#'   `precip_top_agl`; `"rain_detected"`: `rain_detected` only.
+#' @param precip_top_agl Top of the layer checked by the `"strict"` rule [m above
+#'   ground].
 #' @param precip_window_s Half-width of the time window around each epsilon
 #'   profile in which classification profiles are checked [s] (default: half the
 #'   180 s epsilon rolling window).
+#' @param signal_limited_max Half-hours whose share of signal-limited measured
+#'   profiles (search ended at a missing gate) exceeds this value get
+#'   `qc_flag = 3` [0-1].
+#' @param bridge_single_gap Sensitivity option: continue the upward search across
+#'   a single missing gate when the gates below and above it are turbulent
+#'   [logical].
 #' @return Named list of options.
 cloudnet_mlh_options <- function(eps_surface = 1e-4, z_min_agl = NULL, min_coverage = 0.5,
-                                 precip_classes = c(2L, 3L), precip_top_agl = 300, precip_window_s = 90) {
+                                 precip_classes = c(2L, 3L), precip_rule = c("column", "strict", "rain_detected"),
+                                 precip_top_agl = 300, precip_window_s = 90, signal_limited_max = 0.5,
+                                 bridge_single_gap = FALSE) {
   list(eps_surface = eps_surface, z_min_agl = z_min_agl, min_coverage = min_coverage,
-       precip_classes = precip_classes, precip_top_agl = precip_top_agl, precip_window_s = precip_window_s)
+       precip_classes = precip_classes, precip_rule = match.arg(precip_rule), precip_top_agl = precip_top_agl,
+       precip_window_s = precip_window_s, signal_limited_max = signal_limited_max,
+       bridge_single_gap = bridge_single_gap)
 }
 
 #' Read a Cloudnet `epsilon-lidar` file
@@ -391,7 +406,9 @@ cloudnet_nc_time <- function(nc, path) {
 #'   (censored below z_min);
 #' - `measured`: MLH found; `gap_in_column` = the search stopped at a missing
 #'   gate (low signal) rather than at epsilon < `eps_surface`.
-#' Gates below the lowest reliable gate are ignored.
+#' Gates below the lowest reliable gate are ignored. With
+#' `opts$bridge_single_gap` (sensitivity only), a single missing gate between two
+#' turbulent gates does not stop the search.
 #'
 #' @param eps Dissipation rate, matrix gates x profiles [m2 s-3].
 #' @param z_agl Gate centres [m above ground], increasing.
@@ -400,7 +417,8 @@ cloudnet_nc_time <- function(nc, path) {
 #' @return Tibble, one row per profile: `status`, `mlh_m` [m above ground, top of
 #'   the last turbulent gate; `NA` unless `measured`], `censored` [logical],
 #'   `gap_in_column` [logical], `z_min_m` [m above ground, centre of the lowest
-#'   reliable gate].
+#'   reliable gate], `eps_top_ratio` [-, epsilon of the last turbulent gate /
+#'   `eps_surface`; `NA` unless `measured`].
 cloudnet_mlh_profiles <- function(eps, z_agl, gate_m, opts) {
   n_t <- ncol(eps)
   n_z <- nrow(eps)
@@ -418,9 +436,15 @@ cloudnet_mlh_profiles <- function(eps, z_agl, gate_m, opts) {
   status <- rep("no_signal", n_t)
   mlh <- rep(NA_real_, n_t)
   gap <- rep(FALSE, n_t)
+  eps_top <- rep(NA_real_, n_t)
   if (!is.na(i0) && n_t > 0) {
     e <- eps[i0:n_z, , drop = FALSE]
     ok <- !is.na(e) & e >= opts$eps_surface
+    if (isTRUE(opts$bridge_single_gap) && nrow(ok) >= 3) {
+      r <- 2:(nrow(ok) - 1)
+      ok[r, ] <- ok[r, , drop = FALSE] |
+        (is.na(e[r, , drop = FALSE]) & ok[r - 1, , drop = FALSE] & ok[r + 1, , drop = FALSE])
+    }
     # number of consecutive turbulent gates from the lowest reliable gate upward
     n_ok <- colSums(matrix(apply(ok, 2, cumprod), nrow = nrow(ok)))
     low <- e[1, ]
@@ -433,10 +457,12 @@ cloudnet_mlh_profiles <- function(eps, z_agl, gate_m, opts) {
     nxt <- top_idx + 1
     chk <- meas & nxt <= n_z
     gap[chk] <- is.na(eps[cbind(nxt[chk], which(chk))])
+    eps_top[meas] <- eps[cbind(top_idx[meas], which(meas))] / opts$eps_surface
   }
   dplyr::tibble(status = status, mlh_m = mlh,
                 censored = status %in% c("censored_weak", "lowest_gate_missing"),
-                gap_in_column = gap, z_min_m = if (is.na(i0)) NA_real_ else z_agl[i0])
+                gap_in_column = gap, z_min_m = if (is.na(i0)) NA_real_ else z_agl[i0],
+                eps_top_ratio = eps_top)
 }
 
 #' Read a Cloudnet `classification` file (precipitation and cloud base)
@@ -491,34 +517,72 @@ read_cloudnet_classification <- function(path, ground_altitude_m = NULL) {
 #' `opts$precip_top_agl` (spec 07, G 2026-10-23). The cloud base is that of the
 #' nearest classification profile within the window.
 #'
+#' Three rules are evaluated (spec 07, G 2026-10-23); `precip` follows
+#' `opts$precip_rule`:
+#' - `precip_column`: a precipitation class in a classification gate with centre
+#'   between `bottom_agl` and `top_agl` (per profile), or `rain_detected`;
+#' - `precip_strict`: a precipitation class at or below `opts$precip_top_agl`;
+#' - `rain_detected`: `rain_detected` in the window.
+#' `precip_category` (precedence in this order): `rain_detected`; `in_column`
+#' (class in the column layer); `aloft_only` (class only above `top_agl`); `none`.
+#'
 #' @param time Epsilon profile times [POSIXct UTC].
 #' @param cls Output of [read_cloudnet_classification()], or `NULL` (no file:
 #'   no precipitation check).
 #' @param opts Output of [cloudnet_mlh_options()].
+#' @param top_agl Top of the checked column per profile [m above ground]
+#'   (classification gate centres at or below it); default `opts$precip_top_agl`.
+#' @param bottom_agl Bottom of the checked column [m above ground]; default 0.
 #' @return Tibble, one row per profile: `precip` [logical, `NA` = not checked],
-#'   `rain_detected` [logical, any `rain_detected` in the window; `NA` = not
-#'   available], `cloud_base_agl_m` [m above ground, `NA` = no cloud or not
-#'   checked].
-cloudnet_precip_flag <- function(time, cls, opts) {
+#'   `precip_column`, `precip_strict`, `rain_detected` [logical, any
+#'   `rain_detected` in the window; `NA` = not available], `precip_category`,
+#'   `cloud_base_agl_m` [m above ground, `NA` = no cloud or not checked].
+cloudnet_precip_flag <- function(time, cls, opts, top_agl = opts$precip_top_agl, bottom_agl = 0) {
   n <- length(time)
-  out <- dplyr::tibble(precip = rep(NA, n), rain_detected = rep(NA, n), cloud_base_agl_m = rep(NA_real_, n))
+  out <- dplyr::tibble(precip = rep(NA, n), precip_column = rep(NA, n), precip_strict = rep(NA, n),
+                       rain_detected = rep(NA, n), precip_category = rep(NA_character_, n),
+                       cloud_base_agl_m = rep(NA_real_, n))
   if (is.null(cls) || length(cls$time) == 0 || n == 0) return(out)
+  top_agl <- rep_len(top_agl, n)
   ord <- order(cls$time)
   ct <- as.numeric(cls$time[ord])
-  low <- cls$height_agl <= opts$precip_top_agl
-  tc <- cls$target_classification[low, ord, drop = FALSE]
-  p_c <- colSums(matrix(tc %in% opts$precip_classes, nrow = nrow(tc))) > 0
+  is_p <- matrix(cls$target_classification[, ord, drop = FALSE] %in% opts$precip_classes,
+                 nrow = length(cls$height_agl))
+  z <- cls$height_agl
+  # strict rule: any precipitation class at or below precip_top_agl
+  p_strict <- colSums(is_p[z <= opts$precip_top_agl, , drop = FALSE]) > 0
+  # lowest precipitation gate at or above bottom_agl, per classification profile (Inf if none)
+  zz <- matrix(z, nrow = length(z), ncol = ncol(is_p))
+  zz[!is_p | zz < bottom_agl] <- Inf
+  z_low <- if (nrow(zz) > 0) apply(zz, 2, min) else rep(Inf, ncol(is_p))
   tt <- as.numeric(time)
   lo <- findInterval(tt - opts$precip_window_s, ct, left.open = TRUE) + 1L
   hi <- findInterval(tt + opts$precip_window_s, ct)
   has <- hi >= lo
-  cs <- c(0, cumsum(p_c))
-  out$precip[has] <- (cs[hi[has] + 1L] - cs[lo[has]]) > 0
+  cs <- c(0, cumsum(p_strict))
+  out$precip_strict[has] <- (cs[hi[has] + 1L] - cs[lo[has]]) > 0
+  # minimum of z_low over the window (loop over the few offsets of the window)
+  zmin <- rep(Inf, n)
+  w <- ifelse(has, hi - lo, -1L)
+  for (k in seq_len(max(c(w, -1L)) + 1L) - 1L) {
+    s <- has & k <= w
+    zmin[s] <- pmin(zmin[s], z_low[lo[s] + k])
+  }
   rd <- cls$rain_detected[ord]
+  rdw <- rep(NA, n)
   if (!all(is.na(rd))) {
     cr <- c(0, cumsum(rd %in% TRUE))
-    out$rain_detected[has] <- (cr[hi[has] + 1L] - cr[lo[has]]) > 0
+    rdw[has] <- (cr[hi[has] + 1L] - cr[lo[has]]) > 0
   }
+  out$rain_detected <- rdw
+  in_col <- zmin <= top_agl
+  out$precip_column[has] <- in_col[has] | rdw[has] %in% TRUE
+  out$precip_category[has] <- ifelse(rdw[has] %in% TRUE, "rain_detected",
+                                     ifelse(in_col[has], "in_column",
+                                            ifelse(is.finite(zmin[has]), "aloft_only", "none")))
+  out$precip <- switch(opts$precip_rule,
+                       column = out$precip_column, strict = out$precip_strict, rain_detected = out$rain_detected)
+  if (opts$precip_rule == "rain_detected") out$precip[has & is.na(out$precip)] <- FALSE
   # nearest classification profile within the window
   j <- findInterval(tt, ct)
   j_lo <- pmax(j, 1L)
@@ -547,31 +611,36 @@ cloudnet_expected_profiles <- function(time) {
 #'
 #' Reads one `epsilon-lidar` file (and the `classification` file of the same day
 #' if given), computes the profile MLH ([cloudnet_mlh_profiles()]) and the
-#' precipitation flag ([cloudnet_precip_flag()]). Precipitation overrides the
-#' epsilon status: `status = "precipitation"`, MLH `NA`, not censored.
+#' precipitation flag ([cloudnet_precip_flag()]). The column checked for
+#' precipitation runs from the bottom of the z_min gate to one lidar gate above
+#' the gate where the upward search stopped (measured: MLH + 1.5 gates; other
+#' profiles: z_min + 1 gate). Precipitation overrides the epsilon status
+#' ([cloudnet_apply_precip()]).
 #'
 #' @param eps_path Path of the `epsilon-lidar` file [character].
 #' @param cls_path Path of the `classification` file, or `NULL`/`NA` (none).
 #' @param opts Output of [cloudnet_mlh_options()].
 #' @param ground_altitude_m Ground altitude [m a.s.l.]; `NULL` = file altitude.
-#' @return Tibble, one row per profile: `time` [POSIXct UTC], `status`, `mlh_m`
-#'   [m above ground], `censored`, `gap_in_column` [logical], `z_min_m` [m above
-#'   ground], `precip` [logical, `NA` = not checked], `rain_detected` [logical],
-#'   `cloud_base_agl_m` [m above ground], `n_expected` [-, expected profiles per
-#'   half-hour of the file], `dt_s` [s, median profile spacing of the file],
-#'   `file_uuid`. Attributes `eps_attrs`, `cls_attrs`, `altitude_m`, `gate_m`.
+#' @return Tibble, one row per profile: `time` [POSIXct UTC], `status`,
+#'   `status_eps` (before precipitation), `mlh_m`, `mlh_eps_m` [m above ground,
+#'   after / before precipitation], `censored`, `gap_in_column` [logical],
+#'   `z_min_m` [m above ground], `eps_top_ratio` [-], the columns of
+#'   [cloudnet_precip_flag()], `n_expected` [-, expected profiles per half-hour of
+#'   the file], `dt_s` [s, median profile spacing of the file], `file_uuid`.
+#'   Attributes `eps_attrs`, `cls_attrs`, `altitude_m`, `gate_m`.
 cloudnet_mlh_day <- function(eps_path, cls_path = NULL, opts = cloudnet_mlh_options(), ground_altitude_m = NULL) {
   e <- read_cloudnet_epsilon(eps_path, ground_altitude_m)
   p <- cloudnet_mlh_profiles(e$eps, e$height_agl, e$gate_m, opts)
   has_cls <- !is.null(cls_path) && !is.na(cls_path)
   cls <- if (has_cls) read_cloudnet_classification(cls_path, ground_altitude_m) else NULL
-  pr <- cloudnet_precip_flag(e$time, cls, opts)
+  z0 <- if (length(p$z_min_m) > 0 && !is.na(p$z_min_m[1])) p$z_min_m[1] else 0
+  stop_c <- ifelse(p$status == "measured", p$mlh_m + e$gate_m / 2, z0)
+  pr <- cloudnet_precip_flag(e$time, cls, opts, top_agl = stop_c + e$gate_m, bottom_agl = z0 - e$gate_m / 2)
   out <- dplyr::bind_cols(dplyr::tibble(time = e$time), p, pr)
-  rain <- out$precip %in% TRUE
-  out$status[rain] <- "precipitation"
-  out$mlh_m[rain] <- NA_real_
-  out$censored[rain] <- FALSE
-  out$gap_in_column[rain] <- FALSE
+  out$status_eps <- out$status
+  out$mlh_eps_m <- out$mlh_m
+  out$gap_eps <- out$gap_in_column
+  out <- cloudnet_apply_precip(out, out$precip)
   out$n_expected <- cloudnet_expected_profiles(e$time)
   out$dt_s <- if (length(e$time) > 1) stats::median(diff(as.numeric(e$time))) else NA_real_
   out$file_uuid <- e$attrs$file_uuid
@@ -580,6 +649,26 @@ cloudnet_mlh_day <- function(eps_path, cls_path = NULL, opts = cloudnet_mlh_opti
   attr(out, "altitude_m") <- e$altitude_m
   attr(out, "gate_m") <- e$gate_m
   out
+}
+
+#' Apply a precipitation flag to profile results
+#'
+#' Pure function: rebuilds `status`, `mlh_m`, `censored`, `gap_in_column` from
+#' the epsilon-only columns (`status_eps`, `mlh_eps_m`, `gap_eps`) and a
+#' precipitation flag: flagged profiles get `status = "precipitation"`, MLH `NA`,
+#' not censored. Used for the main rule and for the rule sensitivity.
+#'
+#' @param prof Profile table with `status_eps`, `mlh_eps_m`, `gap_eps`.
+#' @param flag Precipitation flag per profile [logical; `NA` = not checked, not
+#'   flagged].
+#' @return `prof` with `status`, `mlh_m`, `censored`, `gap_in_column` replaced.
+cloudnet_apply_precip <- function(prof, flag) {
+  rain <- flag %in% TRUE
+  prof$status <- ifelse(rain, "precipitation", prof$status_eps)
+  prof$mlh_m <- ifelse(rain, NA_real_, prof$mlh_eps_m)
+  prof$censored <- prof$status %in% c("censored_weak", "lowest_gate_missing")
+  prof$gap_in_column <- prof$gap_eps & !rain
+  prof
 }
 
 #' Aggregate profile MLH to half-hours
@@ -591,8 +680,11 @@ cloudnet_mlh_day <- function(eps_path, cls_path = NULL, opts = cloudnet_mlh_opti
 #' ([cloudnet_expected_profiles()]). Rules:
 #' - coverage < `opts$min_coverage`: `pblh_m = NA`, `qc_flag = NA`;
 #' - more than half of the valid profiles censored: `pblh_m = NA`, `qc_flag = 1`;
-#' - otherwise `pblh_m` = median MLH of the measured profiles; `qc_flag = 0` if no
-#'   censored profile, `2` if some.
+#' - otherwise `pblh_m` = median MLH of the measured profiles; `qc_flag = 3` if
+#'   the share of measured profiles whose search ended at a missing gate exceeds
+#'   `opts$signal_limited_max` (limited by signal: MLH possibly a lower bound;
+#'   clean air at SMEAR II, low SNR: Manninen et al. 2018, Sinclair et al. 2022);
+#'   else `0` if no censored profile, `2` if some.
 #'
 #' @param prof Profile table as [cloudnet_mlh_day()] (several days allowed).
 #' @param opts Output of [cloudnet_mlh_options()].
@@ -602,7 +694,8 @@ cloudnet_mlh_day <- function(eps_path, cls_path = NULL, opts = cloudnet_mlh_opti
 #'   `x_n_expected`, `x_coverage` [0-1], `x_n_measured`, `x_n_censored_weak`,
 #'   `x_n_lowest_gate_missing`, `x_n_no_signal`, `x_n_precipitation`,
 #'   `x_n_gap_in_column` [-, measured profiles whose search stopped at a missing
-#'   gate], `x_censor_below_m` [m above ground, z_min], `x_precip_checked`
+#'   gate], `x_frac_signal_limited` [0-1, `x_n_gap_in_column` / `x_n_measured`],
+#'   `x_censor_below_m` [m above ground, z_min], `x_precip_checked`
 #'   [logical, classification available for all profiles], `x_stare_seconds` [s,
 #'   valid profiles x profile spacing], `x_first_profile_utc`,
 #'   `x_last_profile_utc` [ISO 8601 UTC, first / last valid profile],
@@ -620,6 +713,8 @@ cloudnet_mlh_halfhour <- function(prof, opts) {
     n_exp <- stats::median(prof$n_expected[i])
     cov <- min(1, n_valid / n_exp)
     m <- prof$mlh_m[i][st == "measured"]
+    n_gap <- sum(prof$gap_in_column[i] & st == "measured")
+    f_lim <- if (length(m) > 0) n_gap / length(m) else NA_real_
     if (is.na(cov) || cov < opts$min_coverage) {
       pblh <- NA_real_
       qc <- NA_integer_
@@ -628,7 +723,7 @@ cloudnet_mlh_halfhour <- function(prof, opts) {
       qc <- 1L
     } else {
       pblh <- stats::median(m)
-      qc <- if (n_cens == 0) 0L else 2L
+      qc <- if (f_lim > opts$signal_limited_max) 3L else if (n_cens == 0) 0L else 2L
     }
     tv <- prof$time[i][v]
     cb <- prof$cloud_base_agl_m[i]
@@ -638,7 +733,7 @@ cloudnet_mlh_halfhour <- function(prof, opts) {
       x_n_measured = sum(st == "measured"), x_n_censored_weak = sum(st == "censored_weak"),
       x_n_lowest_gate_missing = sum(st == "lowest_gate_missing"), x_n_no_signal = sum(st == "no_signal"),
       x_n_precipitation = sum(st == "precipitation"),
-      x_n_gap_in_column = sum(prof$gap_in_column[i] & st == "measured"),
+      x_n_gap_in_column = n_gap, x_frac_signal_limited = f_lim,
       x_censor_below_m = stats::median(prof$z_min_m[i]), x_precip_checked = all(chk),
       x_stare_seconds = n_valid * stats::median(prof$dt_s[i]),
       x_first_profile_utc = if (n_valid > 0) min(as.numeric(tv)) else NA_real_,
@@ -695,6 +790,8 @@ standardize_cloudnet_mlh <- function(hh, site_id, exclusions, utc_offset_h, info
     ),
     qc_flag_meaning = list(`0` = "all valid profiles measured", `1` = "censored below z_min (more than half of the valid profiles)",
                            `2` = "partly censored (median of the measured profiles)",
+                           `3` = paste("limited by signal: more than half of the measured profiles ended at a",
+                                       "missing gate (low SNR); MLH possibly a lower bound"),
                            `NA` = "coverage below min_coverage, or no valid profile"),
     processing_history = paste0(info$processing_history, " Rows in exclusion periods dropped (", ex$n_excluded,
                                 "); standardized by standardize_cloudnet_mlh() (spec 07)."),

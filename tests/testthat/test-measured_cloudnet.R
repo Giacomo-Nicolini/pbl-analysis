@@ -130,6 +130,7 @@ test_that("cloudnet_mlh_profiles: MLH at the top of the last turbulent gate, cen
   p <- cloudnet_mlh_profiles(e$eps, e$height_agl, e$gate_m, opts)
   expect_equal(p$status, c("measured", "no_signal", "lowest_gate_missing", "censored_weak"))
   expect_equal(p$mlh_m, c(120, NA, NA, NA)) # gate centre 105 m + 15 m
+  expect_equal(p$eps_top_ratio, c(2, NA, NA, NA), tolerance = 1e-6) # 2e-4 / 1e-4 (float in the file)
   expect_equal(p$censored, c(FALSE, FALSE, TRUE, TRUE))
   expect_equal(p$z_min_m, rep(105, 4))
   # default z_min: lowest gate with any valid epsilon in the file (105 m here)
@@ -150,6 +151,14 @@ test_that("cloudnet_mlh_profiles: gap in the column and full-column cases", {
   expect_equal(p$status, rep("measured", 4))
   expect_equal(p$mlh_m, c(150, 180, 120, 120))
   expect_equal(p$gap_in_column, c(TRUE, FALSE, FALSE, FALSE))
+  # bridging a single missing gate (sensitivity option)
+  eps3 <- cbind(c(NA, NA, NA, 1e-3, NA, 1e-3), c(NA, NA, NA, 1e-3, NA, 1e-5), c(NA, NA, NA, 1e-3, NA, NA))
+  pb0 <- cloudnet_mlh_profiles(eps3, z, 30, cloudnet_mlh_options(z_min_agl = 105))
+  pb1 <- cloudnet_mlh_profiles(eps3, z, 30, cloudnet_mlh_options(z_min_agl = 105, bridge_single_gap = TRUE))
+  expect_equal(pb0$mlh_m, c(120, 120, 120))
+  expect_equal(pb0$gap_in_column, c(TRUE, TRUE, TRUE))
+  expect_equal(pb1$mlh_m, c(180, 120, 120)) # bridged only where the gate above is turbulent
+  expect_equal(pb1$gap_in_column, c(FALSE, TRUE, TRUE))
   # gates below z_min are ignored
   eps2 <- cbind(c(1e-5, 1e-3, 1e-3, 1e-3, 1e-5, NA))
   expect_equal(cloudnet_mlh_profiles(eps2, z, 30, cloudnet_mlh_options(z_min_agl = 45))$mlh_m, 120)
@@ -167,9 +176,28 @@ test_that("read_cloudnet_classification and the precipitation flag", {
   expect_equal(pr$precip, c(TRUE, TRUE, NA, NA))
   expect_equal(pr$rain_detected, c(TRUE, TRUE, NA, NA))
   expect_equal(pr$cloud_base_agl_m, c(1000, 1000, NA, NA))
-  # only gates up to 120 m agl checked: no precipitation (class 2 at 150 and 450 m agl ignored)
-  expect_equal(cloudnet_precip_flag(e$time, cls, cloudnet_mlh_options(precip_top_agl = 120))$precip,
+  expect_equal(pr$precip_category, c("rain_detected", "rain_detected", NA, NA))
+  # strict rule, only gates up to 120 m agl: no precipitation (class 2 at 150 and 450 m agl ignored)
+  expect_equal(cloudnet_precip_flag(e$time, cls, cloudnet_mlh_options(precip_rule = "strict",
+                                                                      precip_top_agl = 120))$precip,
                c(FALSE, FALSE, NA, NA))
+  # column rule without rain_detected: aloft only (column up to 120 m) vs in column (up to 200 m)
+  cls0 <- cls
+  cls0$rain_detected[] <- FALSE
+  p120 <- cloudnet_precip_flag(e$time, cls0, cloudnet_mlh_options(), top_agl = 120, bottom_agl = 90)
+  expect_equal(p120$precip, c(FALSE, FALSE, NA, NA))
+  expect_equal(p120$precip_category, c("aloft_only", "aloft_only", NA, NA))
+  p200 <- cloudnet_precip_flag(e$time, cls0, cloudnet_mlh_options(), top_agl = c(200, 120, 0, 0), bottom_agl = 90)
+  expect_equal(p200$precip, c(TRUE, FALSE, NA, NA))
+  expect_equal(p200$precip_category, c("in_column", "aloft_only", NA, NA))
+  # bottom above the precipitation gates: not in the column
+  expect_equal(cloudnet_precip_flag(e$time, cls0, cloudnet_mlh_options(), top_agl = 200, bottom_agl = 500)$precip,
+               c(FALSE, FALSE, NA, NA))
+  # rain_detected-only rule
+  expect_equal(cloudnet_precip_flag(e$time, cls0, cloudnet_mlh_options(precip_rule = "rain_detected"))$precip,
+               c(FALSE, FALSE, NA, NA))
+  expect_equal(cloudnet_precip_flag(e$time, cls, cloudnet_mlh_options(precip_rule = "rain_detected"))$precip,
+               c(TRUE, TRUE, NA, NA))
   # window of 10 s: class-2 profile at 60 s outside both windows; no classification profile within 10 s of 15 s
   expect_equal(cloudnet_precip_flag(e$time, cls, cloudnet_mlh_options(precip_window_s = 10))$precip,
                c(NA, FALSE, NA, NA))
@@ -180,7 +208,14 @@ test_that("read_cloudnet_classification and the precipitation flag", {
 test_that("cloudnet_mlh_day: precipitation overrides the epsilon status", {
   d <- cloudnet_mlh_day(f_eps(), f_cls(), cloudnet_mlh_options(z_min_agl = 105))
   expect_equal(d$status, c("precipitation", "precipitation", "lowest_gate_missing", "censored_weak"))
+  expect_equal(d$status_eps, c("measured", "no_signal", "lowest_gate_missing", "censored_weak"))
+  expect_equal(d$mlh_eps_m, c(120, NA, NA, NA))
   expect_true(all(is.na(d$mlh_m)))
+  # the epsilon-only result is recovered when no profile is flagged
+  r <- cloudnet_apply_precip(d, rep(FALSE, 4))
+  expect_equal(r$status, d$status_eps)
+  expect_equal(r$mlh_m, d$mlh_eps_m)
+  expect_equal(r$censored, c(FALSE, FALSE, TRUE, TRUE))
   expect_equal(d$censored, c(FALSE, FALSE, TRUE, TRUE))
   expect_equal(d$n_expected, rep(2, 4)) # 3 profiles in the first half-hour, 1 in the second
   d0 <- cloudnet_mlh_day(f_eps(), NULL, cloudnet_mlh_options(z_min_agl = 105))
@@ -240,6 +275,15 @@ test_that("cloudnet_mlh_halfhour: coverage, censored majority and partly censore
   h <- cloudnet_mlh_halfhour(mk_prof(c(rep("measured", 3), rep("censored_weak", 3)), mlh = c(200, 300, 900)), o)
   expect_equal(h$pblh_m, 300)
   expect_equal(h$qc_flag, 2L)
+  # signal-limited: 4 of 6 measured profiles ended at a missing gate -> qc 3, value kept
+  p <- mk_prof(rep("measured", 6), mlh = c(200, 300, 400, 500, 600, 700))
+  p$gap_in_column <- c(TRUE, TRUE, TRUE, TRUE, FALSE, FALSE)
+  h <- cloudnet_mlh_halfhour(p, o)
+  expect_equal(h$qc_flag, 3L)
+  expect_equal(h$pblh_m, 450)
+  expect_equal(h$x_frac_signal_limited, 4 / 6)
+  p$gap_in_column <- c(TRUE, TRUE, TRUE, FALSE, FALSE, FALSE) # exactly half: not limited
+  expect_equal(cloudnet_mlh_halfhour(p, o)$qc_flag, 0L)
   # coverage capped at 1
   h <- cloudnet_mlh_halfhour(mk_prof(rep("measured", 15), mlh = 300), o)
   expect_equal(h$x_coverage, 1)
