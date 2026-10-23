@@ -19,15 +19,20 @@ icos_cols <- list(
     "H_F_MDS", "H_F_MDS_QC", "H_CORR", "NIGHT", "SW_IN_POT", "WS_F", "P_F"
   ),
   meteo = c(
-    "TIMESTAMP_START", "TIMESTAMP_END", "TA", "PA", "P", "SW_IN", "WS",
-    paste0("TA_", 1:10)
+    "TIMESTAMP_START", "TIMESTAMP_END", "TA", "PA", "P", "SW_IN", "WS"
   )
 )
+
+# METEO air-temperature profile: TA_<n>. Each station has its own number of
+# levels (G, 2026-10-23; BE-Bra 10, FI-Hyy 9): the levels are detected from the
+# file header, never taken from a fixed list.
+icos_ta_profile_re <- "^TA_[0-9]+$"
 
 # Declared units of the raw columns handled at the reader boundary.
 # T_SONIC is already in K in the L2 FLUXES files (checked on BE-Bra, spec 01):
 # not converted, only renamed T_SONIC_K.
-icos_degc_cols <- c("TA_F", "TA", paste0("TA_", 1:10))
+icos_degc_cols <- c("TA_F", "TA") # plus the TA_<n> profile columns (icos_is_degc())
+icos_is_degc <- function(x) x %in% icos_degc_cols | grepl(icos_ta_profile_re, x)
 icos_kelvin_cols <- c("T_SONIC")
 icos_kpa_cols <- c("PA_F", "PA")
 # H2O (FLUXES): water vapour mole fraction of wet air [mmol mol-1]; checked, not converted (spec 03).
@@ -105,21 +110,33 @@ icos_time_to_utc <- function(x, utc_offset_h) {
 #' @param cols Columns to read [character].
 #' @param utc_offset_h Site UTC offset [h, local standard time minus UTC].
 #' @param label File label for messages [character].
+#' @param optional_pattern Regular expression of further columns read when
+#'   present in the file header (e.g. the METEO TA profile); absent ones give no
+#'   warning [character or `NULL`].
 #' @return Tibble on a complete 30-min grid with `timestamp_start_utc`,
 #'   `timestamp_end_utc` [POSIXct UTC], original `TIMESTAMP_START`,
 #'   `TIMESTAMP_END` [character, local standard time; `NA` on added rows],
 #'   `.in_file` [logical, row present in the file], and the data columns
 #'   (unit-converted columns renamed with `_K` / `_PA`). Attribute `read_info`:
-#'   one-row tibble with file, period, row counts and missing columns.
-read_icos_csv <- function(path, cols, utc_offset_h, label = basename(path)) {
+#'   one-row tibble with file, period, row counts, missing columns and
+#'   `optional_cols` (columns found with `optional_pattern`).
+read_icos_csv <- function(path, cols, utc_offset_h, label = basename(path), optional_pattern = NULL) {
   if (length(utc_offset_h) != 1 || is.na(utc_offset_h)) {
     cli::cli_abort("{.arg utc_offset_h} must be a single non-missing value [h].")
   }
   if (!file.exists(path)) cli::cli_abort("File not found: {.path {path}}")
 
+  opt_cols <- character()
+  if (!is.null(optional_pattern)) {
+    header <- names(readr::read_csv(path, n_max = 0, col_types = readr::cols(.default = "c"),
+                                    show_col_types = FALSE, progress = FALSE))
+    opt_cols <- setdiff(grep(optional_pattern, header, value = TRUE), cols)
+    num <- suppressWarnings(as.integer(sub("^\\D*", "", opt_cols)))
+    opt_cols <- opt_cols[order(num, opt_cols)]
+  }
   d <- readr::read_csv(
     path,
-    col_select = dplyr::any_of(cols),
+    col_select = dplyr::any_of(c(cols, opt_cols)),
     col_types = readr::cols(
       .default = readr::col_double(),
       TIMESTAMP_START = readr::col_character(),
@@ -187,7 +204,8 @@ read_icos_csv <- function(path, cols, utc_offset_h, label = basename(path)) {
     last_start_utc = max(d$timestamp_start_utc),
     n_rows_file = n_file,
     n_rows_added = nrow(d) - n_file,
-    missing_cols = paste(missing_cols, collapse = ", ")
+    missing_cols = paste(missing_cols, collapse = ", "),
+    optional_cols = paste(opt_cols, collapse = ", ")
   )
   d
 }
@@ -209,7 +227,8 @@ complete_halfhour_grid <- function(d, label) {
 # Unit sanity check on raw columns: abort if the median of a column is outside
 # the plausible range of its declared unit (icos_unit_median_ranges).
 check_icos_units <- function(d, label) {
-  declared <- list(degC = icos_degc_cols, K = icos_kelvin_cols, kPa = icos_kpa_cols, mmol_mol = icos_mmolmol_cols)
+  declared <- list(degC = names(d)[icos_is_degc(names(d))], K = icos_kelvin_cols, kPa = icos_kpa_cols,
+                   mmol_mol = icos_mmolmol_cols)
   for (u in names(declared)) {
     rng <- icos_unit_median_ranges[[u]]
     for (v in intersect(declared[[u]], names(d))) {
@@ -229,7 +248,7 @@ check_icos_units <- function(d, label) {
 
 # Unit conversion at the reader boundary; columns renamed with unit suffix.
 convert_icos_units <- function(d) {
-  for (v in intersect(icos_degc_cols, names(d))) {
+  for (v in names(d)[icos_is_degc(names(d))]) {
     d[[v]] <- d[[v]] + 273.15 # degC -> K (SI definition, 0 degC = 273.15 K)
     names(d)[names(d) == v] <- paste0(v, "_K")
   }
@@ -304,10 +323,12 @@ read_icos_fluxnet <- function(path, utc_offset_h) {
 #' @return Tibble on a complete 30-min grid (see [read_icos_csv()]), data columns
 #'   prefixed `met_`: `met_TA_K` air temperature [K]; `met_PA_PA` air pressure
 #'   [Pa]; `met_P` precipitation [mm]; `met_SW_IN` incoming shortwave radiation
-#'   [W m-2]; `met_WS` wind speed [m s-1]; `met_TA_1_K` ... `met_TA_10_K`
-#'   temperature profile [K]; plus the time columns and `src_meteo` [logical].
+#'   [W m-2]; `met_WS` wind speed [m s-1]; `met_TA_<n>_K` temperature profile [K],
+#'   levels detected from the file header (station-specific; listed in
+#'   `read_info$optional_cols`)
+#'   plus the time columns and `src_meteo` [logical].
 read_icos_meteo <- function(path, utc_offset_h) {
-  d <- read_icos_csv(path, icos_cols$meteo, utc_offset_h, label = "METEO")
+  d <- read_icos_csv(path, icos_cols$meteo, utc_offset_h, label = "METEO", optional_pattern = icos_ta_profile_re)
   info <- attr(d, "read_info")
   d <- prefix_cols(d, "met_")
   names(d)[names(d) == ".in_file"] <- "src_meteo"

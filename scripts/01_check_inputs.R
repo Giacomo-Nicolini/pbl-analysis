@@ -35,11 +35,13 @@ for (site_id in site_ids) {
   info_print <- dplyr::transmute(
     info, file,
     first_start = fmt_t(first_start_utc), last_start = fmt_t(last_start_utc),
-    n_rows_file, n_rows_added, n_rows_outside_ref, missing_cols
+    n_rows_file, n_rows_added, n_rows_outside_ref, missing_cols, optional_cols
   )
   print_tbl(info_print)
+  ta_lev <- info$optional_cols[info$file == "METEO"]
+  cli::cli_inform("METEO TA profile levels found in the file header: {if (length(ta_lev) && nzchar(ta_lev)) ta_lev else 'none'}.")
   cli::cli_inform(c(
-    "Merged: {nrow(d)} half-hours, {fmt_t(min(d$timestamp_start_utc))} to {fmt_t(max(d$timestamp_start_utc))}.",
+    "Merged:{nrow(d)} half-hours, {fmt_t(min(d$timestamp_start_utc))} to {fmt_t(max(d$timestamp_start_utc))}.",
     "Rows present in: FLUXES {sum(d$src_fluxes)}, FLUXNET {sum(d$src_fluxnet)}, METEO {sum(d$src_meteo)}; in none: {sum(!(d$src_fluxes | d$src_fluxnet | d$src_meteo))}."
   ))
 

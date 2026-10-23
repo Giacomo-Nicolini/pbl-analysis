@@ -62,8 +62,11 @@ test_that("FLUXNET: kPa -> Pa, prefix fn_, QC columns untouched", {
   expect_true(all(c("TIMESTAMP_START", "timestamp_start_utc", "src_fluxnet") %in% names(d)))
 })
 
-test_that("METEO: missing optional column gives a warning, not an error", {
-  expect_warning(d <- q(read_icos_meteo(f_meteo, 1)), "TA_10")
+test_that("METEO: TA profile levels detected from the header, no warning for absent levels", {
+  expect_no_warning(d <- q(read_icos_meteo(f_meteo, 1)))
+  expect_equal(attr(d, "read_info")$optional_cols, paste0("TA_", 1:9, collapse = ", "))
+  expect_equal(attr(d, "read_info")$missing_cols, "")
+  expect_equal(d$met_TA_9_K[1], 1.9 + 273.15)
   expect_equal(nrow(d), 8)
   expect_true(is.na(d$met_TA_K[3])) # -9999.0
   expect_equal(d$met_TA_K[1], 275.15)
