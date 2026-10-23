@@ -11,10 +11,12 @@ default:
   era5_static_dir: "data/raw/era5_single_levels"       # static fields, all stations and variables in one folder
   target_areas_dir: "data/raw/target_areas"
   cleanset_file: "data/{site}_cleanset.csv" # ETC cleanset (local diagnostic, spec 03; optional, never committed)
+  cloudnet_dir: "data/raw/cloudnet/{site}"   # ACTRIS/Cloudnet daily files (spec 07); {site} = ICOS station code
   standard_dir: "data/standard"
   derived_dir: "data/derived"
   output_dir: "output"
   sites_file: "config/sites.csv"
+  measured_sites_file: "config/measured_sites.csv"   # ICOS site x measured PBLH source (spec 07)
   sites_timevarying_file: "config/sites_timevarying.csv"
   exclusions_file: "config/exclusion_periods.csv"
   test_sites: ["BE-Bra"]
@@ -25,10 +27,12 @@ cluster:
   era5_pl_dir: "LOCAL"
   era5_static_dir: "LOCAL"   # one folder per variable: path ending in {var}
   target_areas_dir: "TODO"
+  cloudnet_dir: "LOCAL"
   standard_dir: "TODO"
   derived_dir: "TODO"
   output_dir: "TODO"
   sites_file: "config/sites.csv"
+  measured_sites_file: "config/measured_sites.csv"   # ICOS site x measured PBLH source (spec 07)
   sites_timevarying_file: "config/sites_timevarying.csv"
   exclusions_file: "config/exclusion_periods.csv"
   test_sites: ~

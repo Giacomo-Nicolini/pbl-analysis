@@ -81,6 +81,21 @@ match_halfhours_to_accum <- function(hh, hours_utc, value_col, require_both = TR
   dplyr::tibble(timestamp_utc = hours_utc, value = val, n_samples = as.integer(n))
 }
 
+#' Hour bin centred on the full hour, from the interval midpoint
+#'
+#' Bin `h` holds the values whose interval midpoint lies in [h - 30 min, h + 30 min)
+#' (spec 07, G 2026-10-23: values at the interval midpoint). Half-hours starting
+#' at 11:30 and 12:00 (midpoints 11:45, 12:15) fall in bin 12, like an ERA5
+#' instantaneous value at 12:00 and the hourly matching of
+#' [match_halfhours_to_hours()].
+#'
+#' @param t_mid Interval midpoints [POSIXct UTC] (half-hour: start + 15 min;
+#'   instantaneous: the time itself).
+#' @return Hour of the centred bin [0-23].
+hour_bin_centred <- function(t_mid) {
+  as.integer(format(t_mid + 1800, "%H", tz = "UTC"))
+}
+
 #' Meteorological season of a UTC time
 #'
 #' @param t Times [POSIXct UTC].

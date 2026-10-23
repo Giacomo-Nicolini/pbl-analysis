@@ -18,6 +18,7 @@ cluster:
   era5_sl_dir: "/path/to/era5/ERA5_surface_single_level/{site}"          # hourly single levels
   era5_pl_dir: "/path/to/era5/ERA5_pressure_levels/{site}"               # 6-hourly pressure levels
   era5_static_dir: "/path/to/era5_static/{var}"                          # one folder per static variable
+  cloudnet_dir: "/path/to/cloudnet/{site}"                               # ACTRIS/Cloudnet daily files (spec 07)
   # Still TODO in config.yml (set them here when known):
   # target_areas_dir: "/path/to/target_areas"
   # standard_dir: "/path/to/standard"

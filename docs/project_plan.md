@@ -15,6 +15,13 @@ Status: agreed design, v0.1 (2026-10-08). Living document: update as decisions c
 - Sites: ICOS ecosystem stations only, for now.
 - Language: R (a Python port is possible later; keep the logic language-agnostic and well documented).
 - Execution: developed locally (Windows, VS Code), run on the Unitus cluster.
+- Sources compared (G, 2026-10-23): the evaluation (phases 3–4) compares **PBLHmod, ERA5 and measured PBLH only**.
+  The operational ICOS PBLH (`icos_oper`) is used only in the phase-1 regression (operational vs PBLHmod v2,
+  spec 03); it is not part of the three-way comparison, its figures or its tables. The FI-Hyy spec-07 results that
+  include it are kept as a reference test.
+- ERA5 in figures (G, 2026-10-23): tower cell only (`era5_blh_center`). The bilinear values (`era5_blh_bilinear`)
+  appear in the numerical results (tables) only; at FI-Hyy the two differ very little (convective pair vs measured:
+  bias +111 vs +113 m, median log ratio +0.32 both), which is itself a result to report.
 
 ## Phases
 
@@ -85,6 +92,19 @@ Different classes measure different "tops". The approach:
 
 The class is therefore not a stratum to compare against other classes; it tells which comparison is valid in which regime.
 
+**Distance rule for measured PBLH** (G, 2026-10-22; applied in code via `distance_km` in `config/measured_sites.csv`
+and `distance_class()`): < 5 km all regimes; 5–25 km daytime convective only; 25–50 km daytime climatologies only;
+> 50 km not used. BE-Bra has no usable measurement within 50 km (Uccle ≈ 58 km, Diepenbeek ≈ 74 km, Cabauw ≈ 78 km).
+
+**Censored measurements** (spec 07, G 2026-10-23). A turbulence-based MLH from Doppler-lidar ε has three kinds of
+values: exact (qc 0/2), censored below the lowest reliable gate z_min (qc 1, value in (0, z_min]) and signal-limited
+(qc 3, the search ended at a gate without signal: a lower bound, value in [MLH, ∞)). Metrics (bias, log ratio, …)
+are computed on exact values only; qc 1 and qc 3 are summarised separately (share of model values ≤ z_min, share
+below the bound and median model/bound ratio). Diurnal cycles use censored medians (Turnbull estimator,
+`survival::survfit`, `Surv(type = "interval2")`) next to the plain median of exact values. Because the deep daytime
+layers are mostly signal-limited in clean air, the exact values over-represent shallow layers: metrics on exact
+values alone are biased towards "models too deep".
+
 ## ERA5 representativeness
 
 1. Site metadata includes: ERA5 cell centre and distance to site, site elevation vs ERA5 model orography, land–sea fraction of the cell, subgrid orography std (ERA5 `sdor`), and a terrain-complexity class.
@@ -114,7 +134,15 @@ The class is therefore not a stratum to compare against other classes; it tells 
 
 - ICOS L2 FLUXES: `H`, `USTAR`, `MO_LENGTH`, `ZL`, `T_SONIC`, `WS`, `WD`, `V_SIGMA`, `PBLH` (legacy operational output), `FETCH_*`, `FOOTPRINT_*`, QC flags.
 - ICOS L2 FLUXNET: `TA_F`, `PA_F` (kPa), `H_F_MDS`, `H_CORR`, `NIGHT`, `SW_IN_POT`, `WS_F`, `P_F`.
-- ICOS L2 METEO: `TA` and `TA_1..10` profile, `P`, `SW_IN`. Optional; the temperature profile may help at tall towers.
+- ICOS L2 METEO: `TA` and the `TA_<n>` profile (station-specific number of levels, detected from the file header:
+  BE-Bra 10, FI-Hyy 9), `P`, `SW_IN`. Optional; the temperature profile may help at tall towers.
+- Measured PBLH (spec 07): ACTRIS/Cloudnet (CC BY 4.0, API https://cloudnet.fmi.fi/api), pairs in
+  `config/measured_sites.csv`: FI-Hyy–hyytiala (0.56 km, Doppler lidar HALO 46, `epsilon-lidar` 2022-01 → 2024-04),
+  FI-Lom–kenttarova (1.81 km, ε 2022-08 → 2023-12 and from 2026-04), DE-RuS–juelich (5.26 km: daytime convective only,
+  ε from 2023-04), SE-Nor–norunda (0.06 km, CL51 ceilometer only: aerosol, no MLH product; primary route PI data),
+  FR-Gri–palaiseau (23.56 km: daytime convective only, ε from 2025-01). Inventory: `scripts/07a_cloudnet_inventory.R`.
+  PI data requested by G for the atmosphere stations next to SE-Htm, SE-Nor, SE-Svb, FI-Hyy, CZ-BK1 (list and contacts
+  kept locally in `docs/local/sites_PBLH_measure.txt`).
 - ERA5 (0.25°, tower cell + 8 neighbours, 2020-01-01 → 2026-10-07; formats and conventions in `CLAUDE.md`):
   - hourly `boundary_layer_height` (instantaneous; bulk Richardson diagnostic, Ri_c = 0.25), `cloud_base_height`,
     `surface_sensible_heat_flux` (hourly accumulation, J m-2, positive downward);
@@ -198,7 +226,27 @@ The class is therefore not a stratum to compare against other classes; it tells 
     gap-filled H_F_MDS (QC ≤ 1) while H_UNCLEANED is negative.~~ Handled in the model by spec 06 amendment 2 (L check
     in daytime only; 0 night replacements). Still in the ETC QC report list (below).
 - Source of zm, d, z0 and target area per site.
-- Measured PBLH datasets: to be collected; open data candidates: ACTRIS/Cloudnet, E-PROFILE, IGRA radiosondes.
+- Measured PBLH datasets: Cloudnet ε MLH at FI-Hyy done (spec 07); other Cloudnet sites next (cluster); further open
+  data candidates: E-PROFILE, IGRA radiosondes; PI data requested (see "Inputs").
+- Spec 07 at FI-Hyy, points to discuss: (a) "shallow too deep / deep too shallow": where the lidar MLH is below
+  105 m, PBLHmod is ≤ 105 m on only 26 % of half-hours (ERA5 24 %); where it is only a lower bound, PBLHmod is below
+  the bound on 40 % (JJA 62 %, JJA stable 85 %; ERA5 33 %, JJA 45 %); candidate finding; (b) half of the measured
+  profiles are signal-limited (clean air, low SNR at SMEAR II), so JJA daytime censored medians are not estimable;
+  (c) Cloudnet classification "drizzle/rain" near the ground on 15 % of profiles vs `rain_detected` 3.5 %: default
+  precipitation flag = `rain_detected` (G), the other rules kept as sensitivity; (d) ±31 m ground reference (Cloudnet
+  altitude 150 m vs ICOS 181 m; instruments ≈ 200 m from the main station, Sinclair et al. 2022).
+- Timing of EC vs ERA5 sensible heat (evaluation; possible error driver for the evening transition). EC timestamps
+  are correct (SW_IN_POT and EC H centred on solar noon within 4 min, Cowork 2026-10-23). With every value at its
+  interval midpoint (EC start + 15 min, ERA5 accumulation timestamp − 30 min), ERA5 H is earlier than EC H:
+  best-fit lag FI-Hyy 25–37 min, BE-Bra 16–25 min (`output/tables/07_h_timing_<site>.csv`, 2020–2025); at FI-Hyy in
+  JJA the afternoon decline is ≈ 63 min earlier, the morning rise ≈ 15–18 min (asymmetric: physical, consistent with
+  canopy heat storage at the tall forest, not a time convention). The L2 air-storage term `SH` reduces the lag
+  (FI-Hyy 12–27 min, BE-Bra −1 to 14 min) but not the FI-Hyy afternoon asymmetry (51–64 min); biomass/canopy storage
+  is not in `SH`. No change to the PBLHmod forcing for now; to examine with the evening-transition errors (PBLHmod
+  decay timing vs ERA5 and measured MLH).
+- Cloudnet ε files at Hyytiälä are volatile/experimental (2026-10); before paper results, re-check checksums against
+  the API, re-run if changed, and create a Cloudnet collection with a persistent identifier for the files used
+  (spec 07).
 - ~~Literature: the current bib is footprint-focused. A PBL collection is needed.~~ Done (2026-10-15):
   `pblh_collection.bib` (Kljun App. B references) + `pblh_literature_2026-10.bib` and annotated
   `literature_review_pblh.md`. Keep extending as papers are added to `C:\WORK\bibliography_new_win11\`.

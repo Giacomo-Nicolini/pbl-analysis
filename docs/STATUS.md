@@ -1,6 +1,6 @@
 # Project status (handover note)
 
-Last update: 2026-10-22. Read this first in a new session, then `docs/project_plan.md` and `CLAUDE.md`.
+Last update: 2026-10-23. Read this first in a new session, then `docs/project_plan.md` and `CLAUDE.md`.
 
 ## PBLH sources (names used in the code and in the standard files)
 
@@ -8,9 +8,9 @@ Last update: 2026-10-22. Read this first in a new session, then `docs/project_pl
 |---|---|---|---|
 | PBLHmod v2 | `pblhmod_default`, `pblhmod_gamma0025` | Our EC-based model (Kljun et al. 2015 App. B): stable B1 Nieuwstadt, neutral B2/B3 auto, convective B5 Batchvarova–Gryning slab daily cycle. `run_pblh_model()`, `R/pblh_*.R`; label = options case (γ = 0.01 default, 0.0025 sensitivity) | parameterisation |
 | ERA5 BLH | `era5_blh_center`, `era5_blh_bilinear` | ECMWF reanalysis diagnostic (bulk Ri = 0.25, IFS Cy41r2 §3.10.1); tower cell, or bilinear to the tower from 4 cells | model |
-| Operational ICOS PBLH | `icos_oper` | `PBLH` column of L2 FLUXES, produced by the ETC pipeline with `legacy/calc_PBL_height_operational.R` + `legacy/proc_PBL_height.R`; `qc_flag` 1 = 50 m floor, 2 = run-mean fill | parameterisation |
-| Legacy (spec 03, to come) | `legacy_<variant>` | Port of the legacy code with switches, for the regression | parameterisation |
-| Measured MLH, Cloudnet (spec 07) | `cloudnet_eps_mlh` | Surface-connected mixing from the Doppler-lidar dissipation rate ε (ε ≥ 1e-4 m² s⁻³ upward from the lowest reliable gate; Manninen et al. 2018); censored below the lowest gate (≈ 105 m) | turbulence |
+| Operational ICOS PBLH | `icos_oper` | `PBLH` column of L2 FLUXES, produced by the ETC pipeline with `legacy/calc_PBL_height_operational.R` + `legacy/proc_PBL_height.R`; `qc_flag` 1 = 50 m floor, 2 = run-mean fill. Used in the phase-1 regression only (spec 03), not in the evaluation (project plan "Scope", G 2026-10-23); script 04 compares it only with `--with-oper` | parameterisation |
+| Legacy (spec 03) | `legacy_<variant>` | Port of the operational legacy code with switches, for the regression (in `data/derived`, not a standard file) | parameterisation |
+| Measured MLH, Cloudnet (spec 07) | `cloudnet_eps_mlh` | Surface-connected mixing from the Doppler-lidar dissipation rate ε (ε ≥ 1e-4 m² s⁻³ upward from the lowest reliable gate; Manninen et al. 2018); half-hourly; `qc_flag` 0/2 exact, 1 censored below z_min (105 m at FI-Hyy), 3 signal-limited = lower bound; precipitation = Cloudnet `rain_detected` | turbulence |
 | Other measured PBLH (later) | – | PI data (SE-Htm, SE-Nor, SE-Svb, FI-Hyy, CZ-BK1 requested), ceilometer / radiosonde (E-PROFILE, IGRA) | aerosol / thermodynamic / turbulence |
 
 ## Specs
@@ -23,12 +23,13 @@ Last update: 2026-10-22. Read this first in a new session, then `docs/project_pl
 | 05 | u* plausibility filter in the PBLHmod forcing (spec 02 amendment 12); local config override (`config.local.yml`, no cluster paths in tracked files) | 1 | merged (`main`, 25ae55c) |
 | 06 | Consistency check of L2 `MO_LENGTH` against the forcing (option C, G 2026-10-21): L2 L kept where consistent (same sign, within 3×), otherwise replaced by L from the forcing and flagged (spec 02 amendment 13); checked only where the heat flux is positive (spec 06 amendment 1) and in daytime (amendment 2) | 1 | merged (`main`, 2026-10-21; amendment 2 merged 2026-10-21) |
 | 03 | Legacy regression: reproduce operational PBLH from L2 (operational code `calc_PBL_height_operational.R` + `proc_PBL_height.R`), port it, attribute differences to PBLHmod v2 (amendments 1–2) | 1 | merged (`main`, e224c4b) |
-| 07 | Cloudnet inventory (FI-Hyy, FI-Lom, DE-RuS, SE-Nor, FR-Gri); turbulence-based MLH from Doppler-lidar ε (Manninen et al. 2018) in the standard format; FI-Hyy runs (PBLHmod, ERA5) and first three-way comparison against measured MLH | 2, 3 | drafted 2026-10-22, next |
+| 07 | Cloudnet inventory (FI-Hyy, FI-Lom, DE-RuS, SE-Nor, FR-Gri); turbulence-based MLH from Doppler-lidar ε (Manninen et al. 2018) in the standard format; FI-Hyy runs (PBLHmod, ERA5) and first comparison against measured MLH (amendment 1: no operational PBLH, ERA5 tower cell in figures); reference period = FLUXES range; METEO TA levels from the header | 2, 3 | implemented on `spec-07-measured-cloudnet` (2026-10-23), to review |
 
-Phases (see `project_plan.md`): 0 done; 1 done (model, input QC, legacy regression); 2 standard format and three
-sources done (spec 04), measured PBLH started (spec 07); 3 BE-Bra done, FI-Hyy next (spec 07); 4–6 not started.
+Phases (see `project_plan.md`): 0 done; 1 done (model, input QC, legacy regression); 2 standard format, three
+sources (spec 04) and the first measured source (spec 07, FI-Hyy) done; 3 BE-Bra (vs ERA5) and FI-Hyy (vs ERA5 and
+measured MLH) done; 4–6 not started.
 
-- Tests: 787 passing (`main`, after spec 03). Environment: R 4.4.1 + renv (Posit Package
+- Tests: 968 passing (`spec-07-measured-cloudnet`). Environment: R 4.4.1 + renv (Posit Package
   Manager), same as the cluster. Machine-specific paths in the untracked `config.local.yml` (template
   `config.local.yml.example`).
 - PBLHmod defaults: `stable_method = "nieuwstadt"` (B1), `neutral_method = "auto"` (B2 if 10 < N/|f| < 70, else
@@ -56,6 +57,29 @@ sources done (spec 04), measured PBLH started (spec 07); 3 BE-Bra done, FI-Hyy n
   both 775); 618 then interpolated, 1,531 left NA. PBLHmod > 5 km: 179 → 11; > 10 km: 70 → 0. `nofilter`
   reproduces the spec-02 default (max |diff| 3.6e-12 m). Pair 1 vs ERA5: RMSE 623 → 349 m, Pearson 0.49 → 0.73,
   bias −9 → −46 m, median log ratio −0.136 → −0.151, within a factor 2 71.8 → 72.4 %.
+- Spec 07 at FI-Hyy (2026-10-23):
+  - Inputs: FLUXES/FLUXNET/METEO 2018-01 → 2026-08 (data from 2018-11-06); unit checks pass; METEO TA_1–TA_9.
+    PBLHmod default: 80 % valid, convective median 700 m (stable 315 m), u* rejected 1.8 %, L replaced 2,013, none
+    > 5 km; 2,811 values below zm = 27 m (stable nights 2,282, early-morning B&G starts 430). ERA5 tower cell 11.1 km
+    from the tower, 42 m lower. PBLHmod vs ERA5 (2020-01 → 2026-08, 51,584 h): median log ratio −0.10 (DJF +0.16,
+    JJA −0.35), 73 % within a factor 2, Spearman 0.75 (BE-Bra −0.14 / 72 % / 0.78). Operational fills
+    3316.87/2000.85 m (2018-11-06 → 2025-12-31) and 3365.22/1532.14 m (2026-01-01 → 2026-08-26), 28 % of rows.
+  - Measured MLH (Cloudnet `epsilon-lidar`, 688 days 2022-01 → 2024-04, 390 MB; classification 682 days): z_min
+    105 m agl; profiles: measured 67 %, censored ε < 1e-4 at 105 m 22 %, 105 m gate missing 6 %, no signal 1 %,
+    precipitation (`rain_detected`) 3.5 %; half of the measured profiles end at a gate without signal (clean air).
+    Half-hours (30,727): qc 0 3,171, qc 2 6,870, qc 3 (lower bound) 11,889, qc 1 (censored) 7,365, NA 1,432. JJA
+    daytime: qc 3 on 54–62 % of half-hours, so the censored median is not estimable there.
+  - Comparison on exact values (qc 0/2), convective regime: PBLHmod n 2,703, bias +202 m, median log ratio +0.44,
+    56 % within a factor 2, Spearman 0.47; ERA5 tower cell n 880, +111 m, +0.32, 69 %, 0.53 (bilinear practically
+    identical). Exact values over-represent shallow layers. Where the lidar MLH is below 105 m, PBLHmod is ≤ 105 m on
+    26 % (ERA5 24 %); where it is only a lower bound, PBLHmod is below the bound on 40 % (JJA 62 %; ERA5 33 %, JJA
+    45 %): "shallow too deep / deep too shallow", candidate finding. Outputs with the operational PBLH kept in
+    `output/*/reference_spec07_with_oper/` (and `output/tables/reference_spec04_with_oper/`).
+  - Sensible-heat timing (`scripts/07d_h_timing.R`, 2020–2025, values at interval midpoints): ERA5 H earlier than
+    EC H, best-fit lag FI-Hyy 25–37 min (JJA 37), BE-Bra 16–25 min; FI-Hyy JJA afternoon crossings ≈ 63 min earlier,
+    morning ≈ 15–18 min (asymmetric). Adding the L2 storage term `SH` (air below the EC system, ±12 W m-2 at
+    FI-Hyy) reduces the lag (FI-Hyy 12–27 min, BE-Bra −1 to 14 min) but leaves the FI-Hyy afternoon difference at
+    51–64 min. Diagnostic only (open point in `project_plan.md`).
 - Spec 04 at BE-Bra (2026-10-17): overlap 2020-10-25 → 2026-08-25; PBLHmod default vs ERA5 tower cell 50,269 matched
   hours, bias −9 m, median log ratio −0.14, 72 % within a factor 2, Spearman 0.78; stable −0.23, convective −0.07;
   JJA evenings (19–22 UTC) PBLHmod ≈ half of ERA5. Operational PBLH vs ERA5: median log ratio +0.57 (qc 0).
@@ -87,12 +111,14 @@ sources done (spec 04), measured PBLH started (spec 07); 3 BE-Bra done, FI-Hyy n
      stable formula −46 m; the last step equals pblhmod_default (residual 4.6e-13 m). On all valid rows the fill
      (−383 m) and forcing (±160–190 m) effects are row-set changes, not value changes. `at_meteo` (sonic temperature
      offset): negligible.
-5. Spec 07 — `docs/specs/07_measured_pblh_cloudnet.md`, branch `spec-07-measured-cloudnet`. Measured PBLH first
-   (G, 2026-10-22), FI-Hyy first (co-located with Cloudnet Hyytiälä; HALO Doppler lidar, `epsilon-lidar` product).
-   G places the FI-Hyy ICOS L2 and ERA5 files under `data/raw/`. Distance rule for measured PBLH: < 5 km all regimes;
-   ≤ 25 km daytime convective only; 25–50 km daytime climatologies only; > 50 km not used. BE-Bra has no usable
-   measurement within 50 km (Uccle ≈ 58 km, Diepenbeek ≈ 74 km, Cabauw ≈ 78 km).
-6. After spec 07: the other Cloudnet sites (on the cluster), PI data into the standard format, ETC QC report.
+5. Spec 07 — implemented on `spec-07-measured-cloudnet` (2026-10-23), to review and merge. Scripts: 07a inventory,
+   07b download (size report first, `--confirm`; `--match=PRODUCT`), 07c MLH (profiles in `data/derived/cloudnet/`,
+   standard file, sensitivity columns), 07 comparison, 07d sensible-heat timing; 04 with optional `--with-oper`.
+   Diurnal figures place every value at its interval midpoint (hour bins centred on the full hour). Distance rule and censoring
+   convention in `project_plan.md`; Cloudnet facts in `CLAUDE.md`; example in `docs/specs/standard_format.md`.
+6. After spec 07: the other Cloudnet sites (FI-Lom, DE-RuS, FR-Gri; on the cluster), PI data into the standard
+   format, ETC QC report. Before paper results: re-check the volatile Cloudnet files and create a Cloudnet collection
+   (open point in `project_plan.md`).
 
 ## Data
 
@@ -103,16 +129,19 @@ SE-Myc uses the corrected coordinates; all stations structured like BE-Bra. BE-B
 tower, orography 8.9 m, lsm 0.96, sdor 7.6 m.
 
 Literature: `docs/references/literature_review_pblh.md`, `pblh_literature_2026-10.bib` (~50 verified papers),
-`pblh_collection.bib`. Key papers and ECMWF IFS Cy41r2 Part IV downloaded; second-wave papers: G will notify.
+`pblh_collection.bib`. Key papers and ECMWF IFS Cy41r2 Part IV downloaded; second-wave papers checked against the PDFs (2026-10-22; Durre2008 from Crossref only, no PDF).
 Novelty check: no published network-scale evaluation of EC-derived PBLH against ERA5 and measurements.
 
-L2 data issues found so far (implausible USTAR, MO_LENGTH kept where H is QC-rejected, positive night-time H_F_MDS
-in winter 2022–23, sonic temperature offset) are collected for the ETC QC report in `docs/local/etc_qc_report.md`
-(local working file, not tracked); all open.
+FI-Hyy (spec 07): ICOS L2 (FLUXES, FLUXNET 2018–2026, METEO) and ERA5 (three families) under `data/raw/`; Cloudnet
+Hyytiälä `epsilon-lidar` and `classification` under `data/raw/cloudnet/FI-Hyy/` (with provenance tables).
+
+L2 data issues found so far (BE-Bra: implausible USTAR, MO_LENGTH kept where H is QC-rejected, positive night-time
+H_F_MDS in winter 2022–23, sonic temperature offset, latent pipeline bug; FI-Hyy: USTAR up to 189 m s-1 and WS
+median 122 m s-1 on cap rows, T_SONIC 6–220 K in winter, L2 PBLH up to 309 km and 28 % run-mean fills) are
+collected for the ETC QC report in `docs/local/etc_qc_report.md` (local working file, not tracked); all open.
 
 ## Waiting on others
 
-- Second-wave papers (G).
 - Relaxed FFP validity thresholds used at ETC (for the phase-5 spec).
 - Verification of forest canopy-height jumps (FR-Fon, FR-Hes, SE-Svb).
 

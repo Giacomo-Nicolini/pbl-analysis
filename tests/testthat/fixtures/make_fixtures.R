@@ -1,12 +1,12 @@
-# Rebuild the synthetic ICOS L2 and ERA5 test fixtures (tiny, no real data).
-# Run from the project root: Rscript tests/testthat/fixtures/make_fixtures.R [icos] [era5]
-# (no argument = both parts; rebuilding the ICOS zips changes their bytes even
+# Rebuild the synthetic ICOS L2, ERA5 and Cloudnet test fixtures (tiny, no real data).
+# Run from the project root: Rscript tests/testthat/fixtures/make_fixtures.R [icos] [era5] [cloudnet]
+# (no argument = all parts; rebuilding the ICOS zips changes their bytes even
 # when the content is unchanged, so rebuild only the part you need).
 # Requires a `zip` program for utils::zip() (on Windows: Rtools).
 # Synthetic site XX-Tst, UTC+1.
 
 parts <- commandArgs(trailingOnly = TRUE)
-if (length(parts) == 0) parts <- c("icos", "era5")
+if (length(parts) == 0) parts <- c("icos", "era5", "cloudnet")
 
 fx <- here::here("tests", "testthat", "fixtures")
 site <- "XX-Tst"
@@ -217,6 +217,83 @@ if ("era5" %in% parts) {
   }
   # Another station in the shared static folder: silently ignored.
   writeLines("# other station", st_file("XX-Oth", "z", 0, 0))
+}
+
+# ---- Cloudnet API, /api/files response (spec 07): synthetic, structure as the real API ----
+# 4 files: 2 epsilon-lidar days in 2022-01 (one volatile), 1 in 2022-03 (legacy), 1 of another instrument.
+if ("cloudnet" %in% parts) {
+  cn_dir <- file.path(fx, "cloudnet")
+  dir.create(cn_dir, recursive = TRUE, showWarnings = FALSE)
+  mk <- function(uuid, date, inst, pid, size, volatile, legacy, cov) {
+    list(
+      uuid = uuid, filename = paste0(gsub("-", "", date), "_testsite_epsilon-lidar_", substr(uuid, 1, 8), ".nc"),
+      version = if (volatile) "" else "v1", pid = if (volatile) "" else paste0("https://hdl.handle.net/x/", uuid),
+      volatile = volatile, legacy = legacy, measurementDate = date,
+      checksum = strrep(substr(uuid, 1, 1), 64), size = as.character(size), coverage = cov,
+      format = "HDF5 (NetCDF4)", errorLevel = "info",
+      site = list(id = "testsite", latitude = 50.0, longitude = 10.0, altitude = 100),
+      product = list(id = "epsilon-lidar", humanReadableName = "Turbulence (lidar)"),
+      instrument = list(uuid = paste0(inst, "-uuid"), pid = pid, name = inst, type = "Doppler lidar"),
+      downloadUrl = paste0("https://example.invalid/api/download/product/", uuid, ".nc")
+    )
+  }
+  files <- list(
+    mk("aaaa0001", "2022-01-01", "TEST HALO 1", "https://hdl.handle.net/x/halo1", 1000000, FALSE, FALSE, 0.5),
+    mk("bbbb0002", "2022-01-02", "TEST HALO 1", "https://hdl.handle.net/x/halo1", 2000000, TRUE, FALSE, 0.25),
+    mk("cccc0003", "2022-03-05", "TEST HALO 1", "https://hdl.handle.net/x/halo1", 500000, FALSE, TRUE, 1),
+    mk("dddd0004", "2022-01-02", "TEST HALO 2", "https://hdl.handle.net/x/halo2", 300000, FALSE, FALSE, 0.1)
+  )
+  jsonlite::write_json(files, file.path(cn_dir, "api_files_sample.json"), auto_unbox = TRUE, pretty = TRUE)
+
+  # epsilon-lidar file (structure of the Hyytiala files): 6 gates, centres 165..315 m a.s.l. (30 m spacing),
+  # altitude 150 m (centres 15..165 m agl); 4 profiles at 00:00:15, 00:00:30, 00:20:00, 00:40:00 UTC.
+  # Profile 1: eps >= 1e-4 at 15..105 m agl (gates 1-4), then 5e-5 -> MLH 120 m (gates below z_min used only
+  # if z_min is lower); profile 2: all missing; profile 3: gate 4 (105 m) missing, gate 5 valid;
+  # profile 4: gate 4 = 1e-5 (weak).
+  fill <- 9.96920996838687e+36
+  eps <- matrix(fill, nrow = 6, ncol = 4)
+  eps[, 1] <- c(fill, fill, fill, 2e-4, 5e-5, 1e-3)
+  eps[, 3] <- c(fill, fill, fill, fill, 3e-4, 3e-4)
+  eps[, 4] <- c(fill, fill, fill, 1e-5, 2e-4, 2e-4)
+  dim_t <- ncdf4::ncdim_def("time", "hours since 2022-01-01 00:00:00 +00:00", c(15, 30, 1200, 2400) / 3600)
+  dim_z <- ncdf4::ncdim_def("height", "m", 165 + 30 * (0:5))
+  v_eps <- ncdf4::ncvar_def("epsilon", "m2 s-3", list(dim_z, dim_t), missval = fill, prec = "float")
+  v_alt <- ncdf4::ncvar_def("altitude", "m", list(), prec = "float")
+  v_roll <- ncdf4::ncvar_def("rolling_window_period", "s", list(), prec = "float")
+  f_eps <- file.path(cn_dir, "20220101_testsite_epsilon-lidar_aaaa0001.nc")
+  unlink(f_eps)
+  nc <- ncdf4::nc_create(f_eps, list(v_eps, v_alt, v_roll), force_v4 = TRUE)
+  ncdf4::ncvar_put(nc, v_eps, eps)
+  ncdf4::ncvar_put(nc, v_alt, 150)
+  ncdf4::ncvar_put(nc, v_roll, 180)
+  ncdf4::ncatt_put(nc, "height", "standard_name", "height_above_mean_sea_level")
+  ncdf4::ncatt_put(nc, 0, "file_uuid", "aaaa0001-test")
+  ncdf4::ncatt_put(nc, 0, "instrument_pid", "https://hdl.handle.net/x/halo1")
+  ncdf4::ncatt_put(nc, 0, "references", "https://doi.org/10.1175/2010JTECHA1455.1")
+  ncdf4::nc_close(nc)
+
+  # classification file: 3 gates at 252, 300, 600 m a.s.l. (102, 150, 450 m agl), 5 profiles every 30 s from
+  # 00:00:00; precipitation (class 2) at 150 m agl at 00:01:00 only; class 2 at 450 m agl at 00:00:00 (above
+  # the checked layer); cloud base 1150 m a.s.l. at 00:00:00 and 00:00:30, none after; rain_detected at 00:01:30.
+  tc <- matrix(0L, nrow = 3, ncol = 5)
+  tc[3, 1] <- 2L
+  tc[2, 3] <- 2L
+  dim_tc <- ncdf4::ncdim_def("time", "hours since 2022-01-01 00:00:00 +00:00", c(0, 30, 60, 90, 120) / 3600)
+  dim_zc <- ncdf4::ncdim_def("height", "m", c(252, 300, 600))
+  v_tc <- ncdf4::ncvar_def("target_classification", "1", list(dim_zc, dim_tc), missval = -2147483647L, prec = "integer")
+  v_cb <- ncdf4::ncvar_def("cloud_base_height_amsl", "m", list(dim_tc), missval = fill, prec = "float")
+  v_rd <- ncdf4::ncvar_def("rain_detected", "1", list(dim_tc), missval = -2147483647L, prec = "integer")
+  v_altc <- ncdf4::ncvar_def("altitude", "m", list(dim_tc), prec = "float")
+  f_cls <- file.path(cn_dir, "20220101_testsite_classification.nc")
+  unlink(f_cls)
+  nc <- ncdf4::nc_create(f_cls, list(v_tc, v_cb, v_rd, v_altc), force_v4 = TRUE)
+  ncdf4::ncvar_put(nc, v_tc, tc)
+  ncdf4::ncvar_put(nc, v_cb, c(1150, 1150, NA, NA, NA))
+  ncdf4::ncvar_put(nc, v_rd, c(0L, 0L, 0L, 1L, 0L))
+  ncdf4::ncvar_put(nc, v_altc, rep(150, 5))
+  ncdf4::ncatt_put(nc, "height", "standard_name", "height_above_mean_sea_level")
+  ncdf4::ncatt_put(nc, 0, "file_uuid", "cls0001-test")
+  ncdf4::nc_close(nc)
 }
 
 message("Fixtures written to ", fx, " (parts: ", paste(parts, collapse = ", "), ")")
