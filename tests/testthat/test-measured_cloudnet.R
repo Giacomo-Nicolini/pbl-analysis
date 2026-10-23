@@ -184,16 +184,17 @@ test_that("read_cloudnet_classification and the precipitation flag", {
   # column rule without rain_detected: aloft only (column up to 120 m) vs in column (up to 200 m)
   cls0 <- cls
   cls0$rain_detected[] <- FALSE
-  p120 <- cloudnet_precip_flag(e$time, cls0, cloudnet_mlh_options(), top_agl = 120, bottom_agl = 90)
+  p120 <- cloudnet_precip_flag(e$time, cls0, cloudnet_mlh_options(precip_rule = "column"), top_agl = 120, bottom_agl = 90)
   expect_equal(p120$precip, c(FALSE, FALSE, NA, NA))
   expect_equal(p120$precip_category, c("aloft_only", "aloft_only", NA, NA))
-  p200 <- cloudnet_precip_flag(e$time, cls0, cloudnet_mlh_options(), top_agl = c(200, 120, 0, 0), bottom_agl = 90)
+  p200 <- cloudnet_precip_flag(e$time, cls0, cloudnet_mlh_options(precip_rule = "column"), top_agl = c(200, 120, 0, 0), bottom_agl = 90)
   expect_equal(p200$precip, c(TRUE, FALSE, NA, NA))
   expect_equal(p200$precip_category, c("in_column", "aloft_only", NA, NA))
   # bottom above the precipitation gates: not in the column
-  expect_equal(cloudnet_precip_flag(e$time, cls0, cloudnet_mlh_options(), top_agl = 200, bottom_agl = 500)$precip,
+  expect_equal(cloudnet_precip_flag(e$time, cls0, cloudnet_mlh_options(precip_rule = "column"), top_agl = 200, bottom_agl = 500)$precip,
                c(FALSE, FALSE, NA, NA))
-  # rain_detected-only rule
+  # rain_detected-only rule (default, G 2026-10-23)
+  expect_equal(cloudnet_mlh_options()$precip_rule, "rain_detected")
   expect_equal(cloudnet_precip_flag(e$time, cls0, cloudnet_mlh_options(precip_rule = "rain_detected"))$precip,
                c(FALSE, FALSE, NA, NA))
   expect_equal(cloudnet_precip_flag(e$time, cls, cloudnet_mlh_options(precip_rule = "rain_detected"))$precip,

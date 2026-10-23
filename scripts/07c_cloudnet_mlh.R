@@ -91,6 +91,7 @@ for (k in seq_along(days)) {
   pbr <- cloudnet_mlh_profiles(e$eps, e$height_agl, e$gate_m, utils::modifyList(opts, list(bridge_single_gap = TRUE)))
   p$status_bridged <- pbr$status
   p$mlh_bridged_m <- pbr$mlh_m
+  sens[[k]] <- list(bridge = redo(pbr))
   # Sensitivity: heights above ground with the ICOS altitude. (a) z_min follows the same gate (z_min - offset);
   # (b) z_min stays at the same height above ground (another gate).
   if (!is.na(alt_icos) && !is.null(opts$z_min_agl)) {
@@ -98,7 +99,8 @@ for (k in seq_along(days)) {
     off <- alt_icos - e$altitude_m
     pa <- cloudnet_mlh_profiles(e$eps, e$height_agl, e$gate_m, utils::modifyList(opts, list(z_min_agl = opts$z_min_agl - off)))
     pb <- cloudnet_mlh_profiles(e$eps, e$height_agl, e$gate_m, opts)
-    sens[[k]] <- list(a = redo(pa), b = redo(pb), bridge = redo(pbr))
+    sens[[k]]$a <- redo(pa)
+    sens[[k]]$b <- redo(pb)
   }
   prof[[k]] <- p
   if (k %% 100 == 0) cli::cli_inform("{k} / {length(days)} days processed.")
@@ -118,6 +120,17 @@ cli::cli_alert_success("Profiles written: {.path {prof_file}} ({nrow(prof)} rows
 
 # --- Half-hours and standard file ---
 hh <- cloudnet_mlh_halfhour(prof, opts)
+# Sensitivity cases as extra columns of the same half-hours (G 2026-10-23): precipitation rules "column" and
+# "strict" (<= precip_top_agl), and single-gap bridging.
+add_sens <- function(hh, hv, tag) {
+  m <- match(hh$timestamp_start_utc, hv$timestamp_start_utc)
+  hh[[paste0("x_pblh_m_", tag)]] <- hv$pblh_m[m]
+  hh[[paste0("x_qc_flag_", tag)]] <- hv$qc_flag[m]
+  hh
+}
+hh <- add_sens(hh, cloudnet_mlh_halfhour(cloudnet_apply_precip(prof, prof$precip_column), opts), "precip_column")
+hh <- add_sens(hh, cloudnet_mlh_halfhour(cloudnet_apply_precip(prof, prof$precip_strict), opts), "precip_strict")
+hh <- add_sens(hh, cloudnet_mlh_halfhour(dplyr::bind_rows(lapply(sens, `[[`, "bridge")), opts), "bridged")
 inst <- unique(prov_eps[, c("instrument_name", "instrument_pid")])
 z_used <- sort(unique(prof$z_min_m))
 files_tab <- dplyr::bind_rows(
@@ -155,9 +168,12 @@ info <- list(
     opts$eps_surface, " m2 s-3, z_min = ", paste(z_used, collapse = ", "), " m agl (gate centre",
     if (!is.null(opts$z_min_agl)) ", fixed for the site in config/measured_sites.csv" else ", per file", "); ",
     "status no_signal (no valid epsilon) is NA; precipitation (rule '", opts$precip_rule, "': Cloudnet ",
-    "rain_detected, or classification classes ", paste(opts$precip_classes, collapse = ", "), " from the bottom of ",
-    "the z_min gate up to one lidar gate above the gate where the upward search stopped, within +/- ",
-    opts$precip_window_s, " s) is NA; censored = epsilon below threshold or missing at z_min. ",
+    "classification rain_detected within +/- ", opts$precip_window_s, " s) is NA; per-profile precipitation ",
+    "category kept in the profile output. Sensitivity columns: x_pblh_m_/x_qc_flag_precip_column (rain_detected, ",
+    "or classification classes ", paste(opts$precip_classes, collapse = ", "), " from the bottom of the z_min gate ",
+    "up to one lidar gate above the gate where the upward search stopped), _precip_strict (classes at or below ",
+    opts$precip_top_agl, " m agl), _bridged (single missing gate bridged when the gates below and above are ",
+    "turbulent). Censored = epsilon below threshold or missing at z_min. ",
     "Half-hours (cloudnet_mlh_halfhour()): expected profiles = median count per half-hour of each daily file, ",
     "coverage = valid / expected (capped at 1), min_coverage = ", opts$min_coverage,
     "; censored if more than half the valid profiles are censored; else median of the measured profiles, ",
@@ -240,8 +256,8 @@ rule_summary <- function(flag, label) {
                pct_censored = round(100 * sum(q %in% 1L) / max(1, sum(!is.na(q))), 1))
   }))
 }
-rule_tab <- rbind(rule_summary(prof$precip, "column (default)"), rule_summary(prof$precip_strict, "strict (<= 300 m)"),
-                  rule_summary(prof$rain_detected %in% TRUE, "rain_detected only"))
+rule_tab <- rbind(rule_summary(prof$precip, "rain_detected (default)"), rule_summary(prof$precip_column, "column"),
+                  rule_summary(prof$precip_strict, "strict (<= 300 m)"))
 print_tbl(rule_tab)
 readr::write_csv(rule_tab, file.path(tables_dir, paste0("07c_precip_rule_sensitivity_", site_id, ".csv")))
 
@@ -277,7 +293,7 @@ if (!all(vapply(sens, is.null, logical(1)))) {
   cli::cli_inform("half-hours with MLH: {sum(bv)}; changed {sum(abs(d) > 1e-6)} ({round(100 * mean(abs(d) > 1e-6), 1)} %), median change among changed {stats::median(d[abs(d) > 1e-6])} m; qc 3 {sum(m$qc_flag %in% 3L)} -> {sum(m$qc_flag_b %in% 3L)}.")
 }
 
-if (!all(vapply(sens, is.null, logical(1)))) {
+if (!is.null(sens[[1]]$a)) {
   cli::cli_h2("Sensitivity: ground altitude {alt_icos} m (ICOS) instead of the Cloudnet altitude")
   cmp <- function(v, label) {
     pv <- dplyr::bind_rows(lapply(sens, `[[`, v))

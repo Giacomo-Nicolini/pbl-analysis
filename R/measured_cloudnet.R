@@ -308,11 +308,12 @@ cloudnet_download <- function(plan, retries = 1, pause_s = 0.5) {
 #'   precipitation (2 = drizzle or rain, 3 = drizzle or rain coexisting with
 #'   droplets; Cloudnet classification product).
 #' @param precip_rule Precipitation rule (spec 07, G 2026-10-23):
-#'   `"column"` (default): `rain_detected`, or a precipitation class in a
+#'   `"rain_detected"` (default, G 2026-10-23): Cloudnet `rain_detected` only;
+#'   `"column"` (sensitivity): `rain_detected`, or a precipitation class in a
 #'   classification gate from z_min up to one lidar gate above the gate where
 #'   the upward search stopped (censored / no-signal profiles: up to one gate
-#'   above z_min); `"strict"`: a precipitation class at or below
-#'   `precip_top_agl`; `"rain_detected"`: `rain_detected` only.
+#'   above z_min); `"strict"` (sensitivity): a precipitation class at or below
+#'   `precip_top_agl`.
 #' @param precip_top_agl Top of the layer checked by the `"strict"` rule [m above
 #'   ground].
 #' @param precip_window_s Half-width of the time window around each epsilon
@@ -326,7 +327,7 @@ cloudnet_download <- function(plan, retries = 1, pause_s = 0.5) {
 #'   [logical].
 #' @return Named list of options.
 cloudnet_mlh_options <- function(eps_surface = 1e-4, z_min_agl = NULL, min_coverage = 0.5,
-                                 precip_classes = c(2L, 3L), precip_rule = c("column", "strict", "rain_detected"),
+                                 precip_classes = c(2L, 3L), precip_rule = c("rain_detected", "column", "strict"),
                                  precip_top_agl = 300, precip_window_s = 90, signal_limited_max = 0.5,
                                  bridge_single_gap = FALSE) {
   list(eps_surface = eps_surface, z_min_agl = z_min_agl, min_coverage = min_coverage,
