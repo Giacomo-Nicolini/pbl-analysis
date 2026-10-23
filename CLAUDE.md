@@ -56,7 +56,8 @@ so code must be reproducible, documented and traceable to references.
     METEO `TA`/`PA` after the end of FLUXNET (at BE-Bra: 2026). Comparisons with other sources use the overlap with
     this period (ERA5 starts 2020-01-01).
   - `ICOSETC_XX-Yyy_FLUXNET_FLUXMET_HH_<years>_v*.zip`: TA_F, PA_F, H_F_MDS, H_CORR, NIGHT, SW_IN_POT, WS_F, P_F
-  - `ICOSETC_XX-Yyy_METEO_INTERIM_L2.zip`: TA, TA_1..TA_10 (profile), P, SW_IN
+  - `ICOSETC_XX-Yyy_METEO_INTERIM_L2.zip`: TA, TA_<n> profile (number of levels differs by station, G 2026-10-23:
+    detect from the file header, never a fixed list), P, SW_IN
   - Files are zipped CSVs. Read directly from the zip (no permanent unzipping). Use only needed columns.
   - Missing value: `-9999`. Timestamps: `TIMESTAMP_START`, `TIMESTAMP_END` as `YYYYMMDDHHMM`, **local standard time (no DST)**.
     Convert to UTC with the site UTC offset from site metadata. Store both start and end.
@@ -111,6 +112,23 @@ so code must be reproducible, documented and traceable to references.
     (`BE-Bra__ERA5__reanalysis-era5-single-levels__boundary_layer_height__2025__lon+0__lat+0.csv`) are no longer the
     source. Spec 04 replaced the reader (`R/read_era5.R`) and `config.yml` (`era5_sl_dir`, `era5_pl_dir`,
     `era5_static_dir`; `{var}` placeholder for the cluster static folders).
+- **ACTRIS/Cloudnet (spec 07; checked on all FI-Hyy files 2026-10-22/23).** Licence CC BY 4.0. API
+  `https://cloudnet.fmi.fi/api` (`/files?site=&product=&dateFrom=&dateTo=&showLegacy=true`, no paging documented,
+  queried one year at a time; `/sites`); file metadata: `uuid`, `checksum` (SHA-256), `size`, `downloadUrl`,
+  `instrument` (`name`, `pid`), `volatile` (no file PID/version yet), `legacy`. No citation endpoint. Pairs ICOS site ×
+  Cloudnet site: `config/measured_sites.csv` (`distance_km` from the API coordinates; optional `z_min_agl_m`).
+  Files under `cloudnet_dir` (`data/raw/cloudnet/{site}`; cluster `"LOCAL"`), with a provenance table
+  `cloudnet_files_provenance_<product>.csv` written by `scripts/07b_cloudnet_download.R`.
+  - `epsilon-lidar` (daily NetCDF4, one file per instrument): `epsilon` [m2 s-3] (height × time; missing where the
+    signal is too low; no QC/SNR/precipitation field), `height` = gate centre [m **above mean sea level**], `altitude`
+    [m a.s.l.] (Hyytiälä 150 m = API value; ICOS 181 m), `time` [hours since the UTC day], `rolling_window_period`
+    180 s, `ray_accumulation_time` 6 s; global attributes `file_uuid`, `instrument_pid`, `references` (O'Connor et al.
+    2010). Heights above ground = height − file `altitude`; gate top = centre + half the gate (30 m gates at
+    Hyytiälä). Hyytiälä HALO 46: profiles every 14.23 s in vertical stares of ≈ 14–15 min every 30 min (≈ 63 profiles
+    per half-hour, stare phase drifts between days); lowest valid gate 105 m agl.
+  - `classification` (daily, 30 s): `target_classification` (0 clear … 2 drizzle/rain, 3 drizzle/rain + droplets …
+    10), `cloud_base_height_amsl`/`_agl` [m], `rain_detected` (0/1), `altitude` [time]; height a.s.l., irregular gates
+    (Hyytiälä lowest 102 m agl).
 - Site metadata: `config/sites.csv` (lat, lon, altitude, UTC offset, zm, canopy height, d, z0...).
   Missing values allowed; functions must fail with an informative error only when a *required* value is missing.
   Time-varying zm / canopy height: `config/sites_timevarying.csv` (derived from `config/sites_H_EC_canopy_formBIF.csv`).

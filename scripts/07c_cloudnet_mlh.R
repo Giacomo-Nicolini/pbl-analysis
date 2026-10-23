@@ -144,7 +144,7 @@ rng <- function(x) paste(sort(unique(stats::na.omit(x))), collapse = ", ")
 info <- list(
   instrument = paste0(paste0(inst$instrument_name, " (HALO Photonics StreamLine Doppler lidar; PID ",
                              inst$instrument_pid, ")"), collapse = "; "),
-  instrument_altitude_m = paste(rng(ea$altitude_m), collapse = ", "),
+  instrument_altitude_m = if (length(unique(ea$altitude_m)) == 1) unique(ea$altitude_m) else rng(ea$altitude_m),
   original_resolution = paste0(
     "vertical-stare profiles every ", round(stats::median(prof$dt_s, na.rm = TRUE), 2), " s (epsilon over a ",
     rng(ea$rolling_window_s), " s rolling window, ", rng(ea$ray_accumulation_s), " s rays), about 14-15 min of ",
