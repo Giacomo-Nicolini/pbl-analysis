@@ -7,7 +7,8 @@
 # PID, instrument PID ...). Aborts if the total size exceeds 10 GB (spec 07: stop and ask G).
 # Output: <cloudnet_dir>/<filename>.nc (gitignored, under data/).
 #
-# Usage: Rscript scripts/07b_cloudnet_download.R SITE [--confirm] [--product=epsilon-lidar]
+# Usage: Rscript scripts/07b_cloudnet_download.R SITE [--confirm] [--product=epsilon-lidar] [--match=PRODUCT]
+#   --match=PRODUCT: only days that also have a PRODUCT file (e.g. classification on the epsilon-lidar days).
 #   Profile: env var R_CONFIG_ACTIVE (default | cluster).
 
 for (f in list.files(here::here("R"), pattern = "\\.R$", full.names = TRUE)) source(f)
@@ -19,6 +20,7 @@ args <- commandArgs(trailingOnly = TRUE)
 confirm <- "--confirm" %in% args
 product <- sub("^--product=", "", grep("^--product=", args, value = TRUE))
 if (length(product) == 0) product <- "epsilon-lidar"
+match_product <- sub("^--match=", "", grep("^--match=", args, value = TRUE))
 site_id <- setdiff(grep("^--", args, value = TRUE, invert = TRUE), "")
 if (length(site_id) != 1) cli::cli_abort("Pass exactly one ICOS station code, e.g. {.val FI-Hyy}.")
 
@@ -38,6 +40,13 @@ cli::cli_inform("Reference period (FLUXES range): {format(ref[1], '%Y-%m-%d %H:%
 
 files <- cloudnet_files(ms$provider_site, product, d_from, d_to, retries = 2)
 if (nrow(files) == 0) cli::cli_abort("No {product} files for {ms$provider_site} in {d_from} to {d_to}.")
+if (length(match_product) == 1) {
+  ref_files <- cloudnet_files(ms$provider_site, match_product, d_from, d_to, retries = 2)
+  no_match <- unique(ref_files$measurement_date[!ref_files$measurement_date %in% files$measurement_date])
+  files <- files[files$measurement_date %in% ref_files$measurement_date, ]
+  cli::cli_inform("Restricted to the {length(unique(ref_files$measurement_date))} days with {match_product} files: {nrow(files)} {product} file{?s}; {length(no_match)} {match_product} day{?s} without a {product} file{if (length(no_match)) paste0(': ', paste(format(sort(no_match)), collapse = ', ')) else ''}.")
+  if (nrow(files) == 0) cli::cli_abort("No {product} files on the {match_product} days.")
+}
 plan <- cloudnet_download_plan(files, dest_dir)
 
 # --- Size report (API metadata) ---

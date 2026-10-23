@@ -5,6 +5,8 @@ output/
 *.rda
 *.rds
 *.nc
+# tiny synthetic NetCDF test fixtures (make_fixtures.R), allowed by CLAUDE.md
+!tests/testthat/fixtures/cloudnet/*.nc
 *.grib
 
 # --- Secrets ---
