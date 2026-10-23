@@ -1,6 +1,7 @@
 # PBLH literature: annotated notes
 
-Search of 2026-10-15 (Cowork, web search + Crossref/publisher verification). BibTeX: `pblh_literature_2026-10.bib`
+Search of 2026-10-15 (Cowork, web search + Crossref/publisher verification); second-wave papers checked against the
+PDFs on 2026-10-22. BibTeX: `pblh_literature_2026-10.bib`
 (50 entries, all verified; author lists marked "and others" to be completed). Kljun App. B references:
 `pblh_collection.bib`. Footprint models: `footprint_collection.bib`.
 Priorities: **K** = key (read in full, cite), U = useful, B = background. OA = open access.
@@ -41,15 +42,21 @@ Search was in English; Chinese-language literature and conference-only work were
   levels. **No surface parcel excess** (an earlier version of these notes said otherwise; corrected). The mixed-layer
   height used inside the turbulence scheme comes from an entraining parcel model and is not the output BLH. ERA5 =
   Cy41r2, 0.25°, 137 levels (`Hersbach2020`). Same formulation as `Seidel2012` (Beljaars co-author). A single Ri_c
-  gives a stability-dependent bias; optimal values 0.24 strongly stable, 0.31 weakly stable, 0.39 unstable
-  (`Zhang2014`); ≈ 0.12 over Arctic sea ice (`Akansu2023`).
+  gives a stability-dependent bias; optimal values 0.24 strongly stable, 0.31 weakly stable, 0.39 unstable, from four
+  campaigns with PBLH from turbulence, θ-gradient, LLJ and parcel methods (`Zhang2014`; values depend on the lower
+  reference height z_s: 0.24 for z_s = 40 m, 0.31 for 80 m, 0.39 for the surface-layer top); ≈ 0.12 over Arctic sea
+  ice (`Akansu2023`).
 - Convective daytime: near-global radiosondes, ERA5 best of four reanalyses, ≈ −130 m mean bias (`Guo2021`, K); land
-  2011–2021 radiosonde − ERA5 ≈ +96 m, strongly diurnal (≈ 300 m at 17 LST) (`Guo2024`, U; also provides a
-  bias-corrected 3-hourly 0.25° product). In Europe the sign varies: ERA5 too deep at 12 UTC Europe-wide
+  2011–2021, 370 radiosonde stations, all launch times: radiosonde − ERA5 = +95.7 m on average (ERA5 too shallow),
+  150 m in MAM to 64 m in SON, 309 m at 17 LST to 1.8 m at 00 LST, s.d. of the difference 807 m at 17 LST (`Guo2024`,
+  U; radiosonde PBLH by bulk Ri = 0.25). Guo2024 also provides an ERA5 product bias-corrected by random forest
+  (3-hourly, 0.25°, land, 2011–2021; Zenodo 10.5281/zenodo.6498004). In Europe the sign varies: ERA5 too deep at 12 UTC Europe-wide
   (`Arganaraz2026`, K: RMSE 235–470 m), slightly too shallow at Potenza (`SalcedoBosch2026`, K: bias −109 m by day),
   good agreement at Hyytiälä (`Sinclair2022`), within 10–35 % of ALICENET ceilometer MAL (`Bellini2025`, U).
 - Stable / transitions: ERA5 too deep in very stable conditions and poor in the evening transition (18 UTC)
-  (`Sinclair2022`); too deep over sea ice (`Xi2024`, U); night RMSE small in absolute terms (≈ 60–100 m) but ERA5
+  (`Sinclair2022`); too deep over sea ice (`Xi2024`, U: MOSAiC soundings with the same Ri = 0.25 criterion; centred
+  RMSE 201 m and r = 0.61 for sea-ice concentration > 90 %; differences largest in neutral layers and the cold season;
+  ERA5 BLH errors follow its temperature and wind-profile errors more than humidity); night RMSE small in absolute terms (≈ 60–100 m) but ERA5
   explains only ≈ 10 % of radiosonde night variance (`Arganaraz2026`); reanalysis deeper than sondes mainly at night
   (`Seidel2012`, K).
 - Method of the reference matters as much as ERA5 error: IGRA gradient-method BLH ≈ 1150 m (night) / 1750 m (day) vs
@@ -69,9 +76,16 @@ Search was in English; Chinese-language literature and conference-only work were
 - Aerosol-based (ceilometer, lidar): agrees in the mature CBL; late in the morning, high in the afternoon and at night
   (residual layer). Ceilometer vs Doppler lidar at JOYCE: +300 m (morning) to +600 m (late afternoon) (`Schween2014`, K);
   European ALC evaluation (`Haeffelin2012`, K). Algorithms: STRAT (`Morille2007`), Pathfinder (`deBruine2017`),
-  PathfinderTURB (`Poltera2017`, used in Switzerland/E-PROFILE context), CABAM (`Kotthaus2018`).
+  PathfinderTURB (`Poltera2017`: MeteoSwiss, Lufft CHM15k; CBL height and continuous aerosol layer; mean bias 27 m vs
+  expert manual detection and 53 m vs radiosonde bulk Ri at Payerne), CABAM (`Kotthaus2018`: first open algorithm for
+  the Vaisala CL31, handles precipitation and classifies clouds; good against AMDAR inversions in the afternoon, while
+  at night and in the morning transition the inversion usually marks the residual-layer top — relevant for the
+  Vaisala CL51 at SE-Nor).
 - Thermodynamic (radiosonde bulk Ri/parcel, MWR): closest in definition to ERA5. Regime-aware sounding algorithm
-  `Liu2010` (U); IGRA derived parameters (`Durre2008`, U). MWR best vs sondes at Payerne (`CollaudCoen2014`).
+  `Liu2010` (U): regime from θ(level 5) − θ(level 2) against δs (1.0 K over land); CBL and neutral layers by a parcel
+  scan from above 150 m agl (δu = 0.5 K, then first θ gradient ≥ 4 K km⁻¹), SBL by the top of the surface inversion
+  or the low-level-jet nose, whichever is lower; uses θ, not θv; checked against lidar and sodar; 58,286 soundings
+  from 14 campaigns. IGRA derived parameters (`Durre2008`, U; PDF not available, entry checked against Crossref only). MWR best vs sondes at Payerne (`CollaudCoen2014`).
 - Multi-instrument sites collocated with ICOS: Hyytiälä (`Sinclair2022`, `Franck2021`), Swedish sites (`Helbig2021`).
 - Recommendation (to discuss): primary validation in daytime convective conditions (EC z/L < 0); turbulence-based
   height (or ceilometer MLH only late morning–mid afternoon) as reference for EC-derived PBLH; radiosonde bulk Ri for
@@ -83,13 +97,17 @@ Search was in English; Chinese-language literature and conference-only work were
 - Stable BL height from surface fluxes: large scatter, site-dependent coefficients; surface bulk Ri best when profiles
   exist; well-defined h only ≈ 20 % of the time on CASES-99 (`Vickers2004`, K). Zilitinkevich–Mironov offset for
   shallow layers; dimensional-analysis formula without f performs best (`Steeneveld2007`, K; detail from the conference
-  version, check in the journal paper). Including free-flow stability N improves the fit; prognostic relaxation
-  equation recommended (`Zilitinkevich2002`, U). Small-sample confirmations: `Sun2021`, `Akansu2023` (B).
+  version, check in the journal paper). `Zilitinkevich2002` (U), on Cabauw data: the critical bulk Ri depends on the
+  free-flow stability N (fit Ri_Bc = 0.1371 + 0.0024 N/|f|); among diagnostic SBL equations their multi-limit h_CQE
+  (u*, L, N, f) fits best (r = 0.60), the Zilitinkevich-scale formula h = 0.4 u*² |f B_s|^(−1/2) — the same scaling as
+  our B1 Nieuwstadt — the worst (r = 0.27) (Table IV; quote correlations only: some bias/rms entries in that table
+  are internally inconsistent); a relaxation (prognostic) equation towards h_CQE is recommended. Small-sample confirmations: `Sun2021`, `Akansu2023` (B).
   → Relevant to the open point "bound B1 by B3 on windy stable nights".
 - Convective slab: order of magnitude right but strongly γ-dependent; without subsidence/advection a slab model
-  overestimates by ≈ 70 % (BLLAST case, `Pietersen2015`, U). Global evaluation against ≈ 18k IGRA sounding pairs:
-  growth bias 10 m h⁻¹, r = 0.53 (`Wouters2019`, U); γ and the inversion jump taken from morning soundings by
-  extrapolating the levels above the ML top → recipe for our γ option 2/3 from ERA5 profiles. Surface heterogeneity
+  overestimates by ≈ 70 % (BLLAST case, `Pietersen2015`, U). Global evaluation of a slab model (CLASS4GL) against
+  18,385 morning–afternoon IGRA sounding pairs from 134 stations: bias of the ML growth rate 10.1 m h⁻¹, r = 0.53
+  (`Wouters2019`, U); initial γθ from the sounding levels above h, initial jump from the capping-inversion value minus
+  the mixed-layer value → recipe for our γ option 2/3 from ERA5 profiles. Surface heterogeneity
   and γ can cancel H effects (`Brugger2018`, U).
 - Pre-processors (AERMET, OML): no recent peer-reviewed evaluation found (EPA reports, HARMO proceedings only).
   `Helmis2012` (B): model PBLH generally higher than sodar-RASS/ceilometer in Athens.
@@ -139,7 +157,8 @@ Key open-access papers (PDF optional): `Kotthaus2023`, `Sinclair2022`, `Guo2021`
 `SalcedoBosch2026`, `Schween2014`, `Chu2026`, `Fang2024`, `Rebmann2018`, `Hersbach2020`.
 
 Second wave (useful): `Zilitinkevich2002`, `Wouters2019`, `Pietersen2015`, `Liu2010`, `Zhang2014`, `Guo2024`,
-`Xi2024`, `Durre2008`, `Poltera2017`, `Kotthaus2018`.
+`Xi2024`, `Poltera2017`, `Kotthaus2018` — downloaded and checked against the PDFs on 2026-10-22 (notes above
+updated). `Durre2008`: no access to the PDF; bibliographic entry from Crossref.
 
 Naming convention in the folder: `Author_Year_Journal_Title.pdf`.
 
