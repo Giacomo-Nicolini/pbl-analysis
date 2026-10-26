@@ -51,10 +51,21 @@ so code must be reproducible, documented and traceable to references.
   - `ICOSETC_XX-Yyy_FLUXES_INTERIM_L2.zip`: H, USTAR, MO_LENGTH, ZL, T_SONIC, WS, WD, V_SIGMA, PBLH (legacy operational output), FETCH_*, FOOTPRINT_*, QC flags
   - **Reference period (G, 2026-10-22): the site-specific time range of the FLUXES file** (first to last row). Stations
     were labelled at different times, so the range differs by site; never hard-code years. FLUXNET and METEO files
-    may cover a different range (e.g. FI-Hyy FLUXNET 2018–2026, BE-Bra 2020–2025): rows outside the FLUXES range are
+    may cover a different range (e.g. FI-Hyy FLUXNET 2018–2026, BE-Bra 2020–2026): rows outside the FLUXES range are
     dropped. Inside it, the forcing takes `TA_F`/`PA_F`/`H_F_MDS` from FLUXNET where FLUXNET covers the row, and
-    METEO `TA`/`PA` after the end of FLUXNET (at BE-Bra: 2026). Comparisons with other sources use the overlap with
-    this period (ERA5 starts 2020-01-01).
+    METEO `TA`/`PA` after the end of FLUXNET (at BE-Bra: from 2026-08-22 23:00 UTC). Comparisons with other sources
+    use the overlap with this period (ERA5 starts 2020-01-01).
+  - **BE-Bra FLUXNET (G, 2026-10-26)**: `ICOSETC_BE-Bra_FLUXNET_FLUXMET_HH_2020-2026_v1.3_r1.zip`, a new ONEFlux run
+    matching the BIF file. It replaced `..._HH_2020-2025_v1.3_r1.zip` (kept in `data/archive/`, outside `data/raw/`,
+    not read by the pipeline): 2026 now comes from FLUXNET, not METEO; 2020–2025 differs only on gap-filled values.
+    Pre-replacement outputs in `data/derived/pre_bebra_fluxnet2026/` and `output/pre_bebra_fluxnet2026/`.
+  - `ICOSETC_XX-Yyy_FLUXNET_BIF_<years>_v1.3_r1.csv` (ONEFlux BIF, replaces AUXNEE; next to the L2 zips): long format
+    (`SITE_ID, GROUP_ID, VARIABLE_GROUP, VARIABLE, DATAVALUE`); u* thresholds of `NEE_VUT_REF` in `GRP_FLUX_REF`, one
+    per `REF_YEAR`. Its `PRODUCT_NAME` years must match the HH file (`read_oneflux_bif()` aborts otherwise).
+  - **L2 `ZL` is not (EC height − 2/3 hc) / `MO_LENGTH`** (spec 08 step 0; G, 2026-10-26): the implied z − d is
+    17–18 m at BE-Bra 2020–2025 (ours 24.1 m) and steps between periods at both sites (probably a constant hc in the
+    EddyPro metadata; `docs/local/etc_qc_report.md` item 11). Stability for footprints is always zm/L with
+    zm = EC height − 2/3 hc, never L2 `ZL`.
   - `ICOSETC_XX-Yyy_FLUXNET_FLUXMET_HH_<years>_v*.zip`: TA_F, PA_F, H_F_MDS, H_CORR, NIGHT, SW_IN_POT, WS_F, P_F
   - `ICOSETC_XX-Yyy_METEO_INTERIM_L2.zip`: TA, TA_<n> profile (number of levels differs by station, G 2026-10-23:
     detect from the file header, never a fixed list), P, SW_IN

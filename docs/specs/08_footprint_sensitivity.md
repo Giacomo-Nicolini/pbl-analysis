@@ -61,6 +61,12 @@ meaning, and `rslayer`.
 | friction velocity | u* > 0.1 m s⁻¹ | u* ≥ 0.2 m s⁻¹ |
 | inputs | missing → invalid | missing → invalid |
 
+**Stability (G, 2026-10-26):** zm is the height above the displacement height, zm = EC height − d with d = 2/3 hc, so
+zm/L = (z − d)/L (Kljun's definition, confirmed by N. Kljun to G). One stability test for all sets, computed from this
+zm and L2 `MO_LENGTH`. L2 `ZL` is **not** used: its implied z − d differs from the ICOS heights (BE-Bra 17–18 m vs
+24.1 m in 2020–2025; steps between periods at both sites; `docs/local/etc_qc_report.md` item 11). The `etc` set
+therefore deviates from the ETC pipeline, which used `ZL`.
+
 Plus `none` (only the FFP code's own checks). Check the Kljun thresholds against the FFP code and the paper (`Kljun2015`, Eq. 27
 and Sect. 2; PDF in G's bibliography folder, added 2026-10-26), and report any difference. The ETC z0 multiplier
 `m` is data-dependent: compute it **once per site**, over the full period and on rows independent of h (all rows with

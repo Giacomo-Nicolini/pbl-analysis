@@ -1,6 +1,6 @@
 # Project status (handover note)
 
-Last update: 2026-10-23. Read this first in a new session, then `docs/project_plan.md` and `CLAUDE.md`.
+Last update: 2026-10-26. Read this first in a new session, then `docs/project_plan.md` and `CLAUDE.md`.
 
 ## PBLH sources (names used in the code and in the standard files)
 
@@ -23,7 +23,8 @@ Last update: 2026-10-23. Read this first in a new session, then `docs/project_pl
 | 05 | u* plausibility filter in the PBLHmod forcing (spec 02 amendment 12); local config override (`config.local.yml`, no cluster paths in tracked files) | 1 | merged (`main`, 25ae55c) |
 | 06 | Consistency check of L2 `MO_LENGTH` against the forcing (option C, G 2026-10-21): L2 L kept where consistent (same sign, within 3×), otherwise replaced by L from the forcing and flagged (spec 02 amendment 13); checked only where the heat flux is positive (spec 06 amendment 1) and in daytime (amendment 2) | 1 | merged (`main`, 2026-10-21; amendment 2 merged 2026-10-21) |
 | 03 | Legacy regression: reproduce operational PBLH from L2 (operational code `calc_PBL_height_operational.R` + `proc_PBL_height.R`), port it, attribute differences to PBLHmod v2 (amendments 1–2) | 1 | merged (`main`, e224c4b) |
-| 07 | Cloudnet inventory (FI-Hyy, FI-Lom, DE-RuS, SE-Nor, FR-Gri); turbulence-based MLH from Doppler-lidar ε (Manninen et al. 2018) in the standard format; FI-Hyy runs (PBLHmod, ERA5) and first comparison against measured MLH (amendment 1: no operational PBLH, ERA5 tower cell in figures); reference period = FLUXES range; METEO TA levels from the header | 2, 3 | implemented on `spec-07-measured-cloudnet` (2026-10-23), to review |
+| 07 | Cloudnet inventory (FI-Hyy, FI-Lom, DE-RuS, SE-Nor, FR-Gri); turbulence-based MLH from Doppler-lidar ε (Manninen et al. 2018) in the standard format; FI-Hyy runs (PBLHmod, ERA5) and first comparison against measured MLH (amendment 1: no operational PBLH, ERA5 tower cell in figures); reference period = FLUXES range; METEO TA levels from the header | 2, 3 | merged (`main`, b22f7e2) |
+| 08 | Footprint sensitivity to the PBLH source (FFP, Kljun et al. 2015) at BE-Bra and FI-Hyy; one-month PC test (FI-Hyy 2022-09); ONEFlux BIF reader and u* thresholds | 5a | in progress on `spec-08-footprint-sensitivity` |
 
 Phases (see `project_plan.md`): 0 done; 1 done (model, input QC, legacy regression); 2 standard format, three
 sources (spec 04) and the first measured source (spec 07, FI-Hyy) done; 3 BE-Bra (vs ERA5) and FI-Hyy (vs ERA5 and
@@ -38,10 +39,30 @@ measured MLH) done; 4–6 not started.
   u* and L set to NA, short gaps interpolated); L check `l_source = "L2_checked"` (`l_consistency_factor = 3`,
   daytime rows with wtheta0 > `l_check_wtheta_min = 0.005` K m s-1 only, `l_check_daytime_only = TRUE`;
   inconsistent L2 L replaced by the forcing L; spec 02 amendment 13, spec 06 amendments 1–2); raw output (no smoothing, clipping or filling). Forcing T and p from
-  measured meteo (FLUXNET `TA_F`/`PA_F` 2020–2025, METEO `TA`/`PA` 2026).
-- BE-Bra PBLHmod (default, spec 06 amendment 2): convective median 690 m (p5–p95 74–1575), stable 259 m, all rows
-  412 m; γ = 0.0025 raises the convective median to 1095 m. Spec 06 amendment 1: 690 m (74–1575), 260 m, 413 m;
+  measured meteo (BE-Bra: FLUXNET `TA_F`/`PA_F` 2020-01 → 2026-08-22, METEO `TA`/`PA` after; before 2026-10-26
+  FLUXNET 2020–2025 and METEO for all of 2026).
+- BE-Bra PBLHmod (default, FLUXNET 2020–2026, 2026-10-26): convective median 707 m (p5–p95 75–1581), stable 257 m,
+  all rows 414 m; γ = 0.0025 raises the convective median to 1122 m. With FLUXNET 2020–2025 (spec 06 amendment 2):
+  690 m (74–1575), 259 m, 412 m; 1095 m. Spec 06 amendment 1: 690 m (74–1575), 260 m, 413 m;
   1095 m. Spec 05: 698 m (72–1586), 261 m, 413 m; 1104 m. Spec 02: 704 m (72–1609), 271 m, 423 m; 1109 m.
+- BE-Bra FLUXNET 2020–2026 replacement (G, 2026-10-26; old outputs in `*/pre_bebra_fluxnet2026/`):
+  - Inputs, old vs new file on 2020–2025 (105,216 common rows): only gap-filled values differ. `TA_F` 14,318 rows (all
+    QC 2, 99 % in 2020; max 0.033 K), `PA_F` 15,530 rows (all QC 2; max 28 Pa), `H_F_MDS` 69 rows (all gap-filled,
+    2025-12-26 → 12-31; max 63 W m-2), `NEE_VUT_REF_QC` 754 rows (0.8 %); NA pattern unchanged; `H_CORR` differs on
+    48 % (not used). 2026: FLUXNET `TA_F`/`PA_F` identical to METEO where both are valid; FLUXNET ends 2026-08-22
+    22:30 UTC.
+  - PBLHmod (13 cases, scripts 01, 02, 04, 03 rerun): before 2025-12-26 max |diff| ≤ 0.16 m (gap-filled TA/PA);
+    2025-12-26 → 12-31 up to 534 m (default; 16 rows > 1 m, all on the days with changed `H_F_MDS`); 2026 changed
+    because H now comes from `H_F_MDS` instead of L2 `H` (default: valid H rows 6,318 → 10,553, convective 1,860 →
+    4,337, B&G stopped at gaps 8,959 → 2,148, convective median 594 → 783 m). `l_forcing` gains 3,387 valid 2026 rows.
+  - Pair 1 vs ERA5 (49,400 h): RMSE 337.5 → 333.5 m, bias −49 → −42 m, median log ratio −0.153 → −0.146, within a
+    factor 2 72.6 → 72.8 %, Spearman 0.797 → 0.801; convective n 15,242 → 16,442.
+  - Spec 03: the reproduction of the operational PBLH is unchanged (all and per-year strata identical; regime strata
+    change because regimes come from PBLHmod); variants with our forcing (`legacy_forcing`, `cum_06`–`cum_12`) change
+    as expected. The `cleanset` variant is no longer produced (cleanset moved to `data/archive/`; old result kept in
+    the backup).
+  - ONEFlux u* check now runs at BE-Bra: VUT thresholds 0.18–0.28 m s-1 (CUT 0.2345); 100 % of u*-filtered rows
+    gap-filled; u* explains 80.7 % of the QC-good NEE gap-filled in FLUXNET (day 71.7 %, night 84.2 %; FI-Hyy 74 %).
 - Spec 06 amendment 2 at BE-Bra (2026-10-21): L check in daytime only. Rows checked 26,198; replaced 2,191 (sign
   1,170, magnitude 1,021; convective 1,720, unstable_diag 471), night replacements 285 → 0 (all in Nov 2022–Jan
   2023, positive gap-filled H_F_MDS with L2 H QC-rejected); `flag_sign_inconsistent` 335; values > 5 km 1.
@@ -157,5 +178,7 @@ collected for the ETC QC report in `docs/local/etc_qc_report.md` (local working 
 - PC rebuild procedure: `docs/setup/pc_rebuild_checklist.md` (+ `backup_before_format.ps1`).
 - Gitignored but needed: `data/raw/` (ICOS L2 zips for BE-Bra, ERA5 CSVs in `era5/`, `era5_pressure_levels/`,
   `era5_single_levels/`, `target_areas/*.kml`), `C:\WORK\secrets`, `docs/local/` (local working notes).
-- Reference PDFs live outside the repo in `C:\WORK\bibliography_new_win11\` (not in git; the `.bib` `file` fields
-  point there).
+- Reference PDFs live outside the repo in `C:\WORK\bibliography_new_win11\` (not in git; the `file` fields were
+  removed from the tracked `.bib` files on 2026-10-26).
+- BE-Bra: the replaced FLUXNET 2020–2025 file, the cleanset and the EddyPro outputs are in `data/archive/` (not read
+  by the pipeline).
