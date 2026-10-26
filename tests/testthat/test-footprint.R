@@ -150,3 +150,40 @@ test_that("FFP code wrappers agree with the paper's equations (skipped without t
   expect_equal(dim(f), c(length(g$y), length(g$x)))
   expect_true(sum(f) * g$dx^2 > 0.5)
 })
+
+test_that("fp_log_ratio and fp_elasticity on synthetic values", {
+  expect_equal(fp_log_ratio(c(200, 100, NA, 0), c(100, 100, 100, 100)), c(log(2), 0, NA, NA))
+  # x proportional to h^0.5: elasticity 0.5; equal h: NA
+  h0 <- c(100, 400, 300)
+  h1 <- c(400, 100, 300)
+  expect_equal(fp_elasticity(sqrt(h1), sqrt(h0), h1, h0), c(0.5, 0.5, NA))
+})
+
+test_that("fp_summary: quantiles and shares beyond 10 % / 25 %", {
+  lr <- log(c(1, 1.05, 1.2, 1.5, 0.7, NA))
+  s <- fp_summary(lr, dta = c(0, 1, -2, 3, 4, NA))
+  expect_equal(s$n, 5)
+  expect_equal(s$median_lr, log(1.05))
+  expect_equal(s$share_gt10, 3 / 5)
+  expect_equal(s$share_gt25, 2 / 5)
+  expect_equal(s$median_dta_pp, 1)
+  expect_true(is.na(s$median_elasticity))
+})
+
+test_that("zl_class and zmh_class boundaries", {
+  expect_equal(as.character(zl_class(10, c(-50, -100, 100, 50, NA))), c("unstable", "neutral", "neutral", "stable", NA))
+  expect_equal(as.character(zmh_class(10, c(1000, 500, 200, 100, 50, 12.5, 10))),
+               c("<0.02", "0.02-0.05", "0.05-0.1", "0.1-0.2", "0.2-0.8", ">=0.8", ">=0.8"))
+})
+
+test_that("region_share_inside, rebmann_criteria and fp_peak_change", {
+  m <- matrix(c(TRUE, TRUE, FALSE, FALSE), 2)
+  expect_equal(region_share_inside(c(1L, 3L), m), 0.5)
+  expect_true(is.na(region_share_inside(integer(0), m)))
+  r <- rebmann_criteria(c(0.95, 0.9, 0.85, 0.5, NA))
+  expect_equal(c(r$n, r$share_ta90, r$share_cif80), c(4, 0.5, 0.75))
+  expect_true(r$pass_ta90_50pct)
+  pc <- fp_peak_change(110, 100)
+  expect_equal(c(pc$dxmax_pct, pc$dfymax_pct), c(10, 100 * (100 / 110 - 1)))
+  expect_equal(nrow(kljun2015_table5_h20()), 3)
+})

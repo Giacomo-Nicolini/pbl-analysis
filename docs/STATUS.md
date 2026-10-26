@@ -45,6 +45,26 @@ measured MLH) done; 4–6 not started.
   all rows 414 m; γ = 0.0025 raises the convective median to 1122 m. With FLUXNET 2020–2025 (spec 06 amendment 2):
   690 m (74–1575), 259 m, 412 m; 1095 m. Spec 06 amendment 1: 690 m (74–1575), 260 m, 413 m;
   1095 m. Spec 05: 698 m (72–1586), 261 m, 413 m; 1104 m. Spec 02: 704 m (72–1609), 271 m, 423 m; 1109 m.
+- Spec 08 at BE-Bra and FI-Hyy (2026-10-26; **test, one month, September 2022**; no definitive conclusions):
+  - Verification (`scripts/08v_ffp_verify.R`): A (paper's equations) = `calc_footprint_FFP()` on 1,000 half-hours
+    per site (max rel. diff 5e-16); C (summed B fields) = `calc_footprint_FFP_climatology()` (identical, smoothing
+    off; EBImage not installed, so `ffp_smooth()` is verified against an FFT circular convolution only).
+  - Coverage (full period, 08a): `kljun` set 0 valid rows at both sites (20 z0 < zm never holds); ETC multiplier m
+    = 5 (BE-Bra), 3.7 (FI-Hyy). Test month valid (`none`): BE-Bra 1,202 of 1,440 half-hours, FI-Hyy 1,003.
+  - ERA5 vs PBLHmod, ln(x_80 ratio), subset `valid`, set `none`: median −0.020 (BE-Bra) / −0.008 (FI-Hyy); rows
+    with |x_80 change| > 10 %: 30 % / 9 %; > 25 %: 14 % / 2 %. Mostly stable nights (BE-Bra stable: > 10 % on 43 %,
+    convective 12 %); large where h approaches zm. In `valid_qc_used` the differences almost vanish (BE-Bra stable
+    > 10 % on 13 %): 97–100 % of the top-10 % affected half-hours are removed by the NEE QC or the u*/gap-fill
+    subset. Target-area fraction: median +0.4 pp (BE-Bra), p90 |diff| 9.9 / 2.6 pp.
+  - Monthly climatologies (common rows): Jaccard of the 80 % regions ERA5 vs PBLHmod 0.77 (BE-Bra; night 0.70) and
+    0.93 (FI-Hyy); 0.97 / 0.99 in `valid_qc_used`. The BE-Bra night `valid` region reaches the ±1000 m domain edge.
+  - Rebmann et al. (2018) ≥ 90 % from the target area on ≥ 50 % of half-hours: fails at both sites with every h
+    (≤ 1.5 % of half-hours; target areas 0.115 / 0.105 km²); no verdict changes with the PBLH source.
+  - Anchor (h ± 20 %): median |Δx_peak| unstable/neutral/stable 0.6/0.7/3.4 % (FI-Hyy, ×0.8), Kljun et al. (2015)
+    Table 5: 0.3/0.7/3.7 %; BE-Bra 1.0/1.3/6.8 %.
+  - FI-Hyy measured MLH (297 common half-hours): ln(x_80 PBLHmod / measured) median −0.008, > 10 % on 13 %.
+  - Runtime: 1.7–2.1 s per half-hour (single), ≈ 4.2 s per worker with 4 PC workers; test month 2.0–2.2 h per site.
+    Full period ≈ 460–480 k FFP half-hours per site ≈ 250–270 CPU-hours per site: cluster.
 - BE-Bra FLUXNET 2020–2026 replacement (G, 2026-10-26; old outputs in `*/pre_bebra_fluxnet2026/`):
   - Inputs, old vs new file on 2020–2025 (105,216 common rows): only gap-filled values differ. `TA_F` 14,318 rows (all
     QC 2, 99 % in 2020; max 0.033 K), `PA_F` 15,530 rows (all QC 2; max 28 Pa), `H_F_MDS` 69 rows (all gap-filled,
