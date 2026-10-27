@@ -197,6 +197,62 @@ ffp_field_metrics <- function(f, grid, mask = NULL, r = c(0.5, 0.7, 0.8, 0.9), k
   list(metrics = m, region = region)
 }
 
+#' Write the summed footprint fields of a chunk
+#'
+#' Unsmoothed sums of the per-half-hour fields and their counts, one per climatology
+#' group (`set|subset|day or night|rowset`), so that climatologies over any set of months
+#' (e.g. a year) are built by summing months and smoothing at the end
+#' ([ffp_clim_from_sums()]; G 2026-10-27). Stored as single precision (float32, relative
+#' precision about 6e-8) in a gzip-compressed RDS to halve the size.
+#'
+#' @param sums Named list of matrices [m-2, sum over half-hours] on the footprint grid.
+#' @param cnt Named list of counts (same names) [half-hours].
+#' @param path Output file (`.rds`).
+#' @return `path`, invisibly.
+ffp_sums_write <- function(sums, cnt, path) {
+  d <- if (length(sums)) dim(sums[[1]]) else c(0L, 0L)
+  x <- list(dim = d, n = unlist(cnt[names(sums)]),
+            data = lapply(sums, function(m) writeBin(as.vector(m), raw(), size = 4)))
+  saveRDS(x, path, compress = "gzip")
+  invisible(path)
+}
+
+#' Read the summed footprint fields of a chunk
+#'
+#' @param path File written by [ffp_sums_write()].
+#' @param keys Groups to read (default all).
+#' @return List: `n` (named counts [half-hours]) and `sums` (named matrices [m-2]).
+ffp_sums_read <- function(path, keys = NULL) {
+  x <- readRDS(path)
+  k <- if (is.null(keys)) names(x$data) else intersect(keys, names(x$data))
+  list(n = x$n[k], sums = lapply(stats::setNames(k, k), function(g) {
+    matrix(readBin(x$data[[g]], "double", n = prod(x$dim), size = 4), x$dim[1], x$dim[2])
+  }))
+}
+
+#' Footprint climatology from summed fields
+#'
+#' The climatology of `calc_footprint_FFP_climatology()` is the mean of the per-half-hour
+#' fields, smoothed afterwards: sum of the sums / sum of the counts, then [ffp_smooth()]
+#' and [ffp_field_metrics()]. Used for annual climatologies from monthly sums.
+#'
+#' @param parts List of outputs of [ffp_sums_read()] (e.g. one per month).
+#' @param keys Groups to combine (summed over all parts; e.g. the day and night groups for
+#'   `all`).
+#' @inheritParams ffp_field_metrics
+#' @return List as [ffp_field_metrics()] plus `n` [half-hours]; `NULL` if no part has the keys.
+ffp_clim_from_sums <- function(parts, keys, grid, mask = NULL, r = c(0.5, 0.7, 0.8, 0.9), keep_region = 0.8) {
+  tot <- NULL
+  n <- 0
+  for (p in parts) for (g in intersect(keys, names(p$sums))) {
+    tot <- if (is.null(tot)) p$sums[[g]] else tot + p$sums[[g]]
+    n <- n + p$n[[g]]
+  }
+  if (is.null(tot) || n == 0) return(NULL)
+  res <- ffp_field_metrics(ffp_smooth(tot / n), grid, mask, r, keep_region)
+  c(res, list(n = n))
+}
+
 #' Jaccard index of two regions
 #'
 #' @param a,b Integer cell indices.

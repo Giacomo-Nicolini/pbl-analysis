@@ -154,13 +154,13 @@ footprint_validity <- function(zm, z0, ec_height, h, umean, L, sigmav, ustar, wi
 #'
 #' @param d Output of [read_icos_site()] (needs `WS`, `MO_LENGTH`, `V_SIGMA`, `USTAR`,
 #'   `WD`, `zm_m` = EC height, `canopy_height_m`, `excl_flag`; optional `NEE`,
-#'   `NEE_DATA_FLAG`, `fn_NEE_VUT_REF_QC`, `fn_SW_IN_POT`).
+#'   `NEE_DATA_FLAG`, `fn_NEE_VUT_REF_QC`, `fn_SW_IN_POT`, `H`, `fn_H_F_MDS_QC`).
 #' @param pblhmod_out PBLHmod output (`timestamp_start_utc`, `regime`, `flag_ustar_implausible`).
 #' @param cases Output of [footprint_h_cases()] (same rows as `d`).
 #' @return Tibble: `timestamp_start_utc`, `ec_height_m`, `canopy_height_m`, `d_m`, `z0_m`,
 #'   `zm_m` [m], `umean` [m s-1], `L` [m], `sigmav`, `ustar` [m s-1], `wind_dir` [deg], `nee`,
-#'   `nee_data_flag`, `nee_vut_ref_qc`, `day` [logical, SW_IN_POT > 0], `regime`,
-#'   `ustar_implausible`, `excluded`, and `h_<case>` [m].
+#'   `nee_data_flag`, `nee_vut_ref_qc`, `H_l2` [W m-2, L2 FLUXES H], `H_F_MDS_QC` [-, FLUXNET],
+#'   `day` [logical, SW_IN_POT > 0], `regime`, `ustar_implausible`, `excluded`, and `h_<case>` [m].
 footprint_input_table <- function(d, pblhmod_out, cases) {
   col <- function(k) if (k %in% names(d)) d[[k]] else rep(NA_real_, nrow(d))
   i <- match(as.numeric(d$timestamp_start_utc), as.numeric(pblhmod_out$timestamp_start_utc))
@@ -169,7 +169,8 @@ footprint_input_table <- function(d, pblhmod_out, cases) {
     timestamp_start_utc = d$timestamp_start_utc, ec_height_m = d$zm_m, canopy_height_m = d$canopy_height_m,
     d_m = hz$d_m, z0_m = hz$z0_m, zm_m = hz$zm_m, umean = d$WS, L = d$MO_LENGTH, sigmav = d$V_SIGMA,
     ustar = d$USTAR, wind_dir = d$WD, nee = col("NEE"), nee_data_flag = col("NEE_DATA_FLAG"),
-    nee_vut_ref_qc = col("fn_NEE_VUT_REF_QC"), day = col("fn_SW_IN_POT") > 0,
+    nee_vut_ref_qc = col("fn_NEE_VUT_REF_QC"), H_l2 = col("H"), H_F_MDS_QC = col("fn_H_F_MDS_QC"),
+    day = col("fn_SW_IN_POT") > 0,
     regime = pblhmod_out$regime[i], ustar_implausible = pblhmod_out$flag_ustar_implausible[i] %in% TRUE,
     excluded = d$excl_flag %in% TRUE
   )
@@ -184,7 +185,7 @@ footprint_input_table <- function(d, pblhmod_out, cases) {
 #' @param sets Validity sets.
 #' @return List: `flags` (named list per case of [footprint_validity()] tables) and `subsets`
 #'   (tibble with logical columns `<subset>__<set>__<case>`, subset in `valid`, `valid_qc`,
-#'   `valid_qc_used`).
+#'   `valid_qc_used`, `valid_qc_h`).
 footprint_flags_all <- function(tab, m_etc, sets = c("kljun", "kljun_norsl", "etc", "none")) {
   cases <- sub("^h_", "", grep("^h_", names(tab), value = TRUE))
   flags <- list()
@@ -194,7 +195,8 @@ footprint_flags_all <- function(tab, m_etc, sets = c("kljun", "kljun_norsl", "et
                             tab$sigmav, tab$ustar, tab$wind_dir, m_etc, tab$ustar_implausible, tab$excluded)
     flags[[k]] <- v
     for (s in sets) {
-      ss <- footprint_subsets(v[[paste0("valid_", s)]], tab$nee, tab$nee_data_flag, tab$nee_vut_ref_qc)
+      ss <- footprint_subsets(v[[paste0("valid_", s)]], tab$nee, tab$nee_data_flag, tab$nee_vut_ref_qc,
+                              tab$H_l2, tab$H_F_MDS_QC)
       for (u in names(ss)) sub[[paste(u, s, k, sep = "__")]] <- ss[[u]]
     }
   }
@@ -207,7 +209,7 @@ footprint_flags_all <- function(tab, m_etc, sets = c("kljun", "kljun_norsl", "et
 #' @param fl Output of [footprint_flags_all()].
 #' @param sets Validity sets.
 #' @return Long tibble per case, set and stratum (`all`, `regime=`, `season=`, `daynight=`):
-#'   `n_rows`, `n_with_h`, `n_inputs`, `n_valid`, `n_valid_qc`, `n_valid_qc_used`, `n_h_lt_zm`,
+#'   `n_rows`, `n_with_h`, `n_inputs`, `n_valid`, `n_valid_qc`, `n_valid_qc_used`, `n_valid_qc_h`, `n_h_lt_zm`,
 #'   `n_h_le_10`, and `fail_<condition>` (rows with h and inputs failing the condition; rows
 #'   can fail several).
 footprint_coverage <- function(tab, fl, sets = c("kljun", "kljun_norsl", "etc", "none")) {
@@ -234,6 +236,7 @@ footprint_coverage <- function(tab, fl, sets = c("kljun", "kljun_norsl", "etc", 
                            n_valid = sum(w & fl$subsets[[paste("valid", s, k, sep = "__")]]),
                            n_valid_qc = sum(w & fl$subsets[[paste("valid_qc", s, k, sep = "__")]]),
                            n_valid_qc_used = sum(w & fl$subsets[[paste("valid_qc_used", s, k, sep = "__")]]),
+                           n_valid_qc_h = sum(w & fl$subsets[[paste("valid_qc_h", s, k, sep = "__")]]),
                            n_h_lt_zm = sum(w & h < tab$zm_m, na.rm = TRUE), n_h_le_10 = sum(w & h <= 10, na.rm = TRUE))
         for (cn in conds) r[[paste0("fail_", cn)]] <- sum(base & !v[[cn]])
         rows[[length(rows) + 1]] <- r
@@ -249,14 +252,33 @@ footprint_coverage <- function(tab, fl, sets = c("kljun", "kljun_norsl", "etc", 
 #' `valid_qc_used`: and NEE not gap-filled in FLUXNET (`NEE_VUT_REF_QC == 0`), i.e. the
 #' data actually used for fluxes and budgets. The last step removes the u*-filtered rows
 #' (ONEFlux VUT thresholds) and the other FLUXNET removals (G 2026-10-26).
+#' `valid_qc_h`: `valid` and the sensible heat flux measured and QC-good ([h_qc_good()]).
+#' The u* filtering applies to NEE only, so this subset keeps the stable nights retained
+#' for H, LE and other gases (G 2026-10-27). Nested in `valid`, not in `valid_qc`.
 #'
 #' @param valid Valid footprint [logical].
 #' @param nee FLUXES NEE [umol m-2 s-1].
 #' @param nee_data_flag FLUXES `NEE_DATA_FLAG` [-].
 #' @param nee_vut_ref_qc FLUXNET `NEE_VUT_REF_QC` [-].
-#' @return Tibble: `valid`, `valid_qc`, `valid_qc_used` [logical, nested].
-footprint_subsets <- function(valid, nee, nee_data_flag, nee_vut_ref_qc) {
+#' @param h_l2 L2 FLUXES H [W m-2] (NA where QC-rejected).
+#' @param h_f_mds_qc FLUXNET `H_F_MDS_QC` [-].
+#' @return Tibble: `valid`, `valid_qc`, `valid_qc_used` (nested), `valid_qc_h` [logical].
+footprint_subsets <- function(valid, nee, nee_data_flag, nee_vut_ref_qc, h_l2 = NA, h_f_mds_qc = NA) {
   v <- valid %in% TRUE
   q <- v & !is.na(nee) & nee_data_flag %in% 0
-  dplyr::tibble(valid = v, valid_qc = q, valid_qc_used = q & nee_vut_ref_qc %in% 0)
+  dplyr::tibble(valid = v, valid_qc = q, valid_qc_used = q & nee_vut_ref_qc %in% 0,
+                valid_qc_h = v & h_qc_good(rep_len(h_l2, length(v)), rep_len(h_f_mds_qc, length(v))))
+}
+
+#' Sensible heat flux measured and QC-good
+#'
+#' `H_F_MDS_QC == 0` (measured, not gap-filled) where FLUXNET has a QC value; where it has
+#' none (outside or after the end of the FLUXNET file), L2 FLUXES `H` present (the ETC QC
+#' sets rejected values to missing). G 2026-10-27.
+#'
+#' @param h_l2 L2 FLUXES H [W m-2].
+#' @param h_f_mds_qc FLUXNET `H_F_MDS_QC` [-, 0 measured, 1-3 gap-filled].
+#' @return Logical.
+h_qc_good <- function(h_l2, h_f_mds_qc) {
+  ifelse(!is.na(h_f_mds_qc), h_f_mds_qc == 0, !is.na(h_l2))
 }

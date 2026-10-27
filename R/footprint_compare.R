@@ -90,11 +90,11 @@ region_share_inside <- function(region, mask) {
 
 #' ICOS target-area criteria (Rebmann et al. 2018)
 #'
-#' Rebmann et al. (2018, `Rebmann2018`), p. 474: a flux contribution from the area of
-#' interest of at least 90 % (Goeckede et al. 2004 "high quality"), also under stable
-#' conditions, for at least 50 % of the time; p. 487: a cumulative footprint of at least
-#' 80 %, integrated from the peak along levels of equal footprint value, for an
-#' acceptable measurement. Operationalised here (flagged for G): per half-hour,
+#' A site-design criterion. Rebmann et al. (2018, `Rebmann2018`), p. 475: a flux
+#' contribution from the area of interest of at least 90 % (Goeckede et al. 2004 "high
+#' quality"), also under stable conditions, for at least 50 % of the time; p. 487: a
+#' cumulative footprint (CIF) of at least 80 %, integrated from the peak along levels of
+#' equal footprint value, for an acceptable measurement. Operationalised here: per half-hour,
 #' `ta90` = target-area fraction >= 0.9 and `cif80` = target-area fraction >= 0.8; the
 #' 90 % criterion passes for a set of half-hours if `ta90` holds on >= 50 % of them
 #' (checked on all, night and stable rows separately).

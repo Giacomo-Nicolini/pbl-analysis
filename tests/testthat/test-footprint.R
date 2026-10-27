@@ -69,6 +69,52 @@ test_that("footprint_subsets are nested", {
   expect_equal(s$valid_qc, c(TRUE, TRUE, FALSE, FALSE, FALSE))
   expect_equal(s$valid_qc_used, c(TRUE, FALSE, FALSE, FALSE, FALSE))
   expect_true(all(s$valid >= s$valid_qc & s$valid_qc >= s$valid_qc_used))
+  # valid_qc_h: H_F_MDS_QC == 0 where FLUXNET has a QC value, otherwise L2 H present; nested in valid only
+  s2 <- footprint_subsets(c(TRUE, TRUE, TRUE, TRUE, FALSE), nee = NA, nee_data_flag = NA, nee_vut_ref_qc = NA,
+                          h_l2 = c(50, 50, NA, 10, 10), h_f_mds_qc = c(0, 1, NA, NA, 0))
+  expect_equal(s2$valid_qc_h, c(TRUE, FALSE, FALSE, TRUE, FALSE))
+  expect_true(all(s2$valid >= s2$valid_qc_h))
+  expect_equal(h_qc_good(c(1, NA, NA), c(0, 0, NA)), c(TRUE, TRUE, FALSE))
+})
+
+test_that("ffp_sums_write / ffp_sums_read round trip (float32)", {
+  m <- matrix(c(1e-3, 2.5e-6, 0, 7), 2)
+  p <- tempfile(fileext = ".rds")
+  ffp_sums_write(list(`a|valid|day|own` = m, `a|valid|night|own` = 2 * m), list(`a|valid|day|own` = 3L, `a|valid|night|own` = 4L), p)
+  r <- ffp_sums_read(p)
+  expect_equal(unname(r$n), c(3, 4))
+  expect_equal(r$sums[["a|valid|night|own"]], 2 * m, tolerance = 1e-7)
+  expect_equal(names(ffp_sums_read(p, "a|valid|day|own")$sums), "a|valid|day|own")
+})
+
+test_that("annual climatology from monthly sums equals the direct climatology (skipped without the Kljun code)", {
+  dir <- here::here("legacy")
+  skip_if_not(all(file.exists(file.path(dir, c("calc_footprint_FFP.R", "calc_footprint_FFP_climatology.R")))),
+              "Kljun FFP code not available (local only, cfg$ffp_code_dir)")
+  env <- load_ffp_code(dir)
+  g <- ffp_grid(c(-300, 300, -300, 300), 2)
+  x <- data.frame(zm = 20, h = c(800, 300, 1200, 150, 600, 900), umean = c(3, 2, 4, 1.5, 2.5, 3.5),
+                  L = c(-50, 80, -200, 30, 500, -20), sigmav = c(0.8, 0.5, 1, 0.4, 0.6, 0.9),
+                  ustar = c(0.4, 0.3, 0.5, 0.2, 0.35, 0.45), wd = c(200, 220, 180, 250, 90, 300))
+  fld <- lapply(seq_len(nrow(x)), function(i) ffp_field_halfhour(env, g, x$zm[i], x$h[i], x$umean[i], x$L[i],
+                                                                 x$sigmav[i], x$ustar[i], x$wd[i]))
+  # two "months" stored as float32 sums, the second with two groups (day, night)
+  p1 <- tempfile(fileext = ".rds")
+  p2 <- tempfile(fileext = ".rds")
+  ffp_sums_write(list(`none|valid|day|own` = fld[[1]] + fld[[2]] + fld[[3]]), list(`none|valid|day|own` = 3L), p1)
+  ffp_sums_write(list(`none|valid|day|own` = fld[[4]], `none|valid|night|own` = fld[[5]] + fld[[6]]),
+                 list(`none|valid|day|own` = 1L, `none|valid|night|own` = 2L), p2)
+  yr <- ffp_clim_from_sums(list(ffp_sums_read(p1), ffp_sums_read(p2)), c("none|valid|day|own", "none|valid|night|own"), g)
+  expect_equal(yr$n, 6)
+  # direct climatology of the six half-hours (the code's own sum / n; smoothing as the code, verified separately)
+  junk <- utils::capture.output(cc <- without_ebimage_notice(env$calc_footprint_FFP_climatology(
+    zm = x$zm, z0 = NaN, umean = x$umean, h = x$h, ol = x$L, sigmav = x$sigmav, ustar = x$ustar, wind_dir = x$wd,
+    domain = g$domain, dx = g$dx, dy = g$dx, r = NaN, rslayer = 1, smooth_data = 0, pulse = 0)))
+  direct <- ffp_field_metrics(ffp_smooth(cc$fclim_2d), g)
+  expect_equal(cc$n, 6)
+  expect_equal(unlist(yr$metrics[c("f_domain", "xmax_80")]), unlist(direct$metrics[c("f_domain", "xmax_80")]), tolerance = 1e-6)
+  expect_equal(yr$metrics$area_80, direct$metrics$area_80, tolerance = 1e-3)
+  expect_true(length(setdiff(yr$region, direct$region)) <= 2) # float32: at most a tie at the 80 % threshold
 })
 
 test_that("ffp_ci_paper: distances scale with zm / (1 - zm/h) umean / u*", {

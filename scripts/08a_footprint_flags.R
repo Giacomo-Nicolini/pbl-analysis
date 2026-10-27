@@ -5,7 +5,7 @@
 # --with-oper (internal use only: outputs under output/*/oper_internal/).
 # Validity sets: kljun (Kljun et al. 2015, Eq. 27), kljun_norsl (Eq. 27 without the roughness condition), etc (ETC
 # pipeline, stability from zm/L), none; all include the code checks and zm < h. Subsets: valid, valid_qc (NEE QC good
-# in FLUXES), valid_qc_used (and NEE not gap-filled in FLUXNET).
+# in FLUXES), valid_qc_used (and NEE not gap-filled in FLUXNET), valid_qc_h (valid and H measured and QC-good).
 # Output: <derived_dir>/footprint/<site>/<site>_footprint_inputs[_<period>].rds (input table + flags, for 08b)
 #         <output_dir>/tables/08_coverage_<site>[_<period>].csv, 08_etc_multiplier_<site>.csv,
 #         08_ustar_check_<site>.csv (ONEFlux VUT thresholds vs FLUXNET NEE QC)
@@ -72,7 +72,7 @@ saveRDS(list(site_id = site_id, tab = tab, flags = fl$flags, subsets = fl$subset
 
 cli::cli_h2("Coverage (all strata), per case and set")
 print_tbl(cov[cov$stratum == "all", c("case", "set", "n_rows", "n_with_h", "n_inputs", "n_valid", "n_valid_qc",
-                                       "n_valid_qc_used", "n_h_lt_zm", "n_h_le_10")])
+                                       "n_valid_qc_used", "n_valid_qc_h", "n_h_lt_zm", "n_h_le_10")])
 cli::cli_h2("Rejections per condition (rows with h and inputs), pblhmod and era5")
 print_tbl(cov[cov$stratum == "all" & cov$case %in% c("pblhmod", "era5") & cov$set == "none",
               c("case", grep("^fail_", names(cov), value = TRUE))])

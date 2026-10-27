@@ -7,11 +7,14 @@
 #      (calc_footprint_FFP_climatology() with one half-hour, umean only, rslayer = 1, unsmoothed), smoothed as the code
 #      does (ffp_smooth()); fraction inside the ICOS target area, source areas and distances for r = 50/70/80/90 %;
 #   C  monthly climatologies from the summed B fields (the code's climatology is their mean, then smoothed), per
-#      validity set x subset (valid, valid_qc, valid_qc_used) x day/night (all = day + night), on three row sets:
+#      validity set x subset (valid, valid_qc, valid_qc_used, valid_qc_h) x day/night (all = day + night), on three row sets:
 #      own (rows valid for the case), common_pe (valid for pblhmod and era5), common_pme (and measured, FI-Hyy).
+#   Monthly sums: the unsmoothed summed fields and counts per group (day and night separately), float32, so that
+#      climatologies over several months (e.g. annual) are built by summing months and smoothing at the end
+#      (ffp_clim_from_sums()). About 14 MB per group, up to 96 groups per chunk.
 # FFP computed only for rows valid in at least one requested set (never for rows failing the code checks).
-# Output: <derived_dir>/footprint/<site>/chunks/<site>_<case>_<YYYY-MM>_hh.csv.gz, _clim.rds, _meta.rds; log in
-#         <derived_dir>/footprint/<site>/logs/.
+# Output: <derived_dir>/footprint/<site>/chunks/<site>_<case>_<YYYY-MM>_hh.csv.gz, _clim.rds, _sums.rds, _meta.rds
+#         (meta written last: a chunk without it is recomputed); log in <derived_dir>/footprint/<site>/logs/.
 #
 # Usage: Rscript scripts/08b_footprint_run.R SITE [--start=YYYY-MM-DD --end=YYYY-MM-DD] [--case=a,b] [--set=a,b]
 #          [--workers=4] [--with-oper] [--limit=N (testing: N half-hours per chunk)]
@@ -84,7 +87,7 @@ for (k in cases) {
     rows <- tab[idx, c("timestamp_start_utc", "zm_m", "umean", "L", "sigmav", "ustar", "wind_dir", "day", paste0("h_", k))]
     names(rows)[ncol(rows)] <- "h"
     grp <- list()
-    for (s in sets) for (u in c("valid", "valid_qc", "valid_qc_used")) {
+    for (s in sets) for (u in c("valid", "valid_qc", "valid_qc_used", "valid_qc_h")) {
       own <- sub_cols[[paste(u, s, k, sep = "__")]][idx]
       for (dn in c("day", "night")) {
         dmask <- if (dn == "day") rows$day %in% TRUE else rows$day %in% FALSE
@@ -94,7 +97,7 @@ for (k in cases) {
       }
     }
     grp <- grp[vapply(grp, any, logical(1))]
-    hash <- digest::digest(list(rows, grp, ffp_md5, r_levels, grid$domain, grid$dx, sum(mask), "v1"))
+    hash <- digest::digest(list(rows, grp, ffp_md5, r_levels, grid$domain, grid$dx, sum(mask), "v3"))
     tasks[[length(tasks) + 1]] <- list(site_id = site_id, case = k, month = mo, rows = rows, grp = grp, hash = hash)
   }
 }
@@ -117,13 +120,22 @@ run_chunk <- function(tk, ffp_dir, grid, mask, r_levels, chunk_dir, log_file) {
   sums <- list()
   cnt <- list()
   for (i in seq_len(n)) {
-    f <- ffp_field_halfhour(env, grid, rows$zm_m[i], rows$h[i], rows$umean[i], rows$L[i], rows$sigmav[i], rows$ustar[i], rows$wind_dir[i])
+    fld <- function() ffp_field_halfhour(env, grid, rows$zm_m[i], rows$h[i], rows$umean[i], rows$L[i], rows$sigmav[i], rows$ustar[i], rows$wind_dir[i])
+    f <- fld()
     if (is.null(f)) {
       bm[[i]] <- dplyr::tibble(ffp_ok = FALSE)
       next
     }
-    m <- ffp_field_metrics(ffp_smooth(f), grid, mask, r_levels, keep_region = NULL)$metrics
-    bm[[i]] <- dplyr::bind_cols(dplyr::tibble(ffp_ok = TRUE), m)
+    # Guard (2026-10-27): one non-reproducible NA f_domain in the first test run. A field with non-finite cells is
+    # recomputed once; cells still non-finite are set to 0 and counted, so they never enter the sums.
+    n_retry <- 0L
+    if (any(!is.finite(f))) { f <- fld(); n_retry <- 1L }
+    n_nonfinite <- sum(!is.finite(f))
+    f[!is.finite(f)] <- 0
+    met <- function() ffp_field_metrics(ffp_smooth(f), grid, mask, r_levels, keep_region = NULL)$metrics
+    m <- met()
+    if (!all(is.finite(c(m$f_domain, m$f_target_area)))) { m <- met(); n_retry <- n_retry + 1L }
+    bm[[i]] <- dplyr::bind_cols(dplyr::tibble(ffp_ok = TRUE, n_nonfinite = n_nonfinite, n_retry = n_retry), m)
     for (g in names(tk$grp)) {
       if (!tk$grp[[g]][i]) next
       if (is.null(sums[[g]])) { sums[[g]] <- f; cnt[[g]] <- 1L } else { sums[[g]] <- sums[[g]] + f; cnt[[g]] <- cnt[[g]] + 1L }
@@ -151,6 +163,7 @@ run_chunk <- function(tk, ffp_dir, grid, mask, r_levels, chunk_dir, log_file) {
   b <- file.path(chunk_dir, paste0(tk$site_id, "_", tk$case, "_", tk$month))
   readr::write_csv(hh, paste0(b, "_hh.csv.gz"))
   saveRDS(clim, paste0(b, "_clim.rds"))
+  ffp_sums_write(sums, cnt, paste0(b, "_sums.rds"))
   saveRDS(list(hash = tk$hash, n = n, seconds = as.numeric(difftime(Sys.time(), t_start, units = "secs"))), paste0(b, "_meta.rds"))
   msg <- sprintf("%s %s %s %s: %d half-hours, %d climatologies, %.0f s", format(Sys.time(), "%Y-%m-%d %H:%M:%S"), tk$site_id,
                  tk$case, tk$month, n, length(clim), as.numeric(difftime(Sys.time(), t_start, units = "secs")))
