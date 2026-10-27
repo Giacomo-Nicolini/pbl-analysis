@@ -146,6 +146,25 @@ so code must be reproducible, documented and traceable to references.
 - **Exclusions**: `config/exclusion_periods.csv` lists periods that must be removed for a site (e.g. SE-Nor clearcut).
   Every pipeline step must apply them and report how many records were excluded. Never skip this silently.
 
+## Footprints (phase 5, spec 08)
+
+- **FFP code**: Kljun's `calc_footprint_FFP.R` (v1.3) and `calc_footprint_FFP_climatology.R` (v1.31), © N. Kljun,
+  in `ffp_code_dir` (`config.yml`; default `legacy`, cluster `"LOCAL"`). Local only and gitignored: source it with
+  `load_ffp_code()` into a dedicated environment; never copy, modify, commit or publish it; cite `Kljun2015`.
+  Acceptance check: `git grep -n "calc_footprint_FFP <-" -- ':!docs' ':!CLAUDE.md'` returns nothing. All calls pass umean only
+  (z0 = NaN; deviation from ETC, which passes both). Known code issues: `docs/local/ffp_code_notes.md`.
+- **Heights**: d = 2/3 hc, z0 = 0.15 hc, zm = EC height − d (ETC convention). **Stability always from zm/L with this
+  zm** and L2 `MO_LENGTH`, never from L2 `ZL` (see Input data).
+- **Validity sets** (`footprint_validity()`; thresholds in `docs/project_plan.md`, phase 5): `kljun` (Kljun et al.
+  2015, Eq. 27), `kljun_norsl` (Eq. 27 without 20 z0 < zm), `etc` (ETC operational), `none`; each also includes the
+  FFP code's own checks and zm < h. `kljun` keeps no row at forest sites (BE-Bra, FI-Hyy): a result, not a bug.
+- **Subsets** (`footprint_subsets()`): `valid`; `valid_qc` (FLUXES `NEE_DATA_FLAG == 0`); `valid_qc_used` (and FLUXNET
+  `NEE_VUT_REF_QC == 0`: removes the u*-filtered rows, ONEFlux VUT thresholds from the BIF file, and the other FLUXNET
+  NEE removals); `valid_qc_h` (valid and H measured and QC-good: `H_F_MDS_QC == 0`, or L2 `H` present where FLUXNET has
+  no QC value; keeps the stable nights that the NEE u* filter removes).
+- **Target-area fraction** = integral of the footprint over the ICOS target area relative to the full footprint (the
+  FFP function integrates to 1 over the plane); `f_domain` = part inside the ±1000 m domain.
+
 ## Code organisation
 
 ```

@@ -184,3 +184,29 @@ As in `CLAUDE.md`, plus: step-0 findings; coverage per case and subset; median a
 target-area fraction, PBLHmod vs ERA5, by regime, for `valid` vs `valid_qc_ustar`; share of the most-affected rows
 removed by QC/u*; climatology overlap and target-area criteria; anchor vs Kljun Table 5; FI-Hyy measured case;
 anything unexpected.
+
+## Amendment 1 (G, 2026-10-26/27): decisions during implementation
+
+1. **Subsets.** `valid_qc_ustar` is implemented as `valid_qc_used`: NEE QC good in FLUXES and not gap-filled in
+   FLUXNET (`NEE_VUT_REF_QC == 0`). It removes the u*-filtered rows (checked against the ONEFlux VUT thresholds of
+   the BIF file: 100 % of the u*-filtered rows are gap-filled) and the other FLUXNET NEE removals (u* explains 74 % of
+   the exclusions at FI-Hyy, 81 % at BE-Bra). New subset `valid_qc_h`: valid and H measured and QC-good
+   (`H_F_MDS_QC == 0`, or L2 `H` present where FLUXNET has no QC value); the u* filter applies to NEE only, so this
+   subset keeps the stable nights retained for H, LE and other gases.
+2. **Validity sets.** `kljun` = Eq. 27 only (no u* condition); new set `kljun_norsl` = Eq. 27 without the roughness
+   condition; `etc` as legacy; `none`. The FFP code's own checks apply to every set. Stability from zm/L with
+   zm = EC height − 2/3 hc for every set (section 2).
+3. **FFP calls.** umean only (z0 = NaN) in every call. A (crosswind-integrated distances) from the paper's
+   equations, C (climatologies) from the summed B fields; both verified against Kljun's code
+   (`scripts/08v_ffp_verify.R`).
+4. **Monthly sums.** Each monthly chunk keeps the unsmoothed summed fields and counts per group
+   (`<site>_<case>_<YYYY-MM>_sums.rds`, float32), so annual climatologies are built by summing months and smoothing
+   at the end (`ffp_clim_from_sums()`; tested against a direct climatology).
+5. **Target area.** The target-area fraction is relative to the full footprint (f_domain = part inside the
+   ±1000 m domain). Reported as a distribution (p10, median, p90) by zm/L class and as the difference between cases
+   [percentage points]; how often the 90 % region reaches the domain edge (analogue of the code's `flag_err = 2`).
+   The ICOS criteria of `Rebmann2018` are kept as a site-design check: ≥ 90 % of the flux from the area of interest,
+   also under stable conditions, for ≥ 50 % of the time (p. 475); cumulative footprint ≥ 80 % for an acceptable
+   measurement (p. 487).
+6. **Production run.** One reference year per station on the cluster (selection rule in the cluster spec). The
+   EBImage check of the smoothing is done there.

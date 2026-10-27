@@ -32,7 +32,7 @@ Status: agreed design, v0.1 (2026-10-08). Living document: update as decisions c
 | 2 | Standardizers for reference data (ERA5, measured, PBLHmod) into standard files | `data/standard/` |
 | 3 | Evaluation: PBLHmod vs ERA5 at all sites; three-way comparison where measurements exist; triple collocation | stats, figures |
 | 4 | Error attribution: conditions and causes of disagreement | GAM models, figures |
-| 5 | Footprint error propagation (Monte Carlo; half-hourly and climatologies) | sensitivity results |
+| 5 | Footprint error propagation: 5a deterministic swap of the PBLH source (spec 08); 5b Monte Carlo (half-hourly and climatologies) | sensitivity results |
 | 6 | Paper (Quarto) and data/code release (Zenodo) | `paper/` |
 
 ## Phase 1: PBLHmod v2
@@ -124,10 +124,42 @@ values alone are biased towards "models too deep".
 
 ## Footprint error propagation (phase 5)
 
-- Model: official Kljun FFP R code (`calc_footprint_FFP.R`, `calc_footprint_FFP_climatology.R`).
-- Monte Carlo: perturb h with error distributions conditional on stability and site, from phases 3–4.
+- Model: official Kljun FFP R code (`calc_footprint_FFP.R` v1.3, `calc_footprint_FFP_climatology.R` v1.31), local
+  only (`ffp_code_dir`), sourced into a dedicated environment, never copied or modified. All calls pass umean only
+  (z0 = NaN), a deviation from ETC (which passes both).
+- **Split (G, 2026-10-23):**
+  - **5a, deterministic swap (spec 08):** the PBLH in the FFP is swapped, all other inputs unchanged: PBLHmod vs ERA5
+    (tower cell; bilinear in tables only) vs measured MLH where available (FI-Hyy: exact values, plus qc-3 lower
+    bounds as a "bound" sensitivity case); PBLHmod × 0.8 / × 1.2 as an anchor against Kljun et al. (2015) Table 5.
+  - **5b, Monte Carlo (later spec):** perturb h with error distributions conditional on stability and site, from
+    phases 3–4 and all measured sites.
 - Express results using dimensionless zm/h and zm/L.
-- Metrics: change in fetch (50/70/80/90 %), in the footprint fraction inside the ICOS target area, and in the number of records crossing FFP validity limits (zm < h, zm/L, u*).
+- Metrics: change in fetch (peak, 50/70/80/90 %), in the footprint fraction inside the ICOS target area (relative to
+  the full footprint; distribution by stability class and difference between cases), in climatology overlap (Jaccard
+  of the 80 % regions) and in coverage (records crossing FFP validity limits: zm < h, zm/L, u*).
+- **Coverage question (G):** how many half-hours have a valid footprint with each PBLH source, and does the source
+  change which half-hours are valid? Answered per case, validity set and subset (spec 08, `08_coverage_*`).
+- **Which data matter (G, 2026-10-23):** effects on all valid half-hours vs on the half-hours actually used:
+  `valid_qc` (NEE QC good), `valid_qc_used` (and NEE not gap-filled in FLUXNET: removes the u*-filtered rows and other
+  FLUXNET removals) and `valid_qc_h` (valid and H measured and QC-good; the u* filter applies to NEE only, so this
+  keeps the stable nights retained for H, LE and other gases).
+- **Validity sets (spec 08; stability from zm/L with zm = EC height − 2/3 hc, never L2 `ZL`):**
+
+  | condition | `kljun` (Kljun et al. 2015, Eq. 27) | `kljun_norsl` | `etc` (ETC operational, `FFP_analysis_dev.R`) | `none` |
+  |---|---|---|---|---|
+  | roughness sublayer | zm > 20 z0 | – | zm ≥ m z0, m data-dependent per site (from 5 down by 0.1 until rejected ≤ 0.5 × retained) | – |
+  | entrainment layer | zm < 0.8 h | zm < 0.8 h | zm ≤ 0.8 h | – |
+  | tower below PBL | – | – | EC height ≤ h | – |
+  | stability | zm/L ≥ −15.5 | zm/L ≥ −15.5 | −15.5 < zm/L ≤ 1 | – |
+  | friction velocity | – (code check only) | – | u* ≥ 0.2 m s⁻¹ | – |
+
+  Every set also includes the FFP code's own checks (h ≥ 10 m, u* ≥ 0.1 m s⁻¹, zm/L > −15.5, σv ≥ 0, u* ≥ 0,
+  wind direction in [0, 360]), zm < h (needed by the FFP scaling, not enforced by the climatology code), inputs
+  present, the exclusion periods and the spec-05 u* plausibility rule. `kljun` keeps no row at BE-Bra or FI-Hyy (20 z0 < zm never holds over forest):
+  this resolves the open point on the published vs relaxed thresholds.
+- **Production run (cluster):** one reference year per station (G, 2026-10-27; the choice of the year is to be fixed
+  in the cluster spec). Monthly chunks keep the unsmoothed summed fields and counts per group, so annual
+  climatologies are built by summing months and smoothing at the end. Runtime ≈ 2 s per FFP half-hour (single core).
 - Show explicitly that a bias in h does not average out in climatologies.
 
 ## Inputs
@@ -158,11 +190,10 @@ values alone are biased towards "models too deep".
     Currently: SE-Nor 2022-10-01 → 2023-04-20 (clearcut, tower lowered 36 → 12 m).
   - Tall canopy relative to zm (e.g. IT-BCi maize seasons): **phases 1–4** keep the data but add a per-half-hour flag
     and the ratio hc/zm as a covariate in the error analysis; **phase 5** applies the FFP validity criteria.
-  - FFP validity criteria (Kljun et al. 2015): implemented with **configurable thresholds**, at three strictness levels:
-    `strict` (as published), `relaxed` (as used operationally at ETC; in past work some criteria, notably the
-    roughness-length and h/zm ones, had to be relaxed or nearly ignored), `none`. Report how many records each level
-    keeps per site, and whether the phase-5 conclusions change with strictness. The exact published thresholds and the
-    ETC relaxed values must be written in the phase-5 spec (to be provided by G. Nicolini / verified in the paper).
+  - FFP validity criteria (Kljun et al. 2015): implemented with **configurable thresholds**, as the sets `kljun`
+    (as published), `kljun_norsl` (without the roughness condition), `etc` (as used operationally at ETC) and `none`;
+    thresholds in the table of the phase-5 section (spec 08). Report how many records each set keeps per site, and
+    whether the phase-5 conclusions change with the set.
 - ICOS target areas: KML polygons (ETC), one per station, stored in `data/raw/target_areas/XX-Yyy_TA.kml` (38 stations; some are multi-polygon, e.g. IT-Cp2, IT-Ren)
   (gitignored, not published for now). Read with `sf`; for FFP overlap, transform to a local
   metric projection centred on the tower (e.g. azimuthal equidistant), matching FFP x/y coordinates in metres.
@@ -170,6 +201,18 @@ values alone are biased towards "models too deep".
 - Missing values: `-9999`.
 
 ## Open points
+
+- Phase 5a (spec 08, 2026-10-27):
+  - EBImage check on the cluster (installed there): `ffp_smooth()` vs the code's `EBImage::filter2()` smoothing
+    (`scripts/08v_ffp_verify.R` runs it when EBImage is available); on the PC it is verified only against an FFT
+    circular convolution.
+  - Storage of the monthly summed fields: ≈ 14 MB per group (float32, gzip), up to 96 groups per case and month, i.e.
+    ≈ 0.3–1.4 GB per case-month. One reference year × 5–7 cases ≈ 30–100 GB per station: decide which sets, subsets
+    and row sets to keep before the network run.
+  - Reference year per station for the production run: selection rule to be fixed in the cluster spec.
+  - The ICOS target-area criterion (≥ 90 % from the area of interest; Rebmann2018 p. 475) fails at BE-Bra and FI-Hyy
+    whatever the PBLH source (test month): report the fraction distribution, use the criterion as a site-design
+    reference only.
 
 - Site metadata to verify: canopy-height jumps at FR-Fon, FR-Hes, SE-Svb (use current values for now);
   SE-Nor IGBP after clearcut (not used in calculations).
@@ -249,7 +292,7 @@ values alone are biased towards "models too deep".
   (spec 07).
 - ~~Literature: the current bib is footprint-focused. A PBL collection is needed.~~ Done (2026-10-15):
   `pblh_collection.bib` (Kljun App. B references) + `pblh_literature_2026-10.bib` and annotated
-  `literature_review_pblh.md`. Keep extending as papers are added to `C:\WORK\bibliography_new_win11\`.
+  `literature_review_pblh.md`. Keep extending as papers are added to the local bibliography folder.
 
 ## Points for the ETC QC report
 
