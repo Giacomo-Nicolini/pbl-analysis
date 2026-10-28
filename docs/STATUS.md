@@ -1,6 +1,6 @@
 # Project status (handover note)
 
-Last update: 2026-10-26. Read this first in a new session, then `docs/project_plan.md` and `CLAUDE.md`.
+Last update: 2026-10-28. Read this first in a new session, then `docs/project_plan.md` and `CLAUDE.md`.
 
 ## PBLH sources (names used in the code and in the standard files)
 
@@ -65,6 +65,21 @@ measured MLH) done; 4–6 not started.
   - FI-Hyy measured MLH (297 common half-hours): ln(x_80 PBLHmod / measured) median −0.008, > 10 % on 13 %.
   - Runtime: 1.7–2.1 s per half-hour (single), ≈ 4.2 s per worker with 4 PC workers; test month 2.0–2.2 h per site.
     Full period ≈ 460–480 k FFP half-hours per site ≈ 250–270 CPU-hours per site: cluster.
+  - Final test-month chunks (hash v3, 2026-10-27, 2 workers) and integrity checks (2026-10-28). The PC crashed four
+    times during these runs and once silently flipped data in memory: one float32 cell of one summed group of the
+    FI-Hyy `era5` `_sums.rds` (rel. 2.9e-6) differed between two runs; a third computation matched the earlier file,
+    which was kept. **Treat this PC as able to corrupt data in memory; no heavy runs on it until the RAM is tested.**
+    Checks: every chunk of both sites read back (hash = current task, rows/timestamps/h = task, no non-finite or
+    negative cells, group counts consistent); climatologies rebuilt from the float32 sums match the stored ones (max
+    rel. diff ≤ 3e-6, Jaccard 80 % = 1; all 288 of BE-Bra; FI-Hyy `bound`, `measured`, `pblhmod_x0.8`/`x1.2`, 180);
+    FI-Hyy `pblhmod`, `era5`, `era5_bilinear`, `bound` byte-identical across two independent runs (hh, clim, sums). Script 08 run twice per site: all 22 outputs
+    (tables and figures) byte-identical (SHA-256). The headline numbers above are unchanged by the final chunks.
+  - Storage options for the cluster sums (`scripts/dev/08_storage_options.R`, for spec 09; tables
+    `08_storage_*.csv`): current format (float32 + gzip) 54 GB (FI-Hyy, 7 cases) / 33 GB (BE-Bra, 5 cases) per
+    site-year with all sets, 18 / 11 GB with the `etc` set only; 5 m block sums (`c5`) 2.2 / 1.3 GB (all sets), within
+    every tolerance (|Δ area_80| ≤ 0.16 %, |Δ xmax_80| ≤ 1.1 m, |Δ f_target_area| ≤ 0.008 pp, Jaccard vs full
+    ≥ 0.991, |Δ Jaccard ERA5 vs PBLHmod| ≤ 3e-4); sparse 1 − 1e-3 / 1 − 1e-4 pass but save little (42–49 / 30–33
+    GB); `c5_sp4` 2.0 / 1.3 GB. Decision on the storage design for spec 09: G.
 - BE-Bra FLUXNET 2020–2026 replacement (G, 2026-10-26; old outputs in `*/pre_bebra_fluxnet2026/`):
   - Inputs, old vs new file on 2020–2025 (105,216 common rows): only gap-filled values differ. `TA_F` 14,318 rows (all
     QC 2, 99 % in 2020; max 0.033 K), `PA_F` 15,530 rows (all QC 2; max 28 Pa), `H_F_MDS` 69 rows (all gap-filled,
@@ -183,7 +198,6 @@ collected for the ETC QC report in `docs/local/etc_qc_report.md` (local working 
 
 ## Waiting on others
 
-- Relaxed FFP validity thresholds used at ETC (for the phase-5 spec).
 - Verification of forest canopy-height jumps (FR-Fon, FR-Hes, SE-Svb).
 
 ## Open scientific points (details in `docs/project_plan.md`)
@@ -197,8 +211,8 @@ collected for the ETC QC report in `docs/local/etc_qc_report.md` (local working 
 
 - PC rebuild procedure: `docs/setup/pc_rebuild_checklist.md` (+ `backup_before_format.ps1`).
 - Gitignored but needed: `data/raw/` (ICOS L2 zips for BE-Bra, ERA5 CSVs in `era5/`, `era5_pressure_levels/`,
-  `era5_single_levels/`, `target_areas/*.kml`), `C:\WORK\secrets`, `docs/local/` (local working notes).
-- Reference PDFs live outside the repo in `C:\WORK\bibliography_new_win11\` (not in git; the `file` fields were
-  removed from the tracked `.bib` files on 2026-10-26).
+  `era5_single_levels/`, `target_areas/*.kml`), the local secrets folder, `docs/local/` (local working notes).
+- Reference PDFs live in a local bibliography folder outside the repo (not in git; the `file` fields were removed
+  from the tracked `.bib` files on 2026-10-26).
 - BE-Bra: the replaced FLUXNET 2020–2025 file, the cleanset and the EddyPro outputs are in `data/archive/` (not read
   by the pipeline).
