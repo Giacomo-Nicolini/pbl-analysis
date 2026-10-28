@@ -36,6 +36,9 @@ so code must be reproducible, documented and traceable to references.
 
 - R 4.4.1, both locally (Windows) and on the cluster (Linux, SLURM). Packages managed by `renv`:
   after adding a dependency run `renv::snapshot()`. Do not call `install.packages()` or `library()` inside functions.
+  EBImage (Bioconductor) is optional, used only by `scripts/08v_ffp_verify.R` (comparison with the FFP code's
+  smoothing; skipped if not installed), and ignored by renv (`ignored.packages` in `renv/settings.json`, G
+  2026-10-28): run that check on the cluster.
 - Paths: `config.yml` with profiles `default` (local PC) and `cluster`. Select with env var `R_CONFIG_ACTIVE=cluster`.
   Access with `cfg <- get_cfg()` (`R/utils_config.R`).
 - **The repository is public: no absolute machine paths or user names in tracked files.** Machine-specific values
