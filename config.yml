@@ -5,6 +5,7 @@
 
 default:
   icos_l2_dir: "data/raw/icos_l2"          # contains XX-Yyy_output_L2I_2026/ folders
+  ffp_code_dir: "legacy"                   # Kljun FFP R code (local only, gitignored; spec 08)
   # ERA5 (C. Trotta, Oct 2026). {site} = station code, e.g. BE-Bra; {var} = static variable (z, lsm, sdor)
   era5_sl_dir: "data/raw/era5/{site}"                  # hourly single levels
   era5_pl_dir: "data/raw/era5_pressure_levels/{site}"  # 6-hourly pressure levels
@@ -23,6 +24,7 @@ default:
 
 cluster:
   icos_l2_dir: "LOCAL"
+  ffp_code_dir: "LOCAL"
   era5_sl_dir: "LOCAL"
   era5_pl_dir: "LOCAL"
   era5_static_dir: "LOCAL"   # one folder per variable: path ending in {var}

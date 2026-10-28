@@ -1,12 +1,12 @@
-# Rebuild the synthetic ICOS L2, ERA5 and Cloudnet test fixtures (tiny, no real data).
-# Run from the project root: Rscript tests/testthat/fixtures/make_fixtures.R [icos] [era5] [cloudnet]
+# Rebuild the synthetic ICOS L2, ERA5, Cloudnet and ONEFlux BIF test fixtures (tiny, no real data).
+# Run from the project root: Rscript tests/testthat/fixtures/make_fixtures.R [icos] [era5] [cloudnet] [oneflux]
 # (no argument = all parts; rebuilding the ICOS zips changes their bytes even
 # when the content is unchanged, so rebuild only the part you need).
 # Requires a `zip` program for utils::zip() (on Windows: Rtools).
 # Synthetic site XX-Tst, UTC+1.
 
 parts <- commandArgs(trailingOnly = TRUE)
-if (length(parts) == 0) parts <- c("icos", "era5", "cloudnet")
+if (length(parts) == 0) parts <- c("icos", "era5", "cloudnet", "oneflux")
 
 fx <- here::here("tests", "testthat", "fixtures")
 site <- "XX-Tst"
@@ -294,6 +294,30 @@ if ("cloudnet" %in% parts) {
   ncdf4::ncatt_put(nc, "height", "standard_name", "height_above_mean_sea_level")
   ncdf4::ncatt_put(nc, 0, "file_uuid", "cls0001-test")
   ncdf4::nc_close(nc)
+}
+
+# ---- ONEFlux BIF (spec 08): synthetic GRP_ONEFLUX, GRP_FLUX_REF (CUT, VUT 2020/2021, a DD row), GRP_UST_THR ----
+if ("oneflux" %in% parts) {
+  of_dir <- file.path(fx, "oneflux")
+  dir.create(of_dir, recursive = TRUE, showWarnings = FALSE)
+  row <- function(g, grp, v, val) data.frame(SITE_ID = site, GROUP_ID = g, VARIABLE_GROUP = grp, VARIABLE = v, DATAVALUE = val)
+  ref <- function(g, ver, thr, pct = NA, year = NA, res = "HH") {
+    r <- rbind(row(g, "GRP_FLUX_REF", "REF_TIME_RESOLUTION", res),
+               if (!is.na(pct)) row(g, "GRP_FLUX_REF", "REF_USTAR_PERCENTILE", pct),
+               row(g, "GRP_FLUX_REF", "REF_USTAR_THRESHOLD", thr), row(g, "GRP_FLUX_REF", "REF_VARIABLE", "NEE"),
+               row(g, "GRP_FLUX_REF", "REF_VERSION", ver))
+    if (!is.na(year)) r <- rbind(r, row(g, "GRP_FLUX_REF", "REF_YEAR", year))
+    r
+  }
+  b <- rbind(
+    row(1, "GRP_ONEFLUX", "PRODUCT_FIRST_YEAR", "2020"), row(1, "GRP_ONEFLUX", "PRODUCT_LAST_YEAR", "2021"),
+    row(1, "GRP_ONEFLUX", "PRODUCT_NAME", paste0("ICOSETC_", site, "_FLUXNET_2020-2021_v1.3_r1.zip")),
+    ref(10, "CUT", "0.25", "48.75"), ref(11, "VUT", "0.2", "50", 2020), ref(12, "VUT", "0.3", "47.5", 2021),
+    ref(13, "VUT", "0.9", NA, 2020, "DD"),
+    row(20, "GRP_UST_THR", "UST_THR_YEAR", "2020"), row(20, "GRP_UST_THR", "UST_THR_VALUE", "0.21")
+  )
+  utils::write.csv(b, file.path(of_dir, paste0("ICOSETC_", site, "_FLUXNET_BIF_2020-2021_v1.3_r1.csv")),
+                   row.names = FALSE, quote = FALSE)
 }
 
 message("Fixtures written to ", fx, " (parts: ", paste(parts, collapse = ", "), ")")

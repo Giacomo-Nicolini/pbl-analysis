@@ -287,10 +287,11 @@ prefix_cols <- function(d, prefix) {
 #'   `FOOTPRINT_TA_CONTR` target-area contribution [%]; `FOOTPRINT_FLAG` [-];
 #'   `H2O` water vapour mole fraction [mmol mol-1]; `SH` (if present) sensible-heat storage
 #'   flux in the air below the EC system [W m-2] (diagnostic only, spec 07; not
-#'   used by the PBLHmod forcing);
+#'   used by the PBLHmod forcing); `NEE` net ecosystem exchange [umol m-2 s-1] and
+#'   `NEE_DATA_FLAG` [-, 0 good, 1/2 removed by the ETC QC] (if present; spec 08 subsets);
 #'   `src_fluxes` [logical, row present in the file].
 read_icos_fluxes <- function(path, utc_offset_h) {
-  d <- read_icos_csv(path, icos_cols$fluxes, utc_offset_h, label = "FLUXES", optional_pattern = "^SH$")
+  d <- read_icos_csv(path, icos_cols$fluxes, utc_offset_h, label = "FLUXES", optional_pattern = "^(SH|NEE|NEE_DATA_FLAG)$")
   info <- attr(d, "read_info")
   names(d)[names(d) == ".in_file"] <- "src_fluxes"
   attr(d, "read_info") <- info
@@ -308,9 +309,11 @@ read_icos_fluxes <- function(path, utc_offset_h) {
 #'   [-]; `fn_H_CORR` energy-balance corrected H [W m-2]; `fn_NIGHT` night flag
 #'   [-, 1 = night]; `fn_SW_IN_POT` potential shortwave radiation [W m-2];
 #'   `fn_WS_F` wind speed, gap-filled [m s-1]; `fn_P_F` precipitation, gap-filled
-#'   [mm]; plus the time columns and `src_fluxnet` [logical].
+#'   [mm]; `fn_NEE_VUT_REF_QC` [-, 0 measured, 1-3 gap-filled] (if present; spec 08); plus
+#'   the time columns and `src_fluxnet` [logical].
 read_icos_fluxnet <- function(path, utc_offset_h) {
-  d <- read_icos_csv(path, icos_cols$fluxnet, utc_offset_h, label = "FLUXNET")
+  d <- read_icos_csv(path, icos_cols$fluxnet, utc_offset_h, label = "FLUXNET",
+                     optional_pattern = "^NEE_VUT_REF_QC$")
   info <- attr(d, "read_info")
   d <- prefix_cols(d, "fn_")
   names(d)[names(d) == ".in_file"] <- "src_fluxnet"
