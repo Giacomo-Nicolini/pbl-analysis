@@ -243,3 +243,16 @@ test_that("icos_range_report skips excluded rows by default", {
   expect_equal(r2$n_out_of_range[r2$variable == "H"], 1)
   expect_equal(r2$n_excluded[r2$variable == "H"], 1)
 })
+
+test_that("icos_zip_header and nee_column_check (spec 10, for spec 09)", {
+  z <- test_path("fixtures", "icos_l2", "XX-Tst_output_L2I_2026", "ICOSETC_XX-Tst_FLUXES_INTERIM_L2.zip")
+  h <- icos_zip_header(z)
+  expect_true(all(c("TIMESTAMP_START", "TIMESTAMP_END", "H") %in% h))
+  ch <- nee_column_check(c("TIMESTAMP_START", "NEE", "FC", "NEE_DATA_FLAG"), c("NEE_VUT_REF", "NEE_VUT_REF_QC"))
+  expect_true(ch$has_NEE && ch$has_NEE_DATA_FLAG && ch$has_NEE_VUT_REF_QC)
+  expect_equal(ch$fluxes_nee_like, "NEE;FC;NEE_DATA_FLAG")
+  expect_equal(ch$fluxnet_nee_ref, "NEE_VUT_REF;NEE_VUT_REF_QC")
+  ch2 <- nee_column_check(c("TIMESTAMP_START", "FC"), NULL)
+  expect_false(ch2$has_NEE)
+  expect_true(is.na(ch2$has_NEE_VUT_REF_QC))
+})
