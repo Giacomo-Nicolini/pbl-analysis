@@ -65,3 +65,65 @@ test_that("lower-bound and censored-below summaries", {
   expect_equal(c0$frac_mod_below_zmin, 2 / 3)
   expect_equal(c0$median_mod, 105)
 })
+
+# --- spec 10: hourly interval-mean references ---
+hh_std <- function() {
+  s <- as.POSIXct("2022-06-01 10:00", tz = "UTC") + (0:5) * 1800
+  dplyr::tibble(timestamp_start_utc = s, timestamp_end_utc = s + 1800, pblh_m = c(100, 300, 500, NA, 700, 900),
+                qc_flag = 0L, x_regime = c("convective", "convective", "convective", "convective", "stable",
+                                           "convective"))
+}
+
+test_that("match_halfhours_to_intervals: both half-hours inside the hour, regime of both", {
+  h <- as.POSIXct("2022-06-01 10:00", tz = "UTC") + (0:2) * 3600
+  m <- match_halfhours_to_intervals(hh_std(), h)
+  expect_equal(m$timestamp_utc, h)
+  expect_equal(m$pblh_m, c(200, NA, 800))           # 10:00-11:00 = mean(100, 300); 11:00 needs 11:30 (NA)
+  expect_equal(m$x_regime, c("convective", NA, "mixed"))
+  expect_equal(m$n_samples, c(2L, 1L, 2L))
+})
+
+test_that("match_instants_to_intervals: mean of the values at t and t + 1 h, both required", {
+  t <- as.POSIXct("2022-06-01 10:00", tz = "UTC") + (0:3) * 3600
+  e <- dplyr::tibble(timestamp_start_utc = t, timestamp_end_utc = t, pblh_m = c(400, 600, NA, 1000))
+  m <- match_instants_to_intervals(e, t[1:3])
+  expect_equal(m$pblh_m, c(500, NA, NA))
+  expect_equal(m$n_samples, c(2L, 1L, 1L))
+})
+
+test_that("measured_values: uncensored sources are exact where pblh_m is present", {
+  s <- as.POSIXct("2022-06-01 10:00", tz = "UTC") + (0:2) * 3600
+  meas <- dplyr::tibble(timestamp_start_utc = s, timestamp_end_utc = s + 3600, pblh_m = c(500, NA, 800),
+                        qc_flag = c(0L, NA, 1L))
+  v <- measured_values(meas)
+  expect_equal(v$kind, c("exact", NA, "exact"))
+  expect_equal(v$right, c(500, NA, 800))
+  # censored source: coded by measured_interval()
+  meas$x_censor_below_m <- 105
+  meas$qc_flag <- c(0L, 1L, 3L)
+  expect_equal(measured_values(meas)$kind, c("exact", "below", "lower_bound"))
+})
+
+test_that("measured_time_base: hourly reference puts PBLHmod and ERA5 on its intervals", {
+  s <- as.POSIXct("2022-06-01 10:00", tz = "UTC") + (0:2) * 3600
+  meas <- dplyr::tibble(timestamp_start_utc = s, timestamp_end_utc = s + 3600, pblh_m = c(500, 600, 800),
+                        qc_flag = 0L)
+  t <- as.POSIXct("2022-06-01 10:00", tz = "UTC") + (0:3) * 3600
+  era <- list(era5_blh_center = dplyr::tibble(timestamp_start_utc = t, timestamp_end_utc = t,
+                                              pblh_m = c(400, 600, 800, 1000)))
+  tb <- measured_time_base(meas, hh_std(), era)
+  expect_equal(tb$base, "hour")
+  expect_equal(tb$mid_s, 1800)
+  expect_equal(tb$mod$pblh_m, c(200, NA, 800))
+  expect_equal(tb$era$era5_blh_center$pblh_m, c(500, 700, 900))
+  expect_equal(tb$era$era5_blh_center$x_regime, c("convective", NA, "mixed"))
+  expect_equal(tb$era_meas$pblh_m, meas$pblh_m)
+  meas$timestamp_end_utc <- meas$timestamp_start_utc + 600
+  expect_error(measured_time_base(meas, hh_std(), era), "not supported")
+})
+
+test_that("keep_regime_by_distance follows the distance rule", {
+  r <- c("convective", "stable", NA, "mixed")
+  expect_equal(keep_regime_by_distance(r, "all_regimes"), rep(TRUE, 4))
+  expect_equal(keep_regime_by_distance(r, "daytime_convective"), c(TRUE, FALSE, FALSE, FALSE))
+})

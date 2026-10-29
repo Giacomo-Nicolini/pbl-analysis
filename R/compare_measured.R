@@ -139,3 +139,117 @@ censored_below_summary <- function(df, by = NULL) {
     dplyr::bind_cols(x[1, by, drop = FALSE], f(x))
   }))
 }
+
+# --- Spec 10 A5: any measured source (censored half-hourly, or hourly interval means) ---
+
+#' Half-hourly standard series on hourly intervals [t, t + 1 h)
+#'
+#' Spec 10 A5: mean of the two half-hours inside the hour (starting at `t` and `t + 30 min`), both required; regime
+#' = the common regime of the two, `"mixed"` if they differ (a convective hour has both half-hours convective);
+#' larger `qc_flag`. The rule of [match_halfhours_to_hours()] applied at `t + 30 min`.
+#'
+#' @param std_hh Half-hourly standard table (`timestamp_start_utc`, `timestamp_end_utc`, `pblh_m` [m]; optional
+#'   `qc_flag`, `x_regime`).
+#' @param starts_utc Starts of the hourly intervals [POSIXct UTC].
+#' @return Tibble: `timestamp_utc` (= interval start), `pblh_m` [m], `n_samples` [0-2], `qc_flag`, `x_regime`.
+match_halfhours_to_intervals <- function(std_hh, starts_utc) {
+  out <- match_halfhours_to_hours(std_hh, sort(unique(starts_utc)) + 1800, require_both = TRUE)
+  out$timestamp_utc <- out$timestamp_utc - 1800
+  out
+}
+
+#' Instantaneous standard series on hourly intervals [t, t + 1 h)
+#'
+#' Spec 10 A5: mean of the values at `t` and `t + 1 h`, both required: an approximation of the hourly mean of an
+#' instantaneous series such as ERA5 BLH (exact if the series is linear within the hour).
+#'
+#' @param std_inst Instantaneous standard table (`timestamp_start_utc`, `pblh_m` [m]).
+#' @param starts_utc Starts of the hourly intervals [POSIXct UTC].
+#' @return Tibble: `timestamp_utc` (= interval start), `pblh_m` [m], `n_samples` [0-2].
+match_instants_to_intervals <- function(std_inst, starts_utc) {
+  starts_utc <- sort(unique(starts_utc))
+  t_in <- as.numeric(std_inst$timestamp_start_utc)
+  v1 <- std_inst$pblh_m[match(as.numeric(starts_utc), t_in)]
+  v2 <- std_inst$pblh_m[match(as.numeric(starts_utc) + 3600, t_in)]
+  n <- (!is.na(v1)) + (!is.na(v2))
+  dplyr::tibble(timestamp_utc = starts_utc, pblh_m = ifelse(n == 2, (v1 + v2) / 2, NA_real_),
+                n_samples = as.integer(n))
+}
+
+#' Measured standard source as usable values
+#'
+#' Unifies the qc semantics (spec 10 A5): a source with a censoring height (`x_censor_below_m`, e.g.
+#' `cloudnet_eps_mlh`) is coded by [measured_interval()] (exact, below z_min, lower bound); a source without
+#' censoring (e.g. `sirta_mlh_*`) is exact wherever `pblh_m` is present (the writer already set `pblh_m` to `NA`
+#' where its qc rejects the value).
+#'
+#' @param meas Measured standard table.
+#' @return Tibble: `timestamp_utc` (= `timestamp_start_utc`), `pblh_m` [m], `qc_flag`, `z_min` [m], `left`,
+#'   `right` [m], `kind`.
+measured_values <- function(meas) {
+  if ("x_censor_below_m" %in% names(meas)) {
+    z <- meas$x_censor_below_m
+    iv <- measured_interval(meas$pblh_m, meas$qc_flag, z)
+  } else {
+    z <- rep(NA_real_, nrow(meas))
+    ex <- !is.na(meas$pblh_m)
+    iv <- dplyr::tibble(left = ifelse(ex, meas$pblh_m, NA_real_), right = ifelse(ex, meas$pblh_m, NA_real_),
+                        kind = ifelse(ex, "exact", NA_character_))
+  }
+  dplyr::bind_cols(dplyr::tibble(timestamp_utc = meas$timestamp_start_utc, pblh_m = meas$pblh_m,
+                                 qc_flag = meas$qc_flag, z_min = z), iv[c("left", "right", "kind")])
+}
+
+#' Model and reanalysis series on the time base of a measured source
+#'
+#' Generalises the matching of spec 07 (spec 10 A5). Half-hourly measured source (spec 07): PBLHmod on the
+#' half-hours; ERA5 on its hours, against the measured mean of the two adjacent half-hours
+#' ([match_measured_to_hours()]), with the PBLHmod regime of the hour ([match_halfhours_to_hours()]). Hourly
+#' interval-mean source [t, t + 1 h) (spec 10): PBLHmod by [match_halfhours_to_intervals()], ERA5 by
+#' [match_instants_to_intervals()], both on the measured intervals; ERA5 carries the PBLHmod regime of the
+#' interval.
+#'
+#' @param meas Measured standard table (half-hourly or hourly interval means).
+#' @param mod PBLHmod standard table (half-hourly, with `x_regime`).
+#' @param era Named list of ERA5 standard tables (instantaneous, hourly, same times).
+#' @return List: `base` (`"halfhour"` or `"hour"`); `meas`, `mod`, `mid_s` (measured values, PBLHmod on the
+#'   measurement base, offset [s] from the time stamp to the interval midpoint); `era`, `era_meas`, `era_mid_s`
+#'   (ERA5 series, measured values on the ERA5 base, offset [s]); `mod_on_era` (PBLHmod on the ERA5 base). Times in
+#'   `timestamp_utc`.
+measured_time_base <- function(meas, mod, era) {
+  step <- stats::median(as.numeric(meas$timestamp_end_utc) - as.numeric(meas$timestamp_start_utc))
+  with_regime <- function(e, m) {
+    e$x_regime <- m$x_regime[match(as.numeric(e$timestamp_utc), as.numeric(m$timestamp_utc))]
+    e
+  }
+  if (step == 1800) {
+    hours <- era[[1]]$timestamp_start_utc
+    mod_h <- match_halfhours_to_hours(mod, hours)
+    mhr <- match_measured_to_hours(meas, hours)
+    mhr <- dplyr::bind_cols(mhr, measured_interval(mhr$pblh_m, mhr$qc_flag, mhr$x_censor_below_m)[c("left", "right", "kind")])
+    mhr$z_min <- mhr$x_censor_below_m
+    list(base = "halfhour", meas = measured_values(meas), mod = dplyr::rename(mod, timestamp_utc = timestamp_start_utc),
+         mid_s = 900, era = lapply(era, function(e) with_regime(dplyr::rename(e, timestamp_utc = timestamp_start_utc), mod_h)),
+         era_meas = mhr, era_mid_s = 0, mod_on_era = mod_h)
+  } else if (step == 3600) {
+    starts <- meas$timestamp_start_utc
+    mod_i <- match_halfhours_to_intervals(mod, starts)
+    mv <- measured_values(meas)
+    list(base = "hour", meas = mv, mod = mod_i, mid_s = 1800,
+         era = lapply(era, function(e) with_regime(match_instants_to_intervals(e, starts), mod_i)),
+         era_meas = mv, era_mid_s = 1800, mod_on_era = mod_i)
+  } else {
+    cli::cli_abort("Measured source: time step {step} s not supported (half-hourly or hourly interval means).")
+  }
+}
+
+#' Keep the regimes allowed by the distance class
+#'
+#' Distance rule (project plan): `all_regimes` keeps every row; the other classes only the convective regime.
+#'
+#' @param regime PBLHmod regime per row [character].
+#' @param dclass Output of [distance_class()].
+#' @return Logical.
+keep_regime_by_distance <- function(regime, dclass) {
+  if (dclass == "all_regimes") rep(TRUE, length(regime)) else regime %in% "convective"
+}
