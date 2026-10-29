@@ -122,6 +122,23 @@ test_that("measured_time_base: hourly reference puts PBLHmod and ERA5 on its int
   expect_error(measured_time_base(meas, hh_std(), era), "not supported")
 })
 
+test_that("measured_time_base: half-hourly source without censoring keeps qc 1 as a value (spec 11)", {
+  s <- as.POSIXct("2022-06-01 10:00", tz = "UTC") + (0:5) * 1800
+  meas <- dplyr::tibble(timestamp_start_utc = s, timestamp_end_utc = s + 1800,
+                        pblh_m = c(400, 600, 800, NA, 1000, 1200), qc_flag = c(0L, 1L, 1L, NA, 0L, 1L))
+  t <- as.POSIXct("2022-06-01 10:00", tz = "UTC") + (0:3) * 3600
+  era <- list(era5_blh_center = dplyr::tibble(timestamp_start_utc = t, timestamp_end_utc = t,
+                                              pblh_m = c(400, 600, 800, 1000)))
+  mod <- dplyr::tibble(timestamp_start_utc = s, timestamp_end_utc = s + 1800, pblh_m = 300, x_regime = "convective")
+  tb <- measured_time_base(meas, mod, era)
+  expect_equal(tb$base, "halfhour")
+  expect_equal(tb$meas$kind, c("exact", "exact", "exact", NA, "exact", "exact")) # qc 1 is not "below z_min"
+  # ERA5 hours: mean of the half-hours ending at and starting at the hour, both required
+  expect_equal(tb$era_meas$pblh_m, c(NA, 700, NA, NA))
+  expect_equal(tb$era_meas$kind, c(NA, "exact", NA, NA))
+  expect_equal(tb$era_meas$qc_flag[2], 1L)
+})
+
 test_that("keep_regime_by_distance follows the distance rule", {
   r <- c("convective", "stable", NA, "mixed")
   expect_equal(keep_regime_by_distance(r, "all_regimes"), rep(TRUE, 4))
