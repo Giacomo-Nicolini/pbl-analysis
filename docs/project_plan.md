@@ -35,6 +35,11 @@ Status: agreed design, v0.1 (2026-10-08). Living document: update as decisions c
 | 5 | Footprint error propagation: 5a deterministic swap of the PBLH source (spec 08); 5b Monte Carlo (half-hourly and climatologies) | sensitivity results |
 | 6 | Paper (Quarto) and data/code release (Zenodo) | `paper/` |
 
+**Data release (phase 6; G, 2026-10-29):** measured PBLH data are never released, not even derived from them as
+standard files (Cloudnet, SIRTA ReOBS, MeteoSwiss STRATfinder, PI data). The release contains code, PBLHmod outputs
+and results; for each measured source it cites the DOIs / references and the acknowledgement text, case by case
+(licences differ: e.g. CC BY 4.0 for Cloudnet, CC BY-NC 4.0 for MeteoSwiss).
+
 ## Phase 1: PBLHmod v2
 
 - Base: Kljun et al. (2015) App. B (notes: `docs/references/kljun2015_appB_notes.md`). Diagnostic formulas for
@@ -55,6 +60,12 @@ Status: agreed design, v0.1 (2026-10-08). Living document: update as decisions c
        extrapolate the free-troposphere θ gradient above the mixed-layer top from the morning profile (`Wouters2019`).
     The function uses the richest γ provided and falls back to the constant. Comparing 1 vs 2 vs 3 is an explicit
     result: how much accuracy does the EC-only method lose without external data? (Supports the "simplicity" goal.)
+    **Options 2 and 3 implemented (spec 11, 2026-10-30)**: `gamma_source = "era5_clim"` (site × month climatology)
+    and `"era5_daily"` (the day's morning γ, climatology fallback), from the 6-hourly profile closest to and not
+    after sunrise, least-squares θ(z) over 500–3500 m above the site (2–3 levels; levels below the ground excluded;
+    plausible range 0.001–0.02 K m-1); `gamma_scope = "bg_only"` keeps the constant γ in N of the neutral Eq. B3 (sensitivity).
+    The morning profile includes the residual layer in summer: that is what the growing CBL meets (G 2026-10-30).
+    The default stays 0.01 K m-1 until G decides (spec 11 summary).
   - convective trigger: H > 0 vs 1/L class (must be consistent);
   - H forcing: `H_F_MDS` (gap-filled, default; values with `H_F_MDS_QC` above a threshold, default > 1, treated as
     missing because poor gap-filling can be very bad) vs `H` (FLUXES) vs `H_CORR` (energy-balance corrected,
@@ -81,6 +92,12 @@ Metadata sidecar (YAML) per file. **Every field except `site_id`, `source_id` an
 - `method_class`: `turbulence` (Doppler lidar TKE/σw, sodar), `aerosol` (ceilometer, backscatter lidar), `thermodynamic` (radiosonde, Ri_b, microwave radiometer), `model` (ERA5), `parameterisation` (PBLHmod), `unknown`
 - `instrument`, `retrieval_algorithm`, `height_reference` (agl / above instrument / asl), `instrument_altitude_m`, `time_reference`, `original_resolution`, `original_qc`, `processing_history`, `contact`, `licence`, `citation`
 - `metadata_completeness`: computed automatically (fraction of known fields)
+
+**Plotting convention (G, 2026-10-29; spec 11 E):** in every comparison figure, values outside the comparable set
+(distance class, aerosol window, regime) are drawn but faded (alpha 0.3) behind the comparable ones, with the legend
+entry "not comparable (shown for context)"; the comparable set at full opacity. Metrics use the comparable set only.
+Helpers in `R/plot_utils.R` (`geom_context_points()`, `geom_line_comparable()`); a figure where every value is
+comparable is unchanged.
 
 ## Comparing different method classes
 
@@ -210,6 +227,10 @@ too shallow when deep") is a **hypothesis under test**.
   AERIS, Chiriaco et al. 2018), FR-Gri–SIRTA 23.37 km (daytime convective only); pair `SIRTA-ReOBS` in
   `config/measured_sites.csv`. PI data status (2026-10-29): FR-Gri SIRTA received and used; Trappes / Melun and
   FI-Lom pending; CZ-Lnz (Lanzhot BL-View L3) pending: two sample days only.
+- Measured PBLH, aerosol-based (spec 11): MeteoSwiss STRATfinder MLH of the CHM15k at Davos (DAV), 1-min values
+  2021-07 → 2026-10 aggregated to half-hours (quality level 0 only), CH-Dav–DAV 0.98 km (47 m lower than the tower);
+  licence CC BY-NC 4.0; primary comparison set the daytime window (night values sit on a floor, not stable-layer
+  depths), pair `MeteoSwiss` in `config/measured_sites.csv`.
 - ERA5 (0.25°, tower cell + 8 neighbours, 2020-01-01 → 2026-10-07; formats and conventions in `CLAUDE.md`):
   - hourly `boundary_layer_height` (instantaneous; bulk Richardson diagnostic, Ri_c = 0.25), `cloud_base_height`,
     `surface_sensible_heat_flux` (hourly accumulation, J m-2, positive downward);
@@ -337,6 +358,21 @@ too shallow when deep") is a **hypothesis under test**.
   (37 % vs ≤ 22 %). (c) CL31 (CABAM)
   < 150 m while CHM15k > 300 m on 95 of 4295 window convective hours (2.2 %; 201 of 8407 convective hours), most in
   2022 MAM–SON and 2023 DJF–MAM: low-layer detections, kept as is.
+- Spec 11 (γ from ERA5; 2026-10-30), **decision for G: the default γ** (needed before spec 09). ERA5 morning γ
+  (500–3500 m above the site) median 0.0047 (BE-Bra), 0.0046 (FI-Hyy), 0.0048 (FR-Gri), 0.0044 K m-1 (CH-Dav), i.e.
+  ≈ 0.47 × 0.01, little seasonal change; daily values scatter ± 20 % around the climatology (median), 39–45 % of days
+  outside ± 25 %. Median ln(PBLHmod / reference), primary sets (`11_gamma_cases_metrics.csv`):
+  FR-Gri vs CHM15k (window) default −0.53, ERA5 clim −0.20 [−0.22, −0.17], γ 0.0025 +0.08; CH-Dav vs STRATfinder
+  (window) −0.43, −0.08 [−0.10, −0.05], +0.17; FI-Hyy vs Cloudnet exact (convective) +0.44, +0.64, +0.82 (exact values
+  favour shallow layers; censored-tail test: with ERA5 clim the deep-end share below the bound is 19 % vs ≤ 25 %
+  under scatter alone, consistent, where the default gave 39 % vs ≤ 33 %; shallow end still too deep, 13 % vs ≥ 18 %);
+  vs ERA5 tower cell (convective): BE-Bra −0.07, +0.19, +0.42; FI-Hyy −0.11, +0.17, +0.36; FR-Gri −0.54, −0.22, +0.04;
+  CH-Dav +0.09, +0.39, +0.59 (ERA5 cell orography 362 m above the tower). ERA5 daily ≈ ERA5 clim (≤ 0.03 apart);
+  zmin1000 and bg_only ≈ clim (neutral B3 heights change, e.g. FR-Gri median 161 → 191 m, but not the window). The
+  ERA5 γ reduces the window bias in every season at FR-Gri (−0.33 DJF to −0.10 JJA) and CH-Dav (−0.25 SON to +0.08
+  MAM); γ = 0.0025 overshoots at CH-Dav and against ERA5 at BE-Bra and FI-Hyy. Proposal: default `gamma_source =
+  "era5_clim"` (option 2, a site × month table; EC-only at run time), constant 0.01 as fallback. Open: the FR-Gri
+  residual (−0.20) and why the measured window MLH is deeper than an ERA5-γ B&G at the low-zm crop site.
 - Timing of EC vs ERA5 sensible heat (evaluation; possible error driver for the evening transition). EC timestamps
   are correct (SW_IN_POT and EC H centred on solar noon within 4 min, Cowork 2026-10-23). With every value at its
   interval midpoint (EC start + 15 min, ERA5 accumulation timestamp − 30 min), ERA5 H is earlier than EC H:
