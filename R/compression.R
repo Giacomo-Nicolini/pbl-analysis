@@ -189,12 +189,13 @@ bland_altman_fit <- function(x, y) {
 #' @param mod,ref Source and measured PBLH [m] (pairs with a non-positive or missing value dropped).
 #' @param t Times of the pairs [POSIXct UTC] (day blocks).
 #' @param opts [measured_compare_options()].
+#' @param diagnostics Also compute the Theil-Sen diagnostics (`FALSE`: `ts_*` are `NA`; spec 11, many pairs) [logical].
 #' @return One-row tibble: `n`, `n_days` [-], `r_log` [-, Pearson on the logs], `slope_sym`, `slope_sym_lo`,
 #'   `slope_sym_hi` [-, ln-ln], `intercept_sym` [ln m], `ba_mean` [-, mean ln(mod / ref)], `ba_slope`, `ba_slope_lo`,
 #'   `ba_slope_hi` [-], `ba_intercept` [-], `ts_slope`, `ts_slope_reverse` [-, Theil-Sen of ln mod on ln ref and of
 #'   ln ref on ln mod], `ts_intercept` [ln m], `n_boot` [-, successful replicates]. Attribute `ba_band`: tibble of
 #'   the Bland-Altman line on a grid of the log mean, `a` [ln m], `fit`, `lo`, `hi` [-] (pointwise percentile band).
-compression_slope <- function(mod, ref, t, opts = measured_compare_options()) {
+compression_slope <- function(mod, ref, t, opts = measured_compare_options(), diagnostics = TRUE) {
   ok <- is.finite(mod) & is.finite(ref) & mod > 0 & ref > 0 & !is.na(t)
   lx <- log(ref[ok])
   ly <- log(mod[ok])
@@ -209,15 +210,17 @@ compression_slope <- function(mod, ref, t, opts = measured_compare_options()) {
   if (sum(ok) < 3 || length(unique(lx)) < 2 || length(unique(ly)) < 2) return(out)
   rm <- rma_slope(lx, ly)
   ba <- bland_altman_fit(lx, ly)
-  ts <- theil_sen(lx, ly)
   out$r_log <- rm$r
   out$slope_sym <- rm$slope
   out$intercept_sym <- rm$intercept
   out$ba_slope <- ba$slope
   out$ba_intercept <- ba$intercept
-  out$ts_slope <- ts$slope
-  out$ts_intercept <- ts$intercept
-  out$ts_slope_reverse <- theil_sen(ly, lx)$slope
+  if (diagnostics) {
+    ts <- theil_sen(lx, ly)
+    out$ts_slope <- ts$slope
+    out$ts_intercept <- ts$intercept
+    out$ts_slope_reverse <- theil_sen(ly, lx)$slope
+  }
   am <- (lx + ly) / 2
   grid <- seq(stats::quantile(am, 0.01, names = FALSE), stats::quantile(am, 0.99, names = FALSE), length.out = 40)
   band <- dplyr::tibble(a = grid, fit = ba$intercept + ba$slope * grid, lo = NA_real_, hi = NA_real_)
@@ -378,4 +381,29 @@ logratio_by_tercile <- function(mod, ref) {
                   median_log_ratio = if (any(s)) stats::median(lr[s]) else NA_real_,
                   frac_within_factor2 = if (any(s)) mean(abs(lr[s]) <= log(2)) else NA_real_)
   }))
+}
+
+#' Median log ratio with a day-block bootstrap interval
+#'
+#' Spec 11 D: median of `ln(mod / ref)` with a percentile interval from a bootstrap of whole UTC days (as
+#' [compression_slope()]).
+#'
+#' @param mod,ref Source and measured PBLH [m] (non-positive or missing pairs dropped).
+#' @param t Times of the pairs [POSIXct UTC] (day blocks).
+#' @param opts [measured_compare_options()] (`n_boot`, `conf`, `seed`).
+#' @return One-row tibble: `n`, `n_days` [-], `median_log_ratio`, `mlr_lo`, `mlr_hi` [-, natural log].
+median_logratio_boot <- function(mod, ref, t, opts = measured_compare_options()) {
+  ok <- is.finite(mod) & is.finite(ref) & mod > 0 & ref > 0 & !is.na(t)
+  lr <- log(mod[ok] / ref[ok])
+  idx <- split(seq_along(lr), floor(as.numeric(t[ok]) / 86400))
+  out <- dplyr::tibble(n = length(lr), n_days = length(idx), median_log_ratio = if (length(lr) > 0) stats::median(lr) else NA_real_,
+                       mlr_lo = NA_real_, mlr_hi = NA_real_)
+  if (opts$n_boot > 0 && length(idx) > 1) {
+    b <- with_seed(opts$seed, vapply(seq_len(opts$n_boot), function(k) {
+      stats::median(lr[unlist(idx[sample.int(length(idx), length(idx), replace = TRUE)], use.names = FALSE)])
+    }, numeric(1)))
+    a <- (1 - opts$conf) / 2
+    out[c("mlr_lo", "mlr_hi")] <- as.list(stats::quantile(b, c(a, 1 - a), names = FALSE))
+  }
+  out
 }

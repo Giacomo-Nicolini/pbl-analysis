@@ -146,3 +146,21 @@ test_that("logratio_by_tercile splits the measured range in three", {
   expect_equal(lt$median_log_ratio, c(log(2), 0, log(0.5)))
   expect_equal(nrow(logratio_by_tercile(1, 1)), 0)
 })
+
+test_that("median_logratio_boot: median, interval around it, reproducible, RNG untouched", {
+  t <- as.POSIXct("2022-06-01 10:00", tz = "UTC") + rep(0:29, each = 4) * 86400 + rep(0:3, 30) * 3600
+  set.seed(7)
+  ref <- exp(stats::runif(length(t), log(300), log(2000)))
+  mod <- ref * exp(-0.5 + stats::rnorm(length(t), 0, 0.2))
+  o <- measured_compare_options(n_boot = 200)
+  m <- median_logratio_boot(mod, ref, t, o)
+  expect_equal(m$median_log_ratio, stats::median(log(mod / ref)))
+  expect_true(m$mlr_lo < m$median_log_ratio && m$median_log_ratio < m$mlr_hi)
+  expect_equal(m$n_days, 30L)
+  expect_identical(median_logratio_boot(mod, ref, t, o), m)
+  set.seed(1)
+  a <- stats::runif(1)
+  set.seed(1)
+  invisible(median_logratio_boot(mod, ref, t, o))
+  expect_equal(stats::runif(1), a)
+})
