@@ -13,6 +13,7 @@ default:
   target_areas_dir: "data/raw/target_areas"
   cleanset_file: "data/{site}_cleanset.csv" # ETC cleanset (local diagnostic, spec 03; optional, never committed)
   cloudnet_dir: "data/raw/cloudnet/{site}"   # ACTRIS/Cloudnet daily files (spec 07); {site} = ICOS station code
+  measured_dir: "data/raw/measured/{site}"   # measured PBLH from PIs / providers (spec 10: SIRTA ReOBS zip for FR-Gri)
   standard_dir: "data/standard"
   derived_dir: "data/derived"
   output_dir: "output"
@@ -30,6 +31,7 @@ cluster:
   era5_static_dir: "LOCAL"   # one folder per variable: path ending in {var}
   target_areas_dir: "TODO"
   cloudnet_dir: "LOCAL"
+  measured_dir: "LOCAL"
   standard_dir: "TODO"
   derived_dir: "TODO"
   output_dir: "TODO"

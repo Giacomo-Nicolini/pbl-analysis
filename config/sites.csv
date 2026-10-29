@@ -38,4 +38,4 @@ SE-Myc,58.36503,12.1694,93,1,2.2,0.292,NA,NA,WET,0.05,Flat,"new station: coords 
 SE-Nor,60.08649722,17.47950278,58,1,12,0.500,NA,NA,ENF,0.14,Flat,"clearcut 2022-10/2023-04, tower lowered 36->12 m on 2023-04-20; data 2022-10-01..2023-04-20 excluded (see exclusion_periods.csv); static canopy_height_m is post-clearcut value"
 SE-Sto,68.35594288,19.04520892,351.893,1,2.23,0.333,NA,NA,WET,0.158,Flat,
 SE-Svb,64.25611,19.7745,267,1,34.5,14.892,NA,NA,ENF,0.603,Gentle Slope (<2%),
-UK-AMo,55.792546,-3.2436918,268,0,3.96,0.628,NA,NA,WET,0.202,Flat
+UK-AMo,55.792546,-3.2436918,268,0,3.96,0.628,NA,NA,WET,0.202,Flat,

@@ -14,10 +14,16 @@ test_that("read_sites parses types and validates required columns", {
   expect_error(read_sites(tmp), "Duplicated")
   writeLines(c(x[1], sub("^XX-Tst,50.0", "XX-Tst,NA", x[2])), tmp)
   expect_error(read_sites(tmp), "XX-Tst")
+  # last line with a missing trailing field and no final newline: readr drops it silently (UK-AMo, 2026-10-29)
+  y <- c(x[1:2], sub(",[^,]*$", "", x[3]))
+  cat(paste(y, collapse = "\n"), file = tmp)
+  expect_error(read_sites(tmp), "row read")
 })
 
 test_that("the project metadata files are valid", {
   expect_no_error(read_sites(here::here("config/sites.csv")))
+  # 40 stations, one target-area KML each (Cowork count 2026-10-29)
+  expect_equal(nrow(read_sites(here::here("config/sites.csv"))), 40L)
   expect_no_error(read_sites_timevarying(here::here("config/sites_timevarying.csv")))
 })
 

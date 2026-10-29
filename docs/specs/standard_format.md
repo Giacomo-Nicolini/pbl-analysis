@@ -79,3 +79,25 @@ Main `x_` columns: `x_censor_below_m` (z_min [m agl]), `x_coverage`, `x_n_expect
 `x_cloud_base_agl_m`, `x_cloud_fraction`, and sensitivity cases as `x_pblh_m_<case>` / `x_qc_flag_<case>`
 (`precip_column`, `precip_strict`, `bridged`). Comparisons code the three kinds as
 `survival::Surv(left, right, type = "interval2")` intervals (`measured_interval()`).
+
+## Example of an aerosol-based hourly source: `sirta_mlh_chm15k`, `sirta_mlh_cl31` (spec 10)
+
+Mixing-layer heights from the SIRTA ceilometers at Palaiseau, as distributed in the SIRTA 1D ReOBS product (AERIS;
+Chiriaco et al. 2018): CHM15k with STRATfinder (primary) and CL31 with CABAM v2019.3 (Kotthaus et al. 2018, 2020).
+Hourly interval means (`time_reference = interval_mean`, UTC hours [start, start + 1 h)), `method_class = aerosol`,
+`height_reference = agl`. Written by `standardize_reobs_mlh()` (`scripts/10a_sirta_reobs.R`); product version,
+ReOBS version and file uuid in `processing_history`, licence and acknowledgement text from the file.
+
+| `qc_flag` | `pblh_m` | Meaning |
+|---|---|---|
+| 0 | value | `n_samples` ≥ 75 % of nominal (60 one-minute values for CHM15k, 4 fifteen-minute values for CL31) |
+| 1 | value | `n_samples` ≥ 50 % and < 75 % of nominal |
+| `NA` | `NA` | no value, or `n_samples` < 50 % of nominal |
+
+Not censored: every non-missing `pblh_m` is an exact value in comparisons. `uncertainty_m` = within-hour standard
+deviation of the native values (not a retrieval uncertainty). `x_` columns: `x_cbh_m` (cloud base of the same
+instrument), `x_tcf_oktas` (CL31 total cloud fraction), `x_coverage` (`n_samples` / nominal), and for CHM15k only
+`x_ablh_m` (aerosol-layer top, not a mixing height).
+
+Comparisons (`measured_time_base()`): PBLHmod = mean of the two half-hours inside the hour (both required; regime
+common to both, else `mixed`); ERA5 (instantaneous) = mean of the values at t and t + 1 h (both required).

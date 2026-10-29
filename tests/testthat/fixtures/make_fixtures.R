@@ -1,12 +1,12 @@
 # Rebuild the synthetic ICOS L2, ERA5, Cloudnet and ONEFlux BIF test fixtures (tiny, no real data).
-# Run from the project root: Rscript tests/testthat/fixtures/make_fixtures.R [icos] [era5] [cloudnet] [oneflux]
+# Run from the project root: Rscript tests/testthat/fixtures/make_fixtures.R [icos] [era5] [cloudnet] [oneflux] [reobs]
 # (no argument = all parts; rebuilding the ICOS zips changes their bytes even
 # when the content is unchanged, so rebuild only the part you need).
 # Requires a `zip` program for utils::zip() (on Windows: Rtools).
 # Synthetic site XX-Tst, UTC+1.
 
 parts <- commandArgs(trailingOnly = TRUE)
-if (length(parts) == 0) parts <- c("icos", "era5", "cloudnet", "oneflux")
+if (length(parts) == 0) parts <- c("icos", "era5", "cloudnet", "oneflux", "reobs")
 
 fx <- here::here("tests", "testthat", "fixtures")
 site <- "XX-Tst"
@@ -318,6 +318,58 @@ if ("oneflux" %in% parts) {
   )
   utils::write.csv(b, file.path(of_dir, paste0("ICOSETC_", site, "_FLUXNET_BIF_2020-2021_v1.3_r1.csv")),
                    row.names = FALSE, quote = FALSE)
+}
+
+if ("reobs" %in% parts) {
+  # SIRTA 1D ReOBS structure (spec 10): hourly, time = minutes since 1970-01-01 (UTC, start of the hour),
+  # time_bnds [t, t + 60 min), values float with NaN fill, counts int with -999 fill. 6 hours from 2022-06-01.
+  # CHM15k (nominal 60): nb 60 (qc 0), 40 (qc 1), NaN value with nb 20, 29 (< 50 %, dropped), missing, 45 (qc 0).
+  # CL31 (nominal 4): nb 4 (qc 0), 2 (qc 1), missing, 1 (dropped), 3 (qc 0), missing.
+  ro_dir <- file.path(fx, "reobs")
+  dir.create(ro_dir, recursive = TRUE, showWarnings = FALSE)
+  tmin <- as.numeric(as.POSIXct("2022-06-01", tz = "UTC")) / 60 + 60 * (0:5)
+  dim_t <- ncdf4::ncdim_def("time", "minutes since 1970-01-01", tmin, unlim = FALSE)
+  dim_b <- ncdf4::ncdim_def("nbnds", "", 1:2, create_dimvar = FALSE)
+  fv <- function(name, units) ncdf4::ncvar_def(name, units, list(dim_t), missval = NaN, prec = "float")
+  iv <- function(name) ncdf4::ncvar_def(name, "1", list(dim_t), missval = -999L, prec = "integer")
+  vals <- list(
+    mlh_chm15k = c(500, 600, NaN, 700, NaN, 800), mlh_chm15k_std = c(20, 30, NaN, 40, NaN, 50),
+    mlh_chm15k_nb = c(60L, 40L, 20L, 29L, -999L, 45L),
+    ablh_chm15k = c(1500, 1400, NaN, NaN, NaN, 1600), ablh_chm15k_std = rep(NaN, 6), ablh_chm15k_nb = rep(-999L, 6),
+    cbh_chm15k = c(NaN, 2000, NaN, NaN, NaN, 900), cbh_chm15k_std = rep(NaN, 6), cbh_chm15k_nb = rep(-999L, 6),
+    mlh_cl31 = c(450, 550, NaN, 650, 300, NaN), mlh_cl31_std = c(10, 15, NaN, NaN, 5, NaN),
+    mlh_cl31_nb = c(4L, 2L, -999L, 1L, 3L, -999L),
+    cbh_cl31 = c(NaN, 1900, NaN, NaN, NaN, NaN), cbh_cl31_std = rep(NaN, 6), cbh_cl31_nb = rep(-999L, 6),
+    tcf_cl31 = c(0, 4, NaN, 8, 1, NaN), tcf_cl31_std = rep(NaN, 6), tcf_cl31_nb = rep(-999L, 6)
+  )
+  vdef <- lapply(names(vals), function(k) if (is.integer(vals[[k]])) iv(k) else fv(k, if (grepl("^tcf", k)) "1" else "m"))
+  names(vdef) <- names(vals)
+  v_tb <- ncdf4::ncvar_def("time_bnds", "", list(dim_b, dim_t), prec = "integer")
+  v_alt <- ncdf4::ncvar_def("station_alt", "m", list(), prec = "double")
+  v_lat <- ncdf4::ncvar_def("station_lat", "degrees_north", list(), prec = "double")
+  v_lon <- ncdf4::ncvar_def("station_lon", "degrees_east", list(), prec = "double")
+  tmp_dir <- file.path(tempdir(), "reobs_fixture")
+  dir.create(tmp_dir, showWarnings = FALSE)
+  f_nc <- file.path(tmp_dir, "reobs_sirta_1D_request_test.nc")
+  unlink(f_nc)
+  nc <- ncdf4::nc_create(f_nc, c(unname(vdef), list(v_tb, v_alt, v_lat, v_lon)), force_v4 = TRUE)
+  for (k in names(vals)) ncdf4::ncvar_put(nc, vdef[[k]], vals[[k]])
+  ncdf4::ncvar_put(nc, v_tb, as.integer(rbind(tmin, tmin + 60)))
+  ncdf4::ncvar_put(nc, v_alt, 156)
+  ncdf4::ncvar_put(nc, v_lat, 48.718)
+  ncdf4::ncvar_put(nc, v_lon, 2.207)
+  ncdf4::ncatt_put(nc, "time", "bounds", "time_bnds")
+  ga <- list(title = "SIRTA 1D ReOBS dataset (synthetic test)", license = "Inspired by CC-BY",
+             acknowledgement = "Test acknowledgement.", references = "https://doi.org/10.5194/essd-10-919-2018",
+             metadata_link = "https://reobs.aeris-data.fr/", reobs_version = "4.0.0", product_version = "2026.08.1",
+             uuid = "00000000-test-reobs")
+  for (k in names(ga)) ncdf4::ncatt_put(nc, 0, k, ga[[k]])
+  ncdf4::nc_close(nc)
+  zipfile <- file.path(ro_dir, "reobs_test.zip")
+  unlink(zipfile)
+  old <- setwd(tempdir())
+  utils::zip(zipfile, file.path("reobs_fixture", basename(f_nc)), flags = "-9Xq")
+  setwd(old)
 }
 
 message("Fixtures written to ", fx, " (parts: ", paste(parts, collapse = ", "), ")")

@@ -93,6 +93,40 @@ find_icos_files <- function(site_id, cfg, dir_suffix = "_output_L2I_2026") {
   out
 }
 
+#' Column names of a zipped ICOS csv
+#'
+#' Reads only the header line of the single csv inside the zip (no data rows).
+#'
+#' @param path Zip file [path].
+#' @return Column names [character].
+icos_zip_header <- function(path) {
+  member <- grep("\\.csv$", utils::unzip(path, list = TRUE)$Name, value = TRUE, ignore.case = TRUE)
+  if (length(member) != 1) cli::cli_abort("{.path {path}}: expected one csv, found {length(member)}.")
+  con <- unz(path, member)
+  on.exit(close(con))
+  strsplit(readLines(con, n = 1, warn = FALSE), ",", fixed = TRUE)[[1]]
+}
+
+#' NEE columns needed by the footprint subsets
+#'
+#' Spec 08 subsets (`footprint_subsets()`) need FLUXES `NEE` and `NEE_DATA_FLAG` and FLUXNET `NEE_VUT_REF_QC`
+#' (G 2026-10-29, for spec 09: which stations lack them or carry them under another name).
+#'
+#' @param fluxes_header,fluxnet_header Column names ([icos_zip_header()]; `NULL` when the file is missing).
+#' @return One-row tibble: `has_NEE`, `has_NEE_DATA_FLAG`, `has_NEE_VUT_REF_QC` [logical, `NA` if the file is
+#'   missing], `fluxes_nee_like` (FLUXES columns starting with `NEE`, `FC`, `NEP` or containing `CO2`,
+#'   `;`-separated), `fluxnet_nee_ref` (FLUXNET `NEE_*REF*` columns).
+nee_column_check <- function(fluxes_header, fluxnet_header) {
+  has <- function(h, k) if (is.null(h)) NA else k %in% h
+  dplyr::tibble(
+    has_NEE = has(fluxes_header, "NEE"),
+    has_NEE_DATA_FLAG = has(fluxes_header, "NEE_DATA_FLAG"),
+    has_NEE_VUT_REF_QC = has(fluxnet_header, "NEE_VUT_REF_QC"),
+    fluxes_nee_like = paste(grep("^(NEE|FC|NEP)|CO2", fluxes_header, value = TRUE), collapse = ";"),
+    fluxnet_nee_ref = paste(grep("^NEE_.*REF", fluxnet_header, value = TRUE), collapse = ";")
+  )
+}
+
 # Parse "YYYYMMDDHHMM" local standard time -> POSIXct UTC (local clock - offset).
 icos_time_to_utc <- function(x, utc_offset_h) {
   t <- as.POSIXct(x, format = "%Y%m%d%H%M", tz = "UTC")

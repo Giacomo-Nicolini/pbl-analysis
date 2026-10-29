@@ -115,3 +115,16 @@ is_day <- function(timestamp_start_utc, timestamp_end_utc, lat, lon) {
   mid <- timestamp_start_utc + (as.numeric(timestamp_end_utc) - as.numeric(timestamp_start_utc)) / 2
   solar_elevation(mid, lat, lon) > 0
 }
+
+#' Apparent (true) solar time
+#'
+#' `UTC + 4 min deg-1 * lon + equation of time` (NOAA solar calculator, as
+#' [solar_elevation()]); spec 10: evaluated at the interval midpoint.
+#'
+#' @param timestamp_utc Times [POSIXct UTC].
+#' @param lon Longitude [decimal degrees E].
+#' @return Apparent solar time [h, 0-24).
+apparent_solar_hour <- function(timestamp_utc, lon) {
+  min_utc <- (as.numeric(timestamp_utc) %% 86400) / 60
+  ((min_utc + solar_params(timestamp_utc)$eot + 4 * lon) %% 1440) / 60
+}

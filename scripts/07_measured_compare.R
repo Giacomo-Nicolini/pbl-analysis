@@ -51,42 +51,25 @@ mod <- in_per(mod)
 era_c <- in_per(era_c)
 era_b <- in_per(era_b)
 
-# --- Measured, half-hourly and hourly ---
-mh <- dplyr::bind_cols(
-  dplyr::tibble(timestamp_utc = meas$timestamp_start_utc, pblh_m = meas$pblh_m, qc_flag = meas$qc_flag,
-                z_min = meas$x_censor_below_m),
-  measured_interval(meas$pblh_m, meas$qc_flag, meas$x_censor_below_m)[c("left", "right", "kind")]
-)
-hours <- era_c$timestamp_start_utc
-mhr <- match_measured_to_hours(meas, hours)
-mhr <- dplyr::bind_cols(mhr, measured_interval(mhr$pblh_m, mhr$qc_flag, mhr$x_censor_below_m)[c("left", "right", "kind")])
-mhr$z_min <- mhr$x_censor_below_m
+# --- Measured, PBLHmod and ERA5 on the measurement time base (measured_time_base(), shared with spec 10) ---
+tb <- measured_time_base(meas, mod, list(era5_blh_center = era_c, era5_blh_bilinear = era_b))
+mh <- tb$meas
+mhr <- tb$era_meas
 cli::cli_inform(c(
   "Half-hours: exact {sum(mh$kind %in% 'exact')}, below z_min {sum(mh$kind %in% 'below')}, lower bound {sum(mh$kind %in% 'lower_bound')}, not usable {sum(is.na(mh$kind))}.",
   "ERA5 hours: exact {sum(mhr$kind %in% 'exact')}, below z_min {sum(mhr$kind %in% 'below')}, lower bound {sum(mhr$kind %in% 'lower_bound')}, not usable {sum(is.na(mhr$kind))}."
 ))
-
-# --- Model and reanalysis series on the measurement time base ---
-mod_hh <- dplyr::rename(mod, timestamp_utc = timestamp_start_utc)
-reg_hh <- stats::setNames(mod_hh$x_regime, as.character(as.numeric(mod_hh$timestamp_utc)))
-mod_h <- match_halfhours_to_hours(mod, hours)
-reg_h <- stats::setNames(mod_h$x_regime, as.character(as.numeric(mod_h$timestamp_utc)))
-as_h <- function(e) {
-  e <- dplyr::rename(e, timestamp_utc = timestamp_start_utc)
-  e$x_regime <- reg_h[as.character(as.numeric(e$timestamp_utc))]
-  e
-}
-era_ch <- as_h(era_c)
-era_bh <- as_h(era_b)
+mod_hh <- tb$mod
+mod_h <- tb$mod_on_era
+era_ch <- tb$era$era5_blh_center
+era_bh <- tb$era$era5_blh_bilinear
 sources <- list(
   `1_pblhmod_default_vs_measured` = list(x = mod_hh, m = mh, src = "PBLHmod", cls = "parameterisation vs turbulence", half = 900),
   `2_era5_center_vs_measured` = list(x = era_ch, m = mhr, src = "ERA5 (tower cell)", cls = "cross-class: bulk Ri vs turbulence", half = 0),
   `2b_era5_bilinear_vs_measured` = list(x = era_bh, m = mhr, src = "ERA5 (bilinear)", cls = "cross-class: bulk Ri vs turbulence", half = 0)
 )
 # Distance rule: restrict the regimes compared (spec 07, project plan).
-keep_regime <- function(r) {
-  if (dclass == "all_regimes") rep(TRUE, length(r)) else r %in% "convective"
-}
+keep_regime <- function(r) keep_regime_by_distance(r, dclass)
 if (dclass == "daytime_climatology") cli::cli_alert_warning("Distance class {dclass}: pair metrics are indicative only.")
 
 # --- Pairs on exact values (qc 0/2) ---

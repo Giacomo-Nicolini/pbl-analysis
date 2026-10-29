@@ -73,3 +73,11 @@ test_that("is_day uses the interval midpoint", {
   expect_true(is_day(s1, s1 + 1800, 51.31, 4.52))
   expect_false(is_day(s0, s0 + 1800, 51.31, 4.52))
 })
+
+test_that("apparent_solar_hour is 12 at solar noon and follows the longitude", {
+  st <- sun_times(as.Date(c("2022-02-11", "2022-06-21", "2022-11-03")), 48.84, 1.95)
+  expect_equal(apparent_solar_hour(st$solar_noon_utc, 1.95), rep(12, 3), tolerance = 1e-3)
+  t <- as.POSIXct("2022-06-21 12:00", tz = "UTC")
+  expect_equal(apparent_solar_hour(t, 15) - apparent_solar_hour(t, 0), 1, tolerance = 1e-9)
+  expect_true(all(apparent_solar_hour(t + (0:47) * 1800, 2) >= 0 & apparent_solar_hour(t + (0:47) * 1800, 2) < 24))
+})

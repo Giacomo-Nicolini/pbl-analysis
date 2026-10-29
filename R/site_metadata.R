@@ -35,6 +35,12 @@ read_sites <- function(file) {
     ),
     progress = FALSE
   )
+  # readr drops, without a reported problem, a last line that has fewer fields and no final newline (UK-AMo,
+  # 2026-10-29): every non-empty data line must give one row.
+  n_lines <- sum(nzchar(trimws(readLines(file, warn = FALSE)))) - 1L
+  if (nrow(sites) != n_lines) {
+    cli::cli_abort("{.file {file}}: {n_lines} data line{?s} but {nrow(sites)} row{?s} read; check the field count of each line (13 fields).")
+  }
 
   dup <- unique(sites$site_id[duplicated(sites$site_id)])
   if (length(dup) > 0) {
