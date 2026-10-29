@@ -19,6 +19,7 @@ cluster:
   era5_pl_dir: "/path/to/era5/ERA5_pressure_levels/{site}"               # 6-hourly pressure levels
   era5_static_dir: "/path/to/era5_static/{var}"                          # one folder per static variable
   cloudnet_dir: "/path/to/cloudnet/{site}"                               # ACTRIS/Cloudnet daily files (spec 07)
+  measured_dir: "/path/to/measured/{site}"                               # measured PBLH from PIs / providers (spec 10)
   ffp_code_dir: "/path/to/ffp_code"                                      # Kljun FFP R code (local only; spec 08)
   # Still TODO in config.yml (set them here when known):
   # target_areas_dir: "/path/to/target_areas"
