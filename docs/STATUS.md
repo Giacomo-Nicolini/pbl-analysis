@@ -1,6 +1,6 @@
 # Project status (handover note)
 
-Last update: 2026-10-28. Read this first in a new session, then `docs/project_plan.md` and `CLAUDE.md`.
+Last update: 2026-10-29. Read this first in a new session, then `docs/project_plan.md` and `CLAUDE.md`.
 
 ## PBLH sources (names used in the code and in the standard files)
 
@@ -11,6 +11,7 @@ Last update: 2026-10-28. Read this first in a new session, then `docs/project_pl
 | Operational ICOS PBLH | `icos_oper` | `PBLH` column of L2 FLUXES, produced by the ETC pipeline with `legacy/calc_PBL_height_operational.R` + `legacy/proc_PBL_height.R`; `qc_flag` 1 = 50 m floor, 2 = run-mean fill. Used in the phase-1 regression only (spec 03), not in the evaluation (project plan "Scope", G 2026-10-23); script 04 compares it only with `--with-oper` | parameterisation |
 | Legacy (spec 03) | `legacy_<variant>` | Port of the operational legacy code with switches, for the regression (in `data/derived`, not a standard file) | parameterisation |
 | Measured MLH, Cloudnet (spec 07) | `cloudnet_eps_mlh` | Surface-connected mixing from the Doppler-lidar dissipation rate ε (ε ≥ 1e-4 m² s⁻³ upward from the lowest reliable gate; Manninen et al. 2018); half-hourly; `qc_flag` 0/2 exact, 1 censored below z_min (105 m at FI-Hyy), 3 signal-limited = lower bound; precipitation = Cloudnet `rain_detected` | turbulence |
+| Measured MLH, SIRTA ReOBS (spec 10) | `sirta_mlh_chm15k` (primary), `sirta_mlh_cl31` | Ceilometer MLH at Palaiseau (CHM15k STRATfinder; CL31 CABAM v2019.3), hourly means from the SIRTA 1D ReOBS product; qc 0/1 from the sample count; FR-Gri, 23.37 km: daytime convective only | aerosol |
 | Other measured PBLH (later) | – | PI data (SE-Htm, SE-Nor, SE-Svb, FI-Hyy, CZ-BK1 requested), ceilometer / radiosonde (E-PROFILE, IGRA) | aerosol / thermodynamic / turbulence |
 
 ## Specs
@@ -25,12 +26,13 @@ Last update: 2026-10-28. Read this first in a new session, then `docs/project_pl
 | 03 | Legacy regression: reproduce operational PBLH from L2 (operational code `calc_PBL_height_operational.R` + `proc_PBL_height.R`), port it, attribute differences to PBLHmod v2 (amendments 1–2) | 1 | merged (`main`, e224c4b) |
 | 07 | Cloudnet inventory (FI-Hyy, FI-Lom, DE-RuS, SE-Nor, FR-Gri); turbulence-based MLH from Doppler-lidar ε (Manninen et al. 2018) in the standard format; FI-Hyy runs (PBLHmod, ERA5) and first comparison against measured MLH (amendment 1: no operational PBLH, ERA5 tower cell in figures); reference period = FLUXES range; METEO TA levels from the header | 2, 3 | merged (`main`, b22f7e2) |
 | 08 | Footprint sensitivity to the PBLH source (FFP, Kljun et al. 2015) at BE-Bra and FI-Hyy; one-month PC test (FI-Hyy 2022-09); ONEFlux BIF reader and u* thresholds | 5a | in progress on `spec-08-footprint-sensitivity` |
+| 10 | Aerosol-based measured MLH: Part A SIRTA ReOBS at FR-Gri (reader, two standard sources, FR-Gri runs 01/02/04, generalised spec-07 comparison, range-compression slope also for FI-Hyy); Part B Lanzhot not started (two sample days only); Part C (Cloudnet ε at Palaiseau) only with G's go | 2, 3 | Part A implemented on `spec-10-measured-aerosol` (2026-10-29), to review |
 
 Phases (see `project_plan.md`): 0 done; 1 done (model, input QC, legacy regression); 2 standard format, three
 sources (spec 04) and the first measured source (spec 07, FI-Hyy) done; 3 BE-Bra (vs ERA5) and FI-Hyy (vs ERA5 and
 measured MLH) done; 4–6 not started.
 
-- Tests: 968 passing (`spec-07-measured-cloudnet`). Environment: R 4.4.1 + renv (Posit Package
+- Tests: 1,156 expectations passing (`spec-10-measured-aerosol`, 2026-10-29). Environment: R 4.4.1 + renv (Posit Package
   Manager), same as the cluster. Machine-specific paths in the untracked `config.local.yml` (template
   `config.local.yml.example`).
 - PBLHmod defaults: `stable_method = "nieuwstadt"` (B1), `neutral_method = "auto"` (B2 if 10 < N/|f| < 70, else
@@ -45,6 +47,31 @@ measured MLH) done; 4–6 not started.
   all rows 414 m; γ = 0.0025 raises the convective median to 1122 m. With FLUXNET 2020–2025 (spec 06 amendment 2):
   690 m (74–1575), 259 m, 412 m; 1095 m. Spec 06 amendment 1: 690 m (74–1575), 260 m, 413 m;
   1095 m. Spec 05: 698 m (72–1586), 261 m, 413 m; 1104 m. Spec 02: 704 m (72–1609), 271 m, 423 m; 1109 m.
+- Spec 10 Part A at FR-Gri (2026-10-29; PC RAM test passed 2026-10-29, runs single-process):
+  - Inputs: reference period (FLUXES range) 2021-01-01 → 2026-08-31 local, but valid L2 data from 2021-11-17;
+    FLUXES has no NEE / NEE_DATA_FLAG / SH (footprint subsets only); zm 2–3 m, hc 0.06–0.97 m (0.2 m after the
+    harvest used as is, G); no exclusions. ERA5 tower cell 11.05 km, orography 127.5 m (tower 125 m), sdor 25 m.
+  - PBLHmod default: 81 % valid; convective median 415 m (p5–p95 55–1134; BE-Bra 707, FI-Hyy 700), stable 104 m;
+    u* rejected 0.14 %; L replaced 1,834; B&G stopped at a gap on 19.9 % of days; 56 rows below zm. Operational
+    PBLH: run-mean fills 781.37 m (2021–2025) and 808.35 m (2026) on ≈ 30 % of rows (ETC QC report).
+  - PBLHmod vs ERA5 (spec 04, 40,212 h): median log ratio −0.84 (convective −0.54, stable −1.24), 39 % within a
+    factor 2, Spearman 0.76 (BE-Bra −0.14 / 72 % / 0.78); EC H vs ERA5 H bias +1.5 W m-2 (not a forcing problem).
+  - SIRTA ReOBS facts of spec 10 A2 verified (details in `CLAUDE.md`). Comparison period 2021-11-16 23:00 →
+    2026-06-30 19:00 UTC; window = PBLHmod convective (both half-hours) and apparent solar time at the interval
+    midpoint 10–16 h. Window metrics (n, median ln ratio, within a factor 2, Spearman):
+    PBLHmod vs CHM15k 6,531, −0.53, 66 %, 0.72; ERA5 vs CHM15k +0.002, 93 %, 0.80; PBLHmod vs CL31 4,691, −0.41,
+    71 %, 0.73; ERA5 vs CL31 +0.06, 89 %, 0.80; CL31 vs CHM15k 4,295, −0.018 (MAD 0.10), 94 %, 0.86 (definitional
+    spread small in the window; CL31 lower in the evening decay); PBLHmod vs ERA5 in the window −0.54, 63 %.
+    PBLHmod low in every season (−0.47 JJA to −0.60 MAM vs CHM15k); JJA diurnal medians at 14 UTC: CHM15k 1,575,
+    ERA5 1,431, PBLHmod 931 m.
+  - Compression (window; slope [95 % day-block bootstrap], reverse slope): PBLHmod vs CHM15k 0.635 [0.607, 0.666],
+    0.817; ERA5 vs CHM15k 0.760 [0.731, 0.788], 0.905; CL31 vs CHM15k 0.980 [0.967, 0.991], 0.925. **All reverse
+    slopes are < 1**: the forward slopes < 1 are consistent with scatter (regression dilution) and do not by
+    themselves show range compression; the terciles (PBLHmod vs CHM15k −0.27 / −0.54 / −0.69) are affected the
+    same way. FI-Hyy (exact values, convective): PBLHmod 0.52 [0.45, 0.60], reverse 0.42; ERA5 0.63 [0.54, 0.70],
+    reverse 0.50 (`10_compression_FI-Hyy.csv`; biased by the exact-values selection).
+  - Refactor check: FI-Hyy script 07 outputs (6 tables, 4 figures, console report) byte-identical after moving the
+    matching into `measured_time_base()`.
 - Spec 08 at BE-Bra and FI-Hyy (2026-10-26; **test, one month, September 2022**; no definitive conclusions):
   - Verification (`scripts/08v_ffp_verify.R`): A (paper's equations) = `calc_footprint_FFP()` on 1,000 half-hours
     per site (max rel. diff 5e-16); C (summed B fields) = `calc_footprint_FFP_climatology()` (identical, smoothing

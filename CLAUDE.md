@@ -143,6 +143,23 @@ so code must be reproducible, documented and traceable to references.
   - `classification` (daily, 30 s): `target_classification` (0 clear … 2 drizzle/rain, 3 drizzle/rain + droplets …
     10), `cloud_base_height_amsl`/`_agl` [m], `rain_detected` (0/1), `altitude` [time]; height a.s.l., irregular gates
     (Hyytiälä lowest 102 m agl).
+- **SIRTA ReOBS (spec 10; checked 2026-10-29).** `<measured_dir>/Palaiseau_SIRTA/MLH4CK.zip` (FR-Gri, via the PI;
+  `measured_dir` in `config.yml`) holds `reobs_sirta_1D_request_2026_08_1_20101214_000000_15y.nc` and four PNGs;
+  `read_reobs()` extracts the NetCDF to a temporary directory at read time. SIRTA 1D ReOBS (AERIS, `Chiriaco2018`),
+  product 2026.08.1, ReOBS 4.0.0, uuid in the global attributes; licence "Inspired by CC-BY", acknowledgement in the
+  global attribute `acknowledgement`. Station 48.718° N, 2.207° E, 156 m (23.37 km from FR-Gri: daytime convective only).
+  - Hourly, 2010-12-14 00:00 → 2026-06-30 23:00 (136,272 rows). `time` = minutes since 1970-01-01 (UTC; the units
+    carry no time zone), start of the hour; `time_bnds` = [t, t + 60 min). Values float with `NaN` fill, counts int
+    with −999 fill; heights m above ground; `cell_methods` time: mean.
+  - `mlh_chm15k` (+ `_std`, `_nb` ≤ 60): Lufft CHM15k, STRATfinder (`Kotthaus2020`), 2015-03-26 →; overlap of a few
+    hundred metres (file comment), so it does not resolve shallow layers. ReOBS itself leaves the value `NaN` on 2,197
+    hours with nb 1–29.
+  - `mlh_cl31` (+ `_std`, `_nb` ∈ {2, 3, 4}): Vaisala CL31, CABAM v2019.3 (`Kotthaus2018`, `Kotthaus2020`), 2010-12 →.
+  - `ablh_chm15k` = aerosol-layer top (residual layer at night): not a mixing height, kept only as `x_ablh_m`.
+  - Standard sources `sirta_mlh_chm15k` (primary) and `sirta_mlh_cl31` (`scripts/10a_sirta_reobs.R`): hourly
+    `interval_mean`, `method_class = aerosol`; qc 0 if nb ≥ 75 % of nominal (60 / 4), 1 if ≥ 50 %, else `pblh_m` NA.
+- **Lanzhot BL-View (spec 10 Part B)**: only two sample days in `data/raw/measured/CZ-Lnz/samples/` (2026-10-29);
+  not implemented.
 - Site metadata: `config/sites.csv` (lat, lon, altitude, UTC offset, zm, canopy height, d, z0...).
   Missing values allowed; functions must fail with an informative error only when a *required* value is missing.
   Time-varying zm / canopy height: `config/sites_timevarying.csv` (derived from `config/sites_H_EC_canopy_formBIF.csv`).

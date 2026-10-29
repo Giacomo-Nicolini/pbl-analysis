@@ -105,6 +105,14 @@ below the bound and median model/bound ratio). Diurnal cycles use censored media
 layers are mostly signal-limited in clean air, the exact values over-represent shallow layers: metrics on exact
 values alone are biased towards "models too deep".
 
+**Range compression** (spec 10, all measured pairs): Theil–Sen slope of ln(source) on ln(measured) with a day-block
+bootstrap 95 % interval (`compression_slope()`), plus the median log ratio by tercile of the measured MLH. Slope < 1
+reads as "too deep when shallow, too shallow when deep", but scatter in the measured values alone also pulls the
+slope below 1 (regression dilution); the reverse slope (ln measured on ln source) is reported as a check: compression
+is supported only if the forward slope < 1 and the reverse slope > 1. At FI-Hyy the slope uses exact values only
+(biased, see above). Aerosol-based references are compared in the daytime convective window (apparent solar time at
+the interval midpoint 10–16 h, `opts$aerosol_window`); all convective hours as sensitivity.
+
 ## ERA5 representativeness
 
 1. Site metadata includes: ERA5 cell centre and distance to site, site elevation vs ERA5 model orography, land–sea fraction of the cell, subgrid orography std (ERA5 `sdor`), and a terrain-complexity class.
@@ -175,6 +183,10 @@ values alone are biased towards "models too deep".
   FR-Gri–palaiseau (23.56 km: daytime convective only, ε from 2025-01). Inventory: `scripts/07a_cloudnet_inventory.R`.
   PI data requested by G for the atmosphere stations next to SE-Htm, SE-Nor, SE-Svb, FI-Hyy, CZ-BK1 (list and contacts
   kept locally in `docs/local/sites_PBLH_measure.txt`).
+- Measured PBLH, aerosol-based (spec 10): SIRTA 1D ReOBS hourly MLH at Palaiseau (CHM15k STRATfinder, CL31 CABAM;
+  AERIS, Chiriaco et al. 2018), FR-Gri–SIRTA 23.37 km (daytime convective only); pair `SIRTA-ReOBS` in
+  `config/measured_sites.csv`. PI data status (2026-10-29): FR-Gri SIRTA received and used; Trappes / Melun and
+  FI-Lom pending; CZ-Lnz (Lanzhot BL-View L3) pending: two sample days only.
 - ERA5 (0.25°, tower cell + 8 neighbours, 2020-01-01 → 2026-10-07; formats and conventions in `CLAUDE.md`):
   - hourly `boundary_layer_height` (instantaneous; bulk Richardson diagnostic, Ri_c = 0.25), `cloud_base_height`,
     `surface_sensible_heat_flux` (hourly accumulation, J m-2, positive downward);
@@ -278,6 +290,15 @@ values alone are biased towards "models too deep".
   (c) Cloudnet classification "drizzle/rain" near the ground on 15 % of profiles vs `rain_detected` 3.5 %: default
   precipitation flag = `rain_detected` (G), the other rules kept as sensitivity; (d) ±31 m ground reference (Cloudnet
   altitude 150 m vs ICOS 181 m; instruments ≈ 200 m from the main station, Sinclair et al. 2022).
+- Spec 10 at FR-Gri, points to discuss: (a) PBLHmod is ≈ 40 % below both SIRTA ceilometer MLHs and ERA5 in the
+  daytime convective window (median ln ratio −0.53 vs CHM15k), while ERA5 matches CHM15k (+0.002) and EC H matches
+  ERA5 H; PBLHmod vs ERA5 was −0.07 at BE-Bra (convective) and −0.10 at FI-Hyy (all rows). Candidates: the B&G slab at a very low
+  measurement height (zm 2–3 m) and short crop canopy, the B&G start conditions and gap stops (19.9 % of days), the
+  default γ = 0.01 K m-1 (ERA5 850–700 hPa median ≈ 0.0047 at FR-Gri; γ = 0.0025 lowers the gap to ERA5 from −0.84
+  to −0.62 over all regimes). To attribute before any change. (b) Compression metric: at FR-Gri and FI-Hyy all
+  reverse slopes are < 1, so the slopes < 1 are explained by scatter; the "shallow too deep / deep too shallow"
+  finding of spec 07 is not confirmed by this metric (decide how to report it). (c) CL31 (CABAM) has a cluster of
+  ≈ 70–100 m values in the window when CHM15k is 300–1500 m (pair 5 scatter): low-layer detections, kept as is.
 - Timing of EC vs ERA5 sensible heat (evaluation; possible error driver for the evening transition). EC timestamps
   are correct (SW_IN_POT and EC H centred on solar noon within 4 min, Cowork 2026-10-23). With every value at its
   interval midpoint (EC start + 15 min, ERA5 accumulation timestamp − 30 min), ERA5 H is earlier than EC H:
