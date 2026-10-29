@@ -1,6 +1,9 @@
 # Spec 10 A5: PBLHmod and ERA5 against a measured MLH with the generalised spec-07 matching
-# (measured_time_base()), plus the range-compression slope (Theil-Sen of ln(source) on ln(measured), day-block
-# bootstrap 95 % interval) and the median log ratio by tercile of the measured MLH.
+# (measured_time_base()), plus the range-compression statistics (G 2026-10-29): symmetric (RMA) slope of
+# ln(source) on ln(measured) and Bland-Altman trend of ln(source / measured) on the mean of the logs, both with a
+# day-block bootstrap 95 % interval (main evidence); forward and reverse Theil-Sen slopes and the median log ratio
+# by tercile of the measured MLH as diagnostics (regression dilution / regression to the mean). Range compression
+# is a hypothesis under test.
 #
 # Aerosol-based reference (provider SIRTA-ReOBS in config/measured_sites.csv; FR-Gri):
 #   standard sources sirta_mlh_chm15k (primary) and sirta_mlh_cl31 (script 10a), hourly means [t, t + 1 h).
@@ -13,13 +16,19 @@
 #   Pairs: 1 PBLHmod vs CHM15k; 2 / 2b ERA5 tower cell / bilinear vs CHM15k; 3 PBLHmod vs CL31; 4 / 4b ERA5 vs CL31;
 #   5 CL31 vs CHM15k (inter-method spread, "definitional uncertainty"); 6 PBLHmod vs ERA5 tower cell at the ERA5
 #   hours (record, as spec 04). Figures: ERA5 tower cell only; bilinear in the tables only.
-# Turbulence-based reference (provider cloudnet; FI-Hyy): only the compression table, on the exact values (qc 0/2)
-#   of the spec-07 pairs 1, 2, 2b (spec-07 tables unchanged; G 2026-10-29). Exact values over-represent shallow
-#   layers (deep layers are often only lower bounds, qc 3), so the slope is biased; noted in the table.
+# Turbulence-based reference (provider cloudnet; FI-Hyy): compression statistics on the exact values (qc 0/2) of
+#   the spec-07 pairs 1, 2, 2b (spec-07 tables unchanged; G 2026-10-29); exact values over-represent shallow layers
+#   (deep layers are often only lower bounds, qc 3), so the statistics are biased (noted in the table). Plus the
+#   scatter-only null for the censored tails (censored_tail_null()).
 #
-# Output (<output_dir>): tables/10_compression_<site>.csv; for aerosol references also tables/10_metrics_<site>.csv
-# (long), tables/10_diurnal_<site>.csv, figures/10_diurnal_by_season_<site>.png, 10_scatter_<site>.png,
-# 10_logratio_by_measured_tercile_<site>.png.
+# Metrics (pblh_metrics()) include the fractional bias and normalised RMSD of Chang2004 as in Sinclair2022
+# (Eqs. 6-7), with the measured (or, in pair 6, the ERA5) value as the observation: fb > 0 when the observation is
+# deeper.
+#
+# Output (<output_dir>): tables/10_compression_<site>.csv, 10_bland_altman_bins_<site>.csv,
+# figures/10_bland_altman_<site>.png; for aerosol references also tables/10_metrics_<site>.csv (long),
+# 10_diurnal_<site>.csv, figures/10_diurnal_by_season_<site>.png, 10_scatter_<site>.png; for turbulence references
+# also tables/10_censored_null_<site>.csv.
 #
 # Usage: Rscript scripts/10_measured_compare.R SITE [--n-boot=N]   (default N = 1000; small N for a quick check)
 #   Profile: env var R_CONFIG_ACTIVE (default | cluster).
@@ -47,6 +56,10 @@ rd <- function(src) {
   read_standard_pblh(p)
 }
 t0 <- Sys.time()
+fb_note <- paste("fb = (mean_obs - mean_source) / (0.5 (mean_obs + mean_source)), obs = reference column (pair 6:",
+                 "ERA5): fb > 0 when the observation is deeper (Sinclair2022 Eq. 6, Chang2004);",
+                 "nrmsd = sqrt(mean((obs - source)^2) / (mean_obs mean_source)) (Sinclair2022 Eq. 7)")
+tercile_note <- "terciles of the measured MLH: affected by regression to the mean (diagnostic only)"
 
 if (any(ms$provider == "SIRTA-ReOBS")) {
   ms <- ms[ms$provider == "SIRTA-ReOBS", ]
@@ -74,6 +87,7 @@ add_time <- function(pt, mid_s) {
   pt
 }
 exact_ref <- function(v) v[v$kind %in% "exact", c("timestamp_utc", "pblh_m")]
+# Compression statistics of one pair and stratum set; Bland-Altman band and bins kept as attributes.
 compress_rows <- function(pt, pair, set, note) {
   cs <- compression_slope(pt$mod, pt$ref, pt$timestamp_utc, opts)
   lt <- logratio_by_tercile(pt$mod, pt$ref)
@@ -85,15 +99,34 @@ compress_rows <- function(pt, pair, set, note) {
   } else {
     dplyr::tibble(ref_q33 = NA_real_)
   }
-  cli::cli_inform("  {pair} [{set}]: n {cs$n}, slope {round(cs$slope, 3)} [{round(cs$slope_lo, 3)}, {round(cs$slope_hi, 3)}], reverse {round(cs$slope_reverse, 3)} ({format(round(difftime(Sys.time(), t0, units = 'mins'), 1))})")
+  cli::cli_inform("  {pair} [{set}]: n {cs$n}, symmetric {round(cs$slope_sym, 3)} [{round(cs$slope_sym_lo, 3)}, {round(cs$slope_sym_hi, 3)}], BA trend {round(cs$ba_slope, 3)} [{round(cs$ba_slope_lo, 3)}, {round(cs$ba_slope_hi, 3)}]")
   out <- dplyr::bind_cols(dplyr::tibble(site_id = site_id, pair = pair, stratum_set = set), cs, tw,
-                          dplyr::tibble(values_note = note))
-  attr(out, "terciles") <- dplyr::mutate(lt, pair = pair, stratum_set = set, .before = 1)
+                          dplyr::tibble(values_note = note, tercile_note = tercile_note))
+  attr(out, "ba_band") <- dplyr::mutate(attr(cs, "ba_band"), pair = pair, stratum_set = set, .before = 1)
+  attr(out, "ba_bins") <- dplyr::mutate(bland_altman_bins(pt$mod, pt$ref, opts$n_bins), pair = pair,
+                                        stratum_set = set, .before = 1)
   out
+}
+bind_comp <- function(comp) {
+  list(comp = dplyr::bind_rows(comp), band = dplyr::bind_rows(lapply(comp, attr, "ba_band")),
+       bins = dplyr::bind_rows(lapply(comp, attr, "ba_bins")))
+}
+comp_cols <- c("pair", "stratum_set", "n", "n_days", "r_log", "slope_sym", "slope_sym_lo", "slope_sym_hi", "ba_mean",
+               "ba_slope", "ba_slope_lo", "ba_slope_hi", "ts_slope", "ts_slope_reverse")
+# Bland-Altman figure of the pairs in `labels` (stratum set `set`).
+ba_figure <- function(pairs, cb, labels, set, subtitle) {
+  lab <- function(d) {
+    if ("stratum_set" %in% names(d)) d <- d[d$stratum_set == set, ]
+    d <- d[d$pair %in% names(labels), ]
+    d$panel <- factor(unname(labels[d$pair]), levels = unname(labels))
+    d
+  }
+  pt <- dplyr::bind_rows(lapply(names(labels), function(p) dplyr::mutate(pairs[[p]], pair = p)))
+  plot_bland_altman(lab(pt), lab(cb$bins), lab(cb$band), lab(cb$comp), subtitle)
 }
 
 if (mode == "turbulence") {
-  # --- FI-Hyy: compression on the spec-07 pairs (exact values) ---
+  # --- FI-Hyy: compression on the spec-07 pairs (exact values) and the censored-tail null ---
   meas <- rd("cloudnet_eps_mlh")
   t_rng <- range(meas$timestamp_start_utc)
   in_per <- function(d) d[d$timestamp_start_utc >= t_rng[1] & d$timestamp_start_utc <= t_rng[2], ]
@@ -104,22 +137,59 @@ if (mode == "turbulence") {
     `2b_era5_bilinear_vs_measured` = pair_table(tb$era$era5_blh_bilinear, exact_ref(tb$era_meas), "2b_era5_bilinear_vs_measured")
   )
   note <- paste("exact values only (qc 0/2): shallow layers over-represented, deep layers often only lower bounds",
-                "(qc 3, excluded); slope biased (spec 07)")
+                "(qc 3, excluded); statistics biased (spec 07)")
   cli::cli_h2("Compression (exact values)")
   comp <- list()
   for (p in names(prs)) {
     pt <- prs[[p]]
     pt <- pt[keep_regime_by_distance(pt$regime, dclass), ]
+    prs[[p]] <- pt
     comp[[length(comp) + 1]] <- compress_rows(pt[pt$regime %in% "convective", ], p, "convective", note)
     comp[[length(comp) + 1]] <- compress_rows(pt, p, "all_regimes", note)
   }
-  comp <- dplyr::bind_rows(comp)
-  comp$reference <- "cloudnet_eps_mlh"
-  readr::write_csv(comp, file.path(tables_dir, paste0("10_compression_", site_id, ".csv")))
-  print_tbl(dplyr::mutate(comp[c("pair", "stratum_set", "n", "n_days", "slope", "slope_lo", "slope_hi",
-                                 "slope_reverse", "mlr_T1", "mlr_T2", "mlr_T3")],
+  cb <- bind_comp(comp)
+  cb$comp$reference <- "cloudnet_eps_mlh"
+  readr::write_csv(cb$comp, file.path(tables_dir, paste0("10_compression_", site_id, ".csv")))
+  readr::write_csv(cb$bins, file.path(tables_dir, paste0("10_bland_altman_bins_", site_id, ".csv")))
+
+  # --- Scatter-only null for the censored tails (all values: exact, below z_min, lower bound) ---
+  cli::cli_h2("Censored tails: observed shares vs scatter-only null")
+  null_df <- function(m, v) {
+    i <- match(as.numeric(m$timestamp_utc), as.numeric(v$timestamp_utc))
+    d <- dplyr::tibble(timestamp_utc = m$timestamp_utc, mod = m$pblh_m, kind = v$kind[i], ref = v$pblh_m[i],
+                       z_min = v$z_min[i], regime = m$x_regime, season = season_of(m$timestamp_utc))
+    d[!is.na(d$mod) & !is.na(d$kind) & keep_regime_by_distance(d$regime, dclass), ]
+  }
+  nd <- list(`1_pblhmod_default_vs_measured` = null_df(tb$mod, tb$meas),
+             `2_era5_center_vs_measured` = null_df(tb$era$era5_blh_center, tb$era_meas),
+             `2b_era5_bilinear_vs_measured` = null_df(tb$era$era5_blh_bilinear, tb$era_meas))
+  null_sets <- list(all_regimes = function(d) rep(TRUE, nrow(d)), convective = function(d) d$regime %in% "convective",
+                    stable = function(d) d$regime %in% "stable")
+  nul <- dplyr::bind_rows(lapply(names(nd), function(p) {
+    dplyr::bind_rows(lapply(names(null_sets), function(s) {
+      d <- nd[[p]][null_sets[[s]](nd[[p]]), ]
+      dplyr::bind_cols(dplyr::tibble(site_id = site_id, pair = p, regime_set = s), censored_tail_null(d, opts))
+    }))
+  }))
+  nul$tail_meaning <- ifelse(nul$tail == "below", "share of source <= z_min where the measurement is below z_min",
+                             "share of source < bound where the measurement is a lower bound (qc 3)")
+  nul$sim_note <- ifelse(nul$sim_bound == "lower",
+                         "null share is a lower bound (true depth <= z_min): observed below it = source too deep",
+                         "null share is an upper bound (true depth >= bound): observed above it = source too shallow")
+  readr::write_csv(nul, file.path(tables_dir, paste0("10_censored_null_", site_id, ".csv")))
+  print_tbl(dplyr::mutate(nul[c("pair", "regime_set", "tail", "n", "n_days", "obs_share", "obs_lo", "obs_hi",
+                                "sim_share", "sim_lo", "sim_hi", "sim_bound", "n_fallback_regime", "n_fallback_all")],
                           dplyr::across(dplyr::where(is.double), ~ round(.x, 3))))
-  cli::cli_alert_success("{.path {file.path(tables_dir, paste0('10_compression_', site_id, '.csv'))}}")
+
+  labels <- c(`1_pblhmod_default_vs_measured` = "1 PBLHmod vs Cloudnet MLH",
+              `2_era5_center_vs_measured` = "2 ERA5 vs Cloudnet MLH")
+  g <- ba_figure(lapply(prs, function(pt) pt[pt$regime %in% "convective", ]), cb, labels, "convective",
+                 "PBLHmod convective; exact measured values only (biased, spec 07)")
+  pth <- save_figure(g, paste0("10_bland_altman_", site_id), 20, 11)
+  cli::cli_alert_success("{.path {pth[['png']]}}")
+  cli::cli_h2("Compression statistics")
+  print_tbl(dplyr::mutate(cb$comp[c(comp_cols, "mlr_T1", "mlr_T2", "mlr_T3")],
+                          dplyr::across(dplyr::where(is.double), ~ round(.x, 3))))
   cli::cli_inform("Run time: {format(round(difftime(Sys.time(), t0, units = 'mins'), 1))}.")
   quit(save = "no")
 }
@@ -177,21 +247,33 @@ metrics <- dplyr::bind_rows(metrics)
 metrics$comparison_class <- cls[metrics$pair]
 metrics$distance_class <- ifelse(metrics$pair == "6_pblhmod_default_vs_era5_center", "tower (model vs model)", dclass)
 metrics$hour_note <- "hour_utc = start hour of the interval [h, h + 1 h) (pairs 1-5) or ERA5 hour (pair 6)"
+metrics$fb_convention <- fb_note
 readr::write_csv(metrics, file.path(tables_dir, paste0("10_metrics_", site_id, ".csv")))
 
+# --- CL31 low-value cluster (G 2026-10-29: report, keep the values) ---
+p5 <- pairs[["5_cl31_vs_chm15k"]]
+p5w <- p5[sets$window_convective(p5), ]
+n_low <- sum(p5w$mod < 150 & p5w$ref > 300)
+cli::cli_inform("CL31 < 150 m while CHM15k > 300 m: {n_low} of {nrow(p5w)} window convective hours ({round(100 * n_low / nrow(p5w), 1)} %); all convective hours: {sum(p5$regime %in% 'convective' & p5$mod < 150 & p5$ref > 300)} of {sum(p5$regime %in% 'convective')}.")
+low <- p5w[p5w$mod < 150 & p5w$ref > 300, ]
+if (nrow(low) > 0) {
+  print_tbl(dplyr::count(dplyr::mutate(low, year = format(timestamp_utc, "%Y")), year, season))
+}
+
 # --- Compression ---
-cli::cli_h2("Compression slopes")
+cli::cli_h2("Compression statistics")
 note <- "hourly means, not censored"
 comp <- list()
 for (p in names(pairs)) {
   for (s in names(sets)) comp[[length(comp) + 1]] <- compress_rows(pairs[[p]][sets[[s]](pairs[[p]]), ], p, s, note)
 }
-terc <- dplyr::bind_rows(lapply(comp, attr, "terciles"))
-comp <- dplyr::bind_rows(comp)
-comp$reference <- ifelse(grepl("chm15k$", comp$pair), "sirta_mlh_chm15k",
-                         ifelse(grepl("cl31$", comp$pair), "sirta_mlh_cl31", "era5_blh_center"))
-comp$comparison_class <- cls[comp$pair]
+cb <- bind_comp(comp)
+cb$comp$reference <- ifelse(grepl("chm15k$", cb$comp$pair), "sirta_mlh_chm15k",
+                            ifelse(grepl("cl31$", cb$comp$pair), "sirta_mlh_cl31", "era5_blh_center"))
+cb$comp$comparison_class <- cls[cb$comp$pair]
+comp <- cb$comp
 readr::write_csv(comp, file.path(tables_dir, paste0("10_compression_", site_id, ".csv")))
+readr::write_csv(cb$bins, file.path(tables_dir, paste0("10_bland_altman_bins_", site_id, ".csv")))
 
 # --- Diurnal cycle (context; on the hours with a valid CHM15k value) ---
 use <- tb_ch$meas$timestamp_utc[!is.na(tb_ch$meas$pblh_m)]
@@ -232,12 +314,13 @@ sc <- dplyr::bind_rows(lapply(names(fig_pairs), function(p) {
 }))
 cs <- comp[comp$pair %in% names(fig_pairs) & comp$stratum_set == "window_convective", ]
 cs$panel <- unname(fig_pairs[cs$pair])
-lt <- terc[terc$pair %in% names(fig_pairs), ]
-lt$pair_label <- unname(fig_pairs[lt$pair])
+win_pairs <- lapply(pairs, function(pt) pt[sets$window_convective(pt), ])
 figs <- list(
   list(plot_aerosol_diurnal(ds[c("season", "x_utc", "variable", "median")], bands), "10_diurnal_by_season", 17, 13),
   list(plot_compression_scatter(sc, cs), "10_scatter", 24, 17),
-  list(plot_logratio_tercile(lt), "10_logratio_by_measured_tercile", 20, 13)
+  list(ba_figure(win_pairs, cb, fig_pairs, "window_convective",
+                 sprintf("Window %g-%g h apparent solar time, PBLHmod convective; hourly means",
+                         opts$aerosol_window[1], opts$aerosol_window[2])), "10_bland_altman", 24, 15)
 )
 for (fg in figs) {
   pth <- save_figure(fg[[1]], paste0(fg[[2]], "_", site_id), fg[[3]], fg[[4]])
@@ -246,7 +329,7 @@ for (fg in figs) {
 
 # --- Report ---
 get_m <- function(p, set, strata, mets = c("n", "bias", "mae", "median_log_ratio", "mad_log_ratio",
-                                           "frac_within_factor2", "r_spearman")) {
+                                           "frac_within_factor2", "r_spearman", "fb", "nrmsd")) {
   x <- metrics[metrics$pair == p & metrics$stratum_set == set & metrics$stratum %in% strata & metrics$metric %in% mets, ]
   w <- stats::reshape(as.data.frame(x[c("stratum", "metric", "value")]), idvar = "stratum", timevar = "metric",
                       direction = "wide")
@@ -254,6 +337,7 @@ get_m <- function(p, set, strata, mets = c("n", "bias", "mae", "median_log_ratio
   w <- w[match(strata, w$stratum), c("stratum", intersect(mets, names(w)))]
   w[!is.na(w$stratum), ]
 }
+cli::cli_inform("FB convention: {fb_note}.")
 for (s in names(sets)) {
   cli::cli_h2("Pairs, {s}: all seasons")
   print_tbl(dplyr::bind_rows(lapply(names(pairs), function(p) dplyr::bind_cols(dplyr::tibble(pair = p), get_m(p, s, "all")))))
@@ -266,10 +350,8 @@ for (p in names(pairs)) {
 cli::cli_h3("6_pblhmod_default_vs_era5_center, all regimes (record)")
 print_tbl(get_m("6_pblhmod_default_vs_era5_center", "all_regimes",
                 c("all", "regime=convective", "regime=unstable_diag", "regime=mixed", "regime=stable")))
-cli::cli_h2("Compression: Theil-Sen slope of ln(source) on ln(reference), day-block bootstrap 95 % interval")
-print_tbl(dplyr::mutate(comp[c("pair", "stratum_set", "n", "n_days", "slope", "slope_lo", "slope_hi", "slope_reverse",
-                               "ref_q33", "ref_q67", "mlr_T1", "mlr_T2", "mlr_T3")],
-                        dplyr::across(dplyr::where(is.double), ~ round(.x, 3))))
+cli::cli_h2("Compression: symmetric slope and Bland-Altman trend (day-block bootstrap 95 %); Theil-Sen diagnostics")
+print_tbl(dplyr::mutate(comp[comp_cols], dplyr::across(dplyr::where(is.double), ~ round(.x, 3))))
 cli::cli_h2("Diurnal medians [m], JJA and DJF (all hours with a CHM15k value; night = context only)")
 for (s in c("JJA", "DJF")) {
   cat("--", s, "\n")

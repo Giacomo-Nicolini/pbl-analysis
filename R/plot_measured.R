@@ -136,19 +136,21 @@ plot_aerosol_diurnal <- function(ds, bands) {
     ggplot2::guides(colour = ggplot2::guide_legend(nrow = 2))
 }
 
-#' Source vs aerosol-based MLH in the window, log axes, with the Theil-Sen line
+#' Source vs aerosol-based MLH in the window, log axes, with the symmetric (RMA) line
 #'
 #' @param pt Pair rows with `panel` (facet label), `mod`, `ref` [m].
-#' @param cs Tibble per `panel`: `slope`, `intercept` [ln-ln], `slope_lo`, `slope_hi`.
+#' @param cs Tibble per `panel`: `slope_sym`, `intercept_sym` [ln-ln], `slope_sym_lo`, `slope_sym_hi`, `ts_slope`,
+#'   `ts_slope_reverse` [-] ([compression_slope()]).
 #' @return ggplot object.
 plot_compression_scatter <- function(pt, cs) {
   pt <- pt[pt$mod > 0 & pt$ref > 0, ]
   rng <- range(c(pt$mod, pt$ref))
   xs <- exp(seq(log(rng[1]), log(rng[2]), length.out = 50))
   ln <- dplyr::bind_rows(lapply(seq_len(nrow(cs)), function(i) {
-    dplyr::tibble(panel = cs$panel[i], x = xs, y = exp(cs$intercept[i] + cs$slope[i] * log(xs)))
+    dplyr::tibble(panel = cs$panel[i], x = xs, y = exp(cs$intercept_sym[i] + cs$slope_sym[i] * log(xs)))
   }))
-  cs$label <- sprintf("Theil-Sen slope %.2f [%.2f, %.2f]", cs$slope, cs$slope_lo, cs$slope_hi)
+  cs$label <- sprintf("symmetric slope %.2f [%.2f, %.2f]\nTheil-Sen (diagnostic): %.2f, reverse %.2f",
+                      cs$slope_sym, cs$slope_sym_lo, cs$slope_sym_hi, cs$ts_slope, cs$ts_slope_reverse)
   ggplot2::ggplot(pt, ggplot2::aes(ref, mod)) +
     ggplot2::geom_bin2d(bins = 40) +
     ggplot2::geom_abline(slope = 1, intercept = 0, linewidth = 0.4) +
@@ -165,19 +167,44 @@ plot_compression_scatter <- function(pt, cs) {
     ggplot2::theme(legend.position = "right", aspect.ratio = 1)
 }
 
-#' Median log ratio by tercile of the measured MLH
+#' Bland-Altman plot of the log ratio against the geometric mean
 #'
-#' @param lt Tibble: `pair_label`, `stratum_set`, `tercile`, `ref_lo`, `ref_hi` [m], `median_log_ratio` [-], `n`.
+#' `ln(source / reference)` against `exp((ln source + ln reference) / 2)` (log axis; BlandAltman1999): counts,
+#' binned medians with interquartile range ([bland_altman_bins()]), and the least-squares trend with its day-block
+#' bootstrap band ([compression_slope()]). A trend falling to the right is range compression; a flat trend away from
+#' 0 is a constant ratio.
+#'
+#' @param pt Pair rows with `panel`, `mod`, `ref` [m].
+#' @param bins Tibble with `panel` and the columns of [bland_altman_bins()].
+#' @param band Tibble with `panel`, `a` [ln m], `fit`, `lo`, `hi` [-] (attribute `ba_band` of [compression_slope()]).
+#' @param cs Tibble per `panel`: `ba_slope`, `ba_slope_lo`, `ba_slope_hi`, `slope_sym`, `slope_sym_lo`,
+#'   `slope_sym_hi` [-].
+#' @param subtitle Plot subtitle [character] (e.g. the stratum and the values used).
 #' @return ggplot object.
-plot_logratio_tercile <- function(lt) {
-  ggplot2::ggplot(lt, ggplot2::aes(tercile, median_log_ratio, colour = stratum_set, group = stratum_set)) +
+plot_bland_altman <- function(pt, bins, band, cs, subtitle = NULL) {
+  pt <- pt[pt$mod > 0 & pt$ref > 0, ]
+  pt$gm <- sqrt(pt$mod * pt$ref)
+  pt$d <- log(pt$mod / pt$ref)
+  band$gm <- exp(band$a)
+  cs$label <- sprintf("trend %.3f [%.3f, %.3f] per ln m\nsymmetric slope %.2f [%.2f, %.2f]", cs$ba_slope,
+                      cs$ba_slope_lo, cs$ba_slope_hi, cs$slope_sym, cs$slope_sym_lo, cs$slope_sym_hi)
+  xr <- range(pt$gm)
+  ggplot2::ggplot(pt, ggplot2::aes(gm, d)) +
+    ggplot2::geom_bin2d(bins = 40) +
     ratio_lines() +
-    ggplot2::geom_point(size = 1.8, position = ggplot2::position_dodge(0.4)) +
-    ggplot2::geom_line(linewidth = 0.4, position = ggplot2::position_dodge(0.4)) +
-    ggplot2::facet_wrap(~pair_label, nrow = 2) +
-    ggplot2::scale_colour_manual(values = c(window_convective = "black", convective = "grey55"),
-                                 labels = c(window_convective = "Window, convective (primary)",
-                                            convective = "All convective hours"), name = NULL) +
-    ggplot2::labs(x = "Tercile of the measured MLH (T1 shallowest)", y = "Median ln(source / reference) [-]") +
-    theme_pub()
+    ggplot2::geom_ribbon(data = band, ggplot2::aes(x = gm, ymin = lo, ymax = hi), inherit.aes = FALSE,
+                         fill = "#D55E00", alpha = 0.3) +
+    ggplot2::geom_line(data = band, ggplot2::aes(gm, fit), colour = "#D55E00", linewidth = 0.7) +
+    ggplot2::geom_errorbar(data = bins, ggplot2::aes(x = gm_m, ymin = q25_d, ymax = q75_d), inherit.aes = FALSE,
+                           width = 0, linewidth = 0.4) +
+    ggplot2::geom_point(data = bins, ggplot2::aes(gm_m, median_d), size = 1.6, shape = 21, fill = "white") +
+    ggplot2::geom_text(data = cs, ggplot2::aes(x = xr[1], y = Inf, label = label), hjust = 0, vjust = 1.2,
+                       size = 2.4) +
+    ggplot2::scale_x_log10() +
+    ggplot2::scale_fill_viridis_c(trans = "log10", name = "Count") +
+    ggplot2::facet_wrap(~panel, nrow = 2) +
+    ggplot2::labs(x = "Geometric mean of source and reference [m]", y = "ln(source / reference) [-]",
+                  subtitle = subtitle) +
+    theme_pub() +
+    ggplot2::theme(legend.position = "right")
 }
