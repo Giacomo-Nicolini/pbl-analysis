@@ -128,7 +128,8 @@ so code must be reproducible, documented and traceable to references.
     `era5_static_dir`; `{var}` placeholder for the cluster static folders).
 - **ACTRIS/Cloudnet (spec 07; checked on all FI-Hyy files 2026-10-22/23).** Licence CC BY 4.0. API
   `https://cloudnet.fmi.fi/api` (`/files?site=&product=&dateFrom=&dateTo=&showLegacy=true`, no paging documented,
-  queried one year at a time; `/sites`); file metadata: `uuid`, `checksum` (SHA-256), `size`, `downloadUrl`,
+  queried one year at a time; `/sites`; `/files` also filters by `instrumentPid=` (full handle URL), and
+  `/instrument-pids` maps instrument `uuid` → `pid`, checked 2026-10-29); file metadata: `uuid`, `checksum` (SHA-256), `size`, `downloadUrl`,
   `instrument` (`name`, `pid`), `volatile` (no file PID/version yet), `legacy`. No citation endpoint. Pairs ICOS site ×
   Cloudnet site: `config/measured_sites.csv` (`distance_km` from the API coordinates; optional `z_min_agl_m`).
   Files under `cloudnet_dir` (`data/raw/cloudnet/{site}`; cluster `"LOCAL"`), with a provenance table

@@ -105,13 +105,21 @@ below the bound and median model/bound ratio). Diurnal cycles use censored media
 layers are mostly signal-limited in clean air, the exact values over-represent shallow layers: metrics on exact
 values alone are biased towards "models too deep".
 
-**Range compression** (spec 10, all measured pairs): Theil–Sen slope of ln(source) on ln(measured) with a day-block
-bootstrap 95 % interval (`compression_slope()`), plus the median log ratio by tercile of the measured MLH. Slope < 1
-reads as "too deep when shallow, too shallow when deep", but scatter in the measured values alone also pulls the
-slope below 1 (regression dilution); the reverse slope (ln measured on ln source) is reported as a check: compression
-is supported only if the forward slope < 1 and the reverse slope > 1. At FI-Hyy the slope uses exact values only
-(biased, see above). Aerosol-based references are compared in the daytime convective window (apparent solar time at
-the interval midpoint 10–16 h, `opts$aerosol_window`); all convective hours as sensitivity.
+**Range compression** (spec 10, all measured pairs; G 2026-10-29): range compression ("too deep when shallow, too
+shallow when deep") is a **hypothesis under test**. Main evidence: the **symmetric slope** (reduced major axis on
+ln values, sign(r) · sd(ln source) / sd(ln measured), `Smith2009`) and the **Bland–Altman** trend of
+ln(source / measured) against (ln source + ln measured) / 2 (`BlandAltman1999`), both with a day-block bootstrap
+95 % interval (`compression_slope()`), plus binned medians in equal-count bins of that mean
+(`bland_altman_bins()`, figure `10_bland_altman_<site>`). Compression = symmetric slope < 1 and a negative
+Bland–Altman trend. **Regression dilution explains forward slopes < 1**: the forward (ln source on ln measured) and
+reverse Theil–Sen slopes are kept as diagnostics only, as is the median log ratio by tercile of the measured MLH
+(affected by regression to the mean). At FI-Hyy the statistics use exact values only (biased, see above: censoring at
+both ends narrows the measured spread); the censored tails are tested against a scatter-only null
+(`censored_tail_null()`): source = bound × exp(ε), ε resampled from the exact-value log ratios of the same season and
+regime, which gives a lower bound of the share ≤ z_min expected where the measurement is censored below and an upper
+bound of the share below the bound where it is a lower bound (qc 3). Aerosol-based references are compared in the
+daytime convective window (apparent solar time at the interval midpoint 10–16 h, `opts$aerosol_window`); all
+convective hours as sensitivity.
 
 ## ERA5 representativeness
 
@@ -123,6 +131,10 @@ the interval midpoint 10–16 h, `opts$aerosol_window`); all convective hours as
 
 - Errors: absolute and log-ratio (log(mod/ref)), since PBLH spans orders of magnitude.
 - Metrics: bias, MAE, RMSE, correlation; Bland–Altman per regime and season; timing metrics (morning growth rate, time of peak, daily maximum).
+  Fractional bias and normalised RMSD (`Chang2004`, as in `Sinclair2022` Eqs. 6–7; G 2026-10-29), with the reference
+  as the observation: FB = (mean_obs − mean_source) / (0.5 (mean_obs + mean_source)), **FB > 0 when the observation is
+  deeper** (opposite sign to `bias`); nRMSD = sqrt(mean((obs − source)²) / (mean_obs · mean_source)). Columns `fb`,
+  `nrmsd` of `pblh_metrics()` (spec 04, 07 and 10 tables).
 - Triple collocation (log space) where three sources are available; state the "same quantity" assumption.
 - Drivers: stability class, time of day and transitions, season, cloud/precipitation, wind, H magnitude, land cover, terrain, latitude, measurement height, time since last data gap.
   Candidate ERA5-based drivers (proposed 2026-10-15, to discuss): ERA5 cloud base height (cloud presence and
@@ -291,14 +303,25 @@ the interval midpoint 10–16 h, `opts$aerosol_window`); all convective hours as
   precipitation flag = `rain_detected` (G), the other rules kept as sensitivity; (d) ±31 m ground reference (Cloudnet
   altitude 150 m vs ICOS 181 m; instruments ≈ 200 m from the main station, Sinclair et al. 2022).
 - Spec 10 at FR-Gri, points to discuss: (a) PBLHmod is ≈ 40 % below both SIRTA ceilometer MLHs and ERA5 in the
-  daytime convective window (median ln ratio −0.53 vs CHM15k), while ERA5 matches CHM15k (+0.002) and EC H matches
-  ERA5 H; PBLHmod vs ERA5 was −0.07 at BE-Bra (convective) and −0.10 at FI-Hyy (all rows). Candidates: the B&G slab at a very low
-  measurement height (zm 2–3 m) and short crop canopy, the B&G start conditions and gap stops (19.9 % of days), the
-  default γ = 0.01 K m-1 (ERA5 850–700 hPa median ≈ 0.0047 at FR-Gri; γ = 0.0025 lowers the gap to ERA5 from −0.84
-  to −0.62 over all regimes). To attribute before any change. (b) Compression metric: at FR-Gri and FI-Hyy all
-  reverse slopes are < 1, so the slopes < 1 are explained by scatter; the "shallow too deep / deep too shallow"
-  finding of spec 07 is not confirmed by this metric (decide how to report it). (c) CL31 (CABAM) has a cluster of
-  ≈ 70–100 m values in the window when CHM15k is 300–1500 m (pair 5 scatter): low-layer detections, kept as is.
+  daytime convective window (median ln ratio −0.53 vs CHM15k, FB +0.53), while ERA5 matches CHM15k (+0.002, FB −0.01)
+  and EC H matches ERA5 H; PBLHmod vs ERA5 was −0.07 at BE-Bra (convective) and −0.10 at FI-Hyy (all rows).
+  Diagnostics from existing outputs (`scripts/10b_pblhmod_deficit.R`, no model change): the existing γ = 0.0025 K m-1
+  case removes the deficit in the window (median ln ratio +0.08, 90 % within a factor 2, FB −0.08); combine = max with
+  B2 reduces it (−0.09); the other cases (u*, L source/check) do not (−0.51 to −0.54). Not the start height: on clear
+  days PBLHmod is within ≈ 20 % of CHM15k and ERA5 at 7–8 h apparent solar time and then grows too slowly (JJA 14 h:
+  1103 vs 1676 m CHM15k, 1562 m ERA5); the day's window ratio depends little on h0 (median −0.59 / −0.58 / −0.45 by
+  h0 tercile). Not the gap stops: 1.2 % of window hours fall on days where B&G stopped (51 of 1541 B&G days in the
+  comparison period). Points to γ (next spec: γ from ERA5). (b) Compression (symmetric slope and Bland–Altman, G
+  2026-10-29): FR-Gri window, PBLHmod vs CHM15k symmetric slope 0.89 [0.86, 0.93], ERA5 0.94 [0.91, 0.98]; all
+  convective hours > 1 (1.17, 1.06): the result depends on the stratum (window hours exclude the shallow morning
+  layers, which CHM15k does not resolve below a few hundred metres). FI-Hyy exact values: symmetric slopes > 1
+  (PBLHmod 1.29, ERA5 1.26; the measured spread is narrowed by censoring at both ends). Censored-tail null at FI-Hyy:
+  in convective hours with the lidar MLH < 105 m, PBLHmod is ≤ 105 m on 14 % [11, 18] vs ≥ 25 % [23, 27] under
+  scatter alone (ERA5 13 % vs ≥ 33 %): too deep for shallow convective layers beyond scatter; where the MLH is a
+  lower bound, PBLHmod is below it on 40 % [37, 43] vs ≤ 30 % (stable 43 % vs ≤ 29 %; convective 39 % vs ≤ 33 %, just
+  outside): too shallow for deep layers; ERA5 too shallow only in the stable regime (37 % vs ≤ 22 %). (c) CL31 (CABAM)
+  < 150 m while CHM15k > 300 m on 95 of 4295 window convective hours (2.2 %; 201 of 8407 convective hours), most in
+  2022 MAM–SON and 2023 DJF–MAM: low-layer detections, kept as is.
 - Timing of EC vs ERA5 sensible heat (evaluation; possible error driver for the evening transition). EC timestamps
   are correct (SW_IN_POT and EC H centred on solar noon within 4 min, Cowork 2026-10-23). With every value at its
   interval midpoint (EC start + 15 min, ERA5 accumulation timestamp − 30 min), ERA5 H is earlier than EC H:
