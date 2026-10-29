@@ -1,7 +1,10 @@
-# Range compression of a PBLH source against a measured MLH (spec 10 A5; G 2026-10-29): a hypothesis under test
-# (too deep when the layer is shallow, too shallow when it is deep; candidate finding of spec 07). Main evidence:
-# the symmetric slope (reduced major axis of ln(source) on ln(measured)) and the Bland-Altman trend of
-# ln(source / measured) against the mean of the two logs, both with a day-block bootstrap interval. Forward and
+# Range compression of a PBLH source against a measured MLH (spec 10 A5; G 2026-10-29/30): a hypothesis under test
+# (too deep when the layer is shallow, too shallow when it is deep; candidate finding of spec 07). Main evidence,
+# where the measured MLH is censored (FI-Hyy): the scatter-only test of the censored tails (censored_tail_null(),
+# one-sided and conservative). Supporting evidence: the symmetric slope (reduced major axis of ln(source) on
+# ln(measured)) and the Bland-Altman trend of ln(source / measured) against the mean of the two logs, both with a
+# day-block bootstrap interval; supporting only, because source and measurement differ in definition, not only in
+# noise ("equation error", Warton2006), which the symmetric slope does not separate from a range effect. Forward and
 # reverse Theil-Sen slopes are diagnostics only: scatter in the regressor pulls a one-sided slope below 1
 # (regression dilution), so a forward slope < 1 alone is no evidence of compression; for the same reason the
 # median log ratio by tercile of the measured MLH is affected by regression to the mean.
@@ -137,8 +140,10 @@ theil_sen <- function(x, y, tol = 1e-7) {
 
 #' Symmetric (reduced major axis) slope
 #'
-#' `sign(r) sd(y) / sd(x)` (geometric mean of the slope of y on x and the inverse of the slope of x on y; Smith2009):
-#' treats both variables alike, so scatter in either does not pull it towards 0. Line through the means.
+#' `sign(r) sd(y) / sd(x)` (geometric mean of the slope of y on x and the inverse of the slope of x on y; standardised
+#' major axis, Warton2006): treats both variables alike, so scatter in either does not pull it towards 0; equation
+#' error (y and x differing in definition, not only in measurement noise) still affects it (Warton2006). Line through
+#' the means.
 #'
 #' @param x,y Numeric vectors (pairs with a non-finite value dropped).
 #' @return List: `slope` [unit of y / unit of x], `intercept` [unit of y], `r` [-, Pearson]; `NA` with fewer than 3

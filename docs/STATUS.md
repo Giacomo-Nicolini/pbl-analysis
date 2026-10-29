@@ -32,7 +32,7 @@ Phases (see `project_plan.md`): 0 done; 1 done (model, input QC, legacy regressi
 sources (spec 04) and the first measured source (spec 07, FI-Hyy) done; 3 BE-Bra (vs ERA5) and FI-Hyy (vs ERA5 and
 measured MLH) done; 4–6 not started.
 
-- Tests: 1,210 expectations passing (`spec-10-measured-aerosol`, 2026-10-29). Environment: R 4.4.1 + renv (Posit Package
+- Tests: 1,212 expectations passing (`spec-10-measured-aerosol`, 2026-10-29). Environment: R 4.4.1 + renv (Posit Package
   Manager), same as the cluster. Machine-specific paths in the untracked `config.local.yml` (template
   `config.local.yml.example`).
 - PBLHmod defaults: `stable_method = "nieuwstadt"` (B1), `neutral_method = "auto"` (B2 if 10 < N/|f| < 70, else
@@ -54,7 +54,8 @@ measured MLH) done; 4–6 not started.
     harvest used as is, G); no exclusions. ERA5 tower cell 11.05 km, orography 127.5 m (tower 125 m), sdor 25 m.
   - PBLHmod default: 81 % valid; convective median 415 m (p5–p95 55–1134; BE-Bra 707, FI-Hyy 700), stable 104 m;
     u* rejected 0.14 %; L replaced 1,834; B&G stopped at a gap on 19.9 % of days; 56 rows below zm. Operational
-    PBLH: run-mean fills 781.37 m (2021–2025) and 808.35 m (2026) on ≈ 30 % of rows (ETC QC report).
+    PBLH: run-mean fills 781.37 m (2021–2025) and 808.35 m (2026) on 33.4 % of the non-missing values (day; with the
+    night fills 214.42 / 185.67 m 39.3 %; ETC QC report items 12–13).
   - PBLHmod vs ERA5 (spec 04, 40,212 h): median log ratio −0.84 (convective −0.54, stable −1.24), 39 % within a
     factor 2, Spearman 0.76 (BE-Bra −0.14 / 72 % / 0.78); EC H vs ERA5 H bias +1.5 W m-2 (not a forcing problem).
   - SIRTA ReOBS facts of spec 10 A2 verified (details in `CLAUDE.md`). Comparison period 2021-11-16 23:00 →
@@ -67,11 +68,15 @@ measured MLH) done; 4–6 not started.
     ERA5 1,431, PBLHmod 931 m.
   - FB / nRMSD (`Chang2004`, `Sinclair2022`; FB > 0 = observation deeper), window: PBLHmod vs CHM15k +0.53 / 0.73,
     ERA5 vs CHM15k −0.01 / 0.31, PBLHmod vs CL31 +0.41 / 0.64, ERA5 vs CL31 −0.09 / 0.35, CL31 vs CHM15k +0.08 / 0.29.
-  - Compression (G 2026-10-29: hypothesis under test; symmetric slope and Bland–Altman trend with day-block
-    bootstrap 95 %; Theil–Sen diagnostics only). Window: PBLHmod vs CHM15k 0.89 [0.86, 0.93], trend −0.14
+  - Compression (G 2026-10-30): **supported at FI-Hyy** by the censored-tail test (main evidence: beyond the
+    scatter-only bound, one-sided, conservative); **mild at FR-Gri** (symmetric slope 0.89 in the window). The
+    symmetric slope and Bland–Altman trend (day-block bootstrap 95 %) are supporting evidence only: source and
+    measurement differ in definition, not only in noise (equation error, `Warton2006`); Theil–Sen diagnostics only.
+    Window: PBLHmod vs CHM15k 0.89 [0.86, 0.93], trend −0.14
     [−0.18, −0.09]; ERA5 vs CHM15k 0.94 [0.91, 0.98], −0.07; PBLHmod vs CL31 0.74 [0.71, 0.78]; ERA5 vs CL31 0.84
     [0.80, 0.88]; CL31 vs CHM15k 1.16 [1.12, 1.21]. All convective hours: > 1 for every pair (PBLHmod vs CHM15k
-    1.17): the sign depends on the stratum. FI-Hyy (exact values): symmetric slopes > 1 (convective PBLHmod 1.29
+    1.17): the sign depends on the stratum (CHM15k does not resolve the shallow morning and evening layers below
+    its overlap height of a few hundred metres). FI-Hyy (exact values): symmetric slopes > 1 (convective PBLHmod 1.29
     [1.19, 1.40], ERA5 1.26); censored-tail null (`10_censored_null_FI-Hyy.csv`): convective, MLH < 105 m: PBLHmod
     ≤ 105 m on 14 % vs ≥ 25 % under scatter alone (ERA5 13 % vs ≥ 33 %); MLH a lower bound: PBLHmod below it on 40 %
     vs ≤ 30 % (stable 43 % vs ≤ 29 %), ERA5 33 % vs ≤ 26 % from the stable regime (37 % vs ≤ 22 %; convective 31 %
@@ -80,13 +85,20 @@ measured MLH) done; 4–6 not started.
     +0.08 (90 % within ×2), max_B2 −0.09, all other cases −0.51 to −0.54; h0 median 88 m (JJA 57, DJF 135; 85 % from
     B1), ERA5 at the same time 231 m; clear days (341, kt ≥ 0.65): PBLHmod close to CHM15k/ERA5 until 8 h solar time,
     then grows too slowly; 1.2 % of window hours on days where B&G stopped (51 of 1,541 B&G days; 79 of 1,687 days).
+    **Decided (G 2026-10-30): γ explains the deficit (γ = 0.0025: −0.53 → +0.08); start height and gap stops ruled
+    out; clear-day definition (kt ≥ 0.65, SW_IN coverage ≥ 90 %) confirmed. Next: spec 11 (γ from ERA5 profiles).**
   - CL31 < 150 m with CHM15k > 300 m: 95 of 4,295 window convective hours (2.2 %).
   - Refactor check: FI-Hyy script 07 outputs (6 tables, 4 figures, console report) byte-identical after moving the
     matching into `measured_time_base()`. After adding `fb`/`nrmsd` (2026-10-29): 5 tables and 4 figures
     byte-identical; `07_metrics_FI-Hyy.csv` keeps its 1,441 rows unchanged and in order, plus 262 `fb`/`nrmsd` rows.
 - NEE columns for spec 09 (`scripts/10c_fluxes_nee_columns.R`, header check + value counts; run on the cluster for
-  all 39 stations of `config/sites.csv`): BE-Bra, FI-Hyy, FR-Gri have FLUXES NEE + NEE_DATA_FLAG and FLUXNET
+  all 40 stations of `config/sites.csv`): BE-Bra, FI-Hyy, FR-Gri have FLUXES NEE + NEE_DATA_FLAG and FLUXNET
   NEE_VUT_REF_QC.
+- `config/sites.csv` (fixed 2026-10-30): the last line (UK-AMo) had 12 fields instead of 13 and no final newline;
+  after lines ending with an empty `notes` field, readr dropped it without reporting a problem, so `read_sites()`
+  returned 39 stations since the file was created (2026-10-08). Fixed by completing the line (format only, no value
+  changed); `read_sites()` now aborts when the number of rows read differs from the number of data lines. 40
+  stations = 40 target-area KMLs. No all-station run had been made, so only the NEE check above was affected.
 - Cloudnet re-check, Hyytiälä (2026-10-29, by instrument PID, `showLegacy=true`, no legacy files returned): HALO 46
   (21.12132/3.421272f219be4f97): `lidar` 2014-02 → 2021-08 (gaps 2014-04 → 2016-11, 2017-11 → 2018-01),
   `doppler-lidar` / `epsilon-lidar` / `doppler-lidar-wind` 2022-01 → 2024-06-13 (epsilon to 2024-04-11), then at
