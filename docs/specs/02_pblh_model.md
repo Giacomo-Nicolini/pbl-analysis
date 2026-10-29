@@ -278,3 +278,20 @@ Added output columns: `WS` [m s-1], `flag_ustar_implausible`.
     `l_L2` reproduces spec 05, `nofilter_l2` reproduces spec 02.
 
 Added output columns: `L_l2`, `L_forcing` [m], `L_source`, `L_check`, `flag_L_replaced`.
+
+14. **gamma from ERA5 profiles** (spec 11 B, G 2026-10-29/30). New options `gamma_source` (`"constant"` default:
+    the scalar or per-row `gamma`, unchanged; `"era5_clim"`: site × calendar-month median of the daily ERA5 morning
+    gamma; `"era5_daily"`: the day's morning gamma, else the climatology) and `gamma_scope` (`"all"` default: the ERA5
+    gamma in B&G, Eq. B5, and in N = sqrt(g gamma / T) of the neutral Eq. B3 and the B2/B3 switch; `"bg_only"`: ERA5 gamma in B&G only, N from the
+    constant `gamma`). The ERA5 tables (`gamma_daily()`, `gamma_climatology()`, `R/era5_gamma.R`, script 11a) are
+    passed to `run_pblh_model(..., gamma_era5 = list(daily, clim))`. One value per `day_id` (sunrise to the next
+    sunrise; the morning profile of the day is the 6-hourly profile closest to and not after sunrise, fit of theta
+    on height over 500–3500 m above the site, levels below the ground excluded, gamma outside [0.001, 0.02] K m-1
+    NA). To compute the per-row gamma, the day block of `run_pblh_model()` now runs before the diagnostic heights
+    (no numerical change). **With `gamma_source = "constant"` the output is unchanged** (pre_spec11 check, < 1e-9 m,
+    every case at BE-Bra, FI-Hyy, FR-Gri). The default stays `gamma = 0.01`, `gamma_source = "constant"` until G
+    decides (spec 11). Cases in script 02: `gamma_era5clim`, `gamma_era5daily`, `gamma_era5clim_zmin1000` (fit from
+    1000 m above the site), `gamma_era5clim_bgonly`.
+
+Added output columns: `gamma_used` [K m-1, in B&G], `gamma_n_used` [K m-1, in N of the neutral Eq. B3 and the B2/B3 switch], `gamma_source_used`
+(`constant`, `era5_clim`, `era5_daily`, `era5_clim_fallback`).

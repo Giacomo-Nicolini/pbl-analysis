@@ -10,16 +10,22 @@
 # Regression chain (if the backups exist in <derived_dir>/pblhmod/): nofilter_l2 vs pre_spec05/ (spec-02
 # default), l_L2 vs pre_spec06/ (spec-05 default) and l_check_allday (L check also at night = spec 06
 # amendment 1) vs pre_spec06a2/, and every case vs pre_spec07/ (outputs before the reference-period rule,
-# spec 07 step 0); all must be identical (< 1e-9 m, same NA, regime, method).
+# spec 07 step 0), and every case vs pre_spec11/ (outputs before the gamma_source option, spec 11 B: the existing
+# cases must be unchanged); all must be identical (< 1e-9 m, same NA, regime, method).
+# Spec 11 B cases (ERA5 gamma from <derived_dir>/gamma/, script 11a): gamma_era5clim (site x month climatology),
+# gamma_era5daily (morning gamma of the day, climatology fallback), gamma_era5clim_zmin1000 (fit layer from 1000 m),
+# gamma_era5clim_bgonly (ERA5 climatology in B&G only, N (Eq. B3) from the constant gamma; G 2026-10-30).
 #
-# Usage: Rscript scripts/02_run_pblh_model.R [SITE ...]
-#   Without arguments the sites in cfg$test_sites are used.
+# Usage: Rscript scripts/02_run_pblh_model.R [SITE ...] [--cases=label1,label2]
+#   Without sites the sites in cfg$test_sites are used; --cases runs only the listed cases.
 #   Profile: env var R_CONFIG_ACTIVE (default | cluster).
 
 for (f in list.files(here::here("R"), pattern = "\\.R$", full.names = TRUE)) source(f)
 
 cfg <- get_cfg()
 args <- commandArgs(trailingOnly = TRUE)
+case_arg <- grep("^--cases=", args, value = TRUE)
+args <- setdiff(args, case_arg)
 site_ids <- if (length(args) > 0) args else unlist(cfg$test_sites)
 if (length(site_ids) == 0) {
   cli::cli_abort("No sites: pass station codes as arguments or set {.field test_sites} in {.file config.yml}.")
@@ -44,8 +50,28 @@ runs <- list(
   lcons2 = pblh_options(l_consistency_factor = 2, label = "lcons2"),
   lcons5 = pblh_options(l_consistency_factor = 5, label = "lcons5"),
   nofilter_l2 = pblh_options(ustar_ws_max = Inf, ustar_max = Inf, l_source = "L2", label = "nofilter_l2"),
-  l_check_allday = pblh_options(l_check_daytime_only = FALSE, label = "l_check_allday")
+  l_check_allday = pblh_options(l_check_daytime_only = FALSE, label = "l_check_allday"),
+  gamma_era5clim = pblh_options(gamma_source = "era5_clim", label = "gamma_era5clim"),
+  gamma_era5daily = pblh_options(gamma_source = "era5_daily", label = "gamma_era5daily"),
+  gamma_era5clim_zmin1000 = pblh_options(gamma_source = "era5_clim", label = "gamma_era5clim_zmin1000"),
+  gamma_era5clim_bgonly = pblh_options(gamma_source = "era5_clim", gamma_scope = "bg_only",
+                                       label = "gamma_era5clim_bgonly")
 )
+# ERA5 gamma tables per case (file suffix in <derived_dir>/gamma/: "" = fit layer 500-3500 m, "_zmin1000")
+gamma_layer <- c(gamma_era5clim_zmin1000 = "_zmin1000")
+if (length(case_arg) == 1) {
+  keep <- strsplit(sub("^--cases=", "", case_arg), ",")[[1]]
+  bad <- setdiff(keep, names(runs))
+  if (length(bad) > 0) cli::cli_abort("Unknown case{?s}: {.val {bad}}.")
+  runs <- runs[keep]
+}
+g_dir <- file.path(resolve_path(cfg$derived_dir, must_exist = FALSE), "gamma")
+read_gamma_tables <- function(site_id, sfx) {
+  p <- file.path(g_dir, paste0(site_id, sfx, c("_daily.csv", "_monthly.csv")))
+  if (!all(file.exists(p))) cli::cli_abort("ERA5 gamma tables {.path {p}} not found: run scripts/11a_gamma_era5.R first.")
+  list(daily = readr::read_csv(p[1], show_col_types = FALSE, progress = FALSE),
+       clim = readr::read_csv(p[2], show_col_types = FALSE, progress = FALSE))
+}
 
 # L consistency accounting for one case (rule in l_consistency(), spec 02 amendment 13).
 l_report <- function(out, opts) {
@@ -64,6 +90,7 @@ l_report <- function(out, opts) {
 
 # Compare a case with a saved reference output (regression chain).
 check_reference <- function(new, ref_path, what) {
+  if (is.null(new)) return(invisible(NA)) # case not run in this call
   if (!file.exists(ref_path)) {
     cli::cli_alert_info("{what}: reference {.path {ref_path}} not found, check skipped.")
     return(invisible(NA))
@@ -128,7 +155,16 @@ for (site_id in site_ids) {
   for (lab in names(runs)) {
     opts <- runs[[lab]]
     cli::cli_h2("Run {.val {opts$label}} (gamma = {opts$gamma} K m-1, stable = {opts$stable_method}, neutral = {opts$neutral_method}, H = {opts$h_source}, combine = {opts$combine})")
-    tm <- system.time(out <- run_pblh_model(d, meta, opts))
+    ge <- NULL
+    if (opts$gamma_source != "constant") {
+      sfx <- if (lab %in% names(gamma_layer)) gamma_layer[[lab]] else ""
+      ge <- read_gamma_tables(site_id, sfx)
+      cli::cli_inform("ERA5 gamma ({opts$gamma_source}, scope {opts$gamma_scope}, tables {site_id}{sfx}_*.csv).")
+    }
+    tm <- system.time(out <- run_pblh_model(d, meta, opts, gamma_era5 = ge))
+    if (opts$gamma_source != "constant") {
+      cli::cli_inform("gamma used in B&G: median {signif(stats::median(out$gamma_used, na.rm = TRUE), 3)} K m-1; source: {paste(names(table(out$gamma_source_used)), table(out$gamma_source_used), sep = ' ', collapse = ', ')}.")
+    }
     outs[[opts$label]] <- out
     cli::cli_inform("Run time: {round(tm[['elapsed']], 1)} s.")
 
@@ -227,24 +263,26 @@ for (site_id in site_ids) {
 
   # Default case: where and when L is replaced, and every value > 5 km that remains.
   od <- outs$default
-  rp <- od$flag_L_replaced
-  cli::cli_h2("Default: L replacements by regime, day/night, year; days with most replacements")
-  cnt <- function(x, name) count_tbl(x, name)
-  print_tbl(merge(cnt(od$regime[rp], "regime"), cnt(od$regime[od$L_check %in% c("consistent", "sign", "magnitude")],
-                                                    "regime"), by = "regime", suffixes = c("_replaced", "_checked")))
-  print_tbl(cnt(ifelse(od$is_day[rp], "day", "night"), "is_day"))
-  print_tbl(cnt(format(od$timestamp_start_utc[rp], "%Y"), "year"))
-  top <- sort(table(od$day_id[rp]), decreasing = TRUE)[1:10]
-  print_tbl(data.frame(day_id = names(top), n_replaced = as.integer(top)))
-  big <- od[!is.na(od$pblh_m) & od$pblh_m > 5000, ]
-  cli::cli_h2("Default: rows with pblh_m > 5 km ({nrow(big)})")
-  if (nrow(big) > 0) {
-    print_tbl(dplyr::transmute(big, t_start = format(timestamp_start_utc, "%Y-%m-%d %H:%M"), pblh_m = round(pblh_m),
-                               regime, method, L = signif(L, 3), L_l2 = signif(L_l2, 3), L_forcing = signif(L_forcing, 3),
-                               L_check, wtheta = signif(wtheta, 3), ustar = round(ustar, 3), H_source))
+  if (!is.null(od)) {
+    rp <- od$flag_L_replaced
+    cli::cli_h2("Default: L replacements by regime, day/night, year; days with most replacements")
+    cnt <- function(x, name) count_tbl(x, name)
+    print_tbl(merge(cnt(od$regime[rp], "regime"), cnt(od$regime[od$L_check %in% c("consistent", "sign", "magnitude")],
+                                                      "regime"), by = "regime", suffixes = c("_replaced", "_checked")))
+    print_tbl(cnt(ifelse(od$is_day[rp], "day", "night"), "is_day"))
+    print_tbl(cnt(format(od$timestamp_start_utc[rp], "%Y"), "year"))
+    top <- sort(table(od$day_id[rp]), decreasing = TRUE)[1:10]
+    print_tbl(data.frame(day_id = names(top), n_replaced = as.integer(top)))
+    big <- od[!is.na(od$pblh_m) & od$pblh_m > 5000, ]
+    cli::cli_h2("Default: rows with pblh_m > 5 km ({nrow(big)})")
+    if (nrow(big) > 0) {
+      print_tbl(dplyr::transmute(big, t_start = format(timestamp_start_utc, "%Y-%m-%d %H:%M"), pblh_m = round(pblh_m),
+                                 regime, method, L = signif(L, 3), L_l2 = signif(L_l2, 3), L_forcing = signif(L_forcing, 3),
+                                 L_check, wtheta = signif(wtheta, 3), ustar = round(ustar, 3), H_source))
+    }
   }
 
-  # Regression chain.
+  # Regression chain (cases not run in this call are skipped).
   check_reference(outs$nofilter_l2, file.path(out_dir, "pre_spec05", paste0(site_id, "_pblhmod_default.csv.gz")),
                   "nofilter_l2 vs spec-02 default (pre_spec05)")
   check_reference(outs$l_L2, file.path(out_dir, "pre_spec06", paste0(site_id, "_pblhmod_default.csv.gz")),
@@ -255,6 +293,11 @@ for (site_id in site_ids) {
   for (k in names(outs)) {
     ref_k <- file.path(out_dir, "pre_spec07", paste0(site_id, "_pblhmod_", k, ".csv.gz"))
     if (file.exists(ref_k)) check_reference(outs[[k]], ref_k, paste0(k, " vs before the reference period (pre_spec07)"))
+  }
+  # Spec 11 B: every existing case vs its output before the gamma_source option.
+  for (k in names(outs)) {
+    ref_k <- file.path(out_dir, "pre_spec11", paste0(site_id, "_pblhmod_", k, ".csv.gz"))
+    if (file.exists(ref_k)) check_reference(outs[[k]], ref_k, paste0(k, " vs before gamma_source (pre_spec11)"))
   }
 
   cli::cli_h2("Side by side: quantiles per regime [m] (rows valid in all cases and in the operational PBLH)")
