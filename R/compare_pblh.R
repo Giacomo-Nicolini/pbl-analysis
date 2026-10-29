@@ -146,6 +146,12 @@ pair_table <- function(mod, ref, pair) {
 #' (consistent estimator of the standard deviation for normal data; Rousseeuw
 #' & Croux 1993; spec 04 amendment 8), `frac_within_factor2` = fraction with
 #' `|log(mod / ref)| <= log 2`.
+#' Fractional bias and normalised RMSD of Chang & Hanna (2004) as used by
+#' Sinclair et al. (2022, Eqs. 6-7), with `ref` as the observation:
+#' `fb = (mean(ref) - mean(mod)) / (0.5 (mean(ref) + mean(mod)))` (Sinclair's
+#' sign: `fb > 0` when the reference is deeper, i.e. opposite to `bias`),
+#' `nrmsd = sqrt(mean((ref - mod)^2) / (mean(ref) mean(mod)))` (`NA` unless
+#' `mean(ref) mean(mod) > 0`).
 #' Errors in absolute and log-ratio form as in `docs/project_plan.md`
 #' (Evaluation).
 #'
@@ -153,7 +159,8 @@ pair_table <- function(mod, ref, pair) {
 #' @return One-row tibble: `n` [-], `bias`, `mae`, `rmse` [m], `r_pearson`,
 #'   `r_spearman` [-], `n_log` [-], `n_log_excluded` [-],
 #'   `median_log_ratio`, `mad_log_ratio` [-, natural log],
-#'   `frac_within_factor2` [-].
+#'   `frac_within_factor2` [-], `fb` [-, in (-2, 2) for positive values],
+#'   `nrmsd` [-].
 pblh_metrics <- function(mod, ref) {
   ok <- is.finite(mod) & is.finite(ref)
   m <- mod[ok]
@@ -164,6 +171,8 @@ pblh_metrics <- function(mod, ref) {
   pos <- m > 0 & r > 0
   lr <- log(m[pos] / r[pos])
   nl <- length(lr)
+  mo <- if (n > 0) mean(r) else NA_real_ # observed (reference) mean
+  mp <- if (n > 0) mean(m) else NA_real_ # predicted (source) mean
   dplyr::tibble(
     n = n,
     bias = if (n > 0) mean(e) else NA_real_,
@@ -175,7 +184,10 @@ pblh_metrics <- function(mod, ref) {
     n_log_excluded = n - nl,
     median_log_ratio = if (nl > 0) stats::median(lr) else NA_real_,
     mad_log_ratio = if (nl > 0) stats::mad(lr, constant = 1.4826) else NA_real_,
-    frac_within_factor2 = if (nl > 0) mean(abs(lr) <= log(2)) else NA_real_
+    frac_within_factor2 = if (nl > 0) mean(abs(lr) <= log(2)) else NA_real_,
+    # Chang2004 (FB, NMSE); Sinclair2022 Eqs. 6-7 (FB, nRMSD = sqrt(NMSE))
+    fb = if (n > 0 && mo + mp != 0) (mo - mp) / (0.5 * (mo + mp)) else NA_real_,
+    nrmsd = if (n > 0 && mo * mp > 0) sqrt(mean(e^2) / (mo * mp)) else NA_real_
   )
 }
 

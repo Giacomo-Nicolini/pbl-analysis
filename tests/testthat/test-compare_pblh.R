@@ -70,6 +70,21 @@ test_that("pblh_metrics: hand-computed values", {
   expect_equal(round(m$mad_log_ratio, 5), 0.51383)
   expect_equal(m$frac_within_factor2, 1)
   expect_equal(m$n_log_excluded, 0L)
+  # Chang2004 / Sinclair2022: means obs 450, model 450 -> fb 0; nrmsd sqrt(105000 / 450^2)
+  expect_equal(m$fb, 0)
+  expect_equal(m$nrmsd, sqrt(105000) / 450)
+  expect_equal(names(m)[1:11], c("n", "bias", "mae", "rmse", "r_pearson", "r_spearman", "n_log", "n_log_excluded",
+                                 "median_log_ratio", "mad_log_ratio", "frac_within_factor2"))
+})
+
+test_that("pblh_metrics: fractional bias sign (reference deeper -> fb > 0) and nrmsd", {
+  m <- pblh_metrics(c(100, 300), c(300, 500)) # means: model 200, obs 400
+  expect_equal(m$fb, (400 - 200) / (0.5 * (400 + 200)))
+  expect_true(m$fb > 0 && m$bias < 0)
+  expect_equal(m$nrmsd, sqrt(mean(c(200, 200)^2) / (400 * 200)))
+  expect_true(is.na(pblh_metrics(c(-10, 5), c(10, 20))$nrmsd)) # mean(mod) * mean(ref) <= 0
+  e <- pblh_metrics(numeric(0), numeric(0))
+  expect_true(is.na(e$fb) && is.na(e$nrmsd))
 })
 
 test_that("log metrics skip non-positive values and report them", {
