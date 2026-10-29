@@ -34,11 +34,16 @@ plot_measured_diurnal <- function(dm, ds) {
 
 #' Each source vs the measured MLH (qc 0/2), by regime, log axes
 #'
-#' @param pt Pair tables ([pair_table()]) bound together, with a `source` column.
+#' @param pt Pair tables ([pair_table()]) bound together, with a `source` column; optional logical `comparable`
+#'   (spec 11 E: rows outside the comparable set drawn as faded points, counts from the comparable rows only).
 #' @return ggplot object.
 plot_measured_scatter <- function(pt) {
   pt <- pt[pt$mod > 0 & pt$ref > 0 & !is.na(pt$regime), ]
+  if (!"comparable" %in% names(pt)) pt$comparable <- TRUE
+  ctx <- geom_context_points(pt, ggplot2::aes(ref, mod))
+  pt <- pt[pt$comparable %in% TRUE, ]
   ggplot2::ggplot(pt, ggplot2::aes(ref, mod)) +
+    ctx +
     ggplot2::geom_bin2d(bins = 50) +
     ggplot2::geom_abline(slope = 1, intercept = 0, linewidth = 0.4) +
     ggplot2::geom_abline(slope = 1, intercept = c(-1, 1) * log10(2), linetype = "dashed", linewidth = 0.3) +
@@ -76,13 +81,24 @@ plot_measured_qc <- function(hq) {
 
 #' log(source / measured MLH) by hour and season (qc 0/2)
 #'
-#' @param pt Pair tables ([pair_table()]) bound together, with a `source` column.
+#' @param pt Pair tables ([pair_table()]) bound together, with a `source` column; optional logical `comparable`
+#'   (spec 11 E: boxes of the rows outside the comparable set drawn faded behind).
 #' @return ggplot object.
 plot_measured_logratio <- function(pt) {
   pt <- pt[pt$mod > 0 & pt$ref > 0, ]
   pt$lr <- log(pt$mod / pt$ref)
+  if (!"comparable" %in% names(pt)) pt$comparable <- TRUE
+  ctx <- pt[!(pt$comparable %in% TRUE), ]
+  ctx_layers <- if (nrow(ctx) == 0) list() else {
+    ctx$.set <- comparable_set(ctx$comparable)
+    list(ggplot2::geom_boxplot(data = ctx, ggplot2::aes(alpha = .data$.set), outlier.shape = NA, linewidth = 0.25,
+                               position = ggplot2::position_dodge(0.8), width = 0.7),
+         scale_alpha_comparable())
+  }
+  pt <- pt[pt$comparable %in% TRUE, ]
   ggplot2::ggplot(pt, ggplot2::aes(factor(hour_utc), lr, fill = source)) +
     ratio_lines() +
+    ctx_layers +
     ggplot2::geom_boxplot(outlier.shape = NA, linewidth = 0.25, position = ggplot2::position_dodge(0.8),
                           width = 0.7) +
     ggplot2::coord_cartesian(ylim = c(-3, 3)) +
@@ -105,28 +121,23 @@ aerosol_labels <- function() {
     pblhmod_default = "PBLHmod (default)", era5_blh_center = "ERA5 (tower cell)")
 }
 
-#' Diurnal cycle by season with an aerosol-based reference, window and night marked
+#' Diurnal cycle by season with an aerosol-based reference, window marked
+#'
+#' Spec 11 E: the hours outside the aerosol window (the comparable set) are drawn faded.
 #'
 #' @param ds Long tibble: `season`, `x_utc` [h, interval midpoint or instant], `variable` (names of
 #'   `aerosol_palette()`), `median` [m].
-#' @param bands Tibble per season: `season`, `win_start`, `win_end` [h UTC, aerosol window], `sunrise`, `sunset`
-#'   [h UTC, median over the season].
+#' @param bands Tibble per season: `season`, `win_start`, `win_end` [h UTC, aerosol window].
 #' @return ggplot object.
 plot_aerosol_diurnal <- function(ds, bands) {
   pal <- aerosol_palette()
   ds$variable <- factor(ds$variable, levels = intersect(names(pal), unique(ds$variable)))
-  ymax <- max(ds$median, na.rm = TRUE)
-  bands$night_label <- "night:\nnot comparable"
+  b <- bands[match(as.character(ds$season), as.character(bands$season)), ]
+  ds$comparable <- ds$x_utc >= b$win_start & ds$x_utc < b$win_end
   ggplot2::ggplot(ds) +
     ggplot2::geom_rect(data = bands, ggplot2::aes(xmin = win_start, xmax = win_end, ymin = -Inf, ymax = Inf),
                        fill = "#F0E442", alpha = 0.25, inherit.aes = FALSE) +
-    ggplot2::geom_rect(data = bands, ggplot2::aes(xmin = 0, xmax = sunrise, ymin = -Inf, ymax = Inf),
-                       fill = "grey60", alpha = 0.2, inherit.aes = FALSE) +
-    ggplot2::geom_rect(data = bands, ggplot2::aes(xmin = sunset, xmax = 24, ymin = -Inf, ymax = Inf),
-                       fill = "grey60", alpha = 0.2, inherit.aes = FALSE) +
-    ggplot2::geom_text(data = bands, ggplot2::aes(x = 0.3, y = ymax * 0.97, label = night_label),
-                       size = 2.3, colour = "grey30", hjust = 0, vjust = 1, inherit.aes = FALSE) +
-    ggplot2::geom_line(ggplot2::aes(x_utc, median, colour = variable), linewidth = 0.6, na.rm = TRUE) +
+    geom_line_comparable(ds, ggplot2::aes(x_utc, median, colour = variable), c("season", "variable"), "x_utc") +
     ggplot2::facet_wrap(~season, nrow = 2) +
     ggplot2::scale_colour_manual(values = pal, labels = aerosol_labels(), name = NULL) +
     ggplot2::scale_x_continuous(breaks = seq(0, 24, 6), limits = c(0, 24), expand = c(0, 0)) +
@@ -138,13 +149,17 @@ plot_aerosol_diurnal <- function(ds, bands) {
 
 #' Source vs aerosol-based MLH in the window, log axes, with the symmetric (RMA) line
 #'
-#' @param pt Pair rows with `panel` (facet label), `mod`, `ref` [m].
+#' @param pt Pair rows with `panel` (facet label), `mod`, `ref` [m]; optional logical `comparable` (spec 11 E: the
+#'   other rows are drawn as faded points; counts and lines from the comparable rows only).
 #' @param cs Tibble per `panel`: `slope_sym`, `intercept_sym` [ln-ln], `slope_sym_lo`, `slope_sym_hi`, `ts_slope`,
 #'   `ts_slope_reverse` [-] ([compression_slope()]).
 #' @return ggplot object.
 plot_compression_scatter <- function(pt, cs) {
   pt <- pt[pt$mod > 0 & pt$ref > 0, ]
+  if (!"comparable" %in% names(pt)) pt$comparable <- TRUE
   rng <- range(c(pt$mod, pt$ref))
+  ctx <- geom_context_points(pt, ggplot2::aes(ref, mod))
+  pt <- pt[pt$comparable %in% TRUE, ]
   xs <- exp(seq(log(rng[1]), log(rng[2]), length.out = 50))
   ln <- dplyr::bind_rows(lapply(seq_len(nrow(cs)), function(i) {
     dplyr::tibble(panel = cs$panel[i], x = xs, y = exp(cs$intercept_sym[i] + cs$slope_sym[i] * log(xs)))
@@ -152,6 +167,7 @@ plot_compression_scatter <- function(pt, cs) {
   cs$label <- sprintf("symmetric slope %.2f [%.2f, %.2f]\nTheil-Sen (diagnostic): %.2f, reverse %.2f",
                       cs$slope_sym, cs$slope_sym_lo, cs$slope_sym_hi, cs$ts_slope, cs$ts_slope_reverse)
   ggplot2::ggplot(pt, ggplot2::aes(ref, mod)) +
+    ctx +
     ggplot2::geom_bin2d(bins = 40) +
     ggplot2::geom_abline(slope = 1, intercept = 0, linewidth = 0.4) +
     ggplot2::geom_abline(slope = 1, intercept = c(-1, 1) * log10(2), linetype = "dashed", linewidth = 0.3) +
@@ -174,7 +190,8 @@ plot_compression_scatter <- function(pt, cs) {
 #' bootstrap band ([compression_slope()]). A trend falling to the right is range compression; a flat trend away from
 #' 0 is a constant ratio.
 #'
-#' @param pt Pair rows with `panel`, `mod`, `ref` [m].
+#' @param pt Pair rows with `panel`, `mod`, `ref` [m]; optional logical `comparable` (spec 11 E: the other rows are
+#'   drawn as faded points; counts from the comparable rows only).
 #' @param bins Tibble with `panel` and the columns of [bland_altman_bins()].
 #' @param band Tibble with `panel`, `a` [ln m], `fit`, `lo`, `hi` [-] (attribute `ba_band` of [compression_slope()]).
 #' @param cs Tibble per `panel`: `ba_slope`, `ba_slope_lo`, `ba_slope_hi`, `slope_sym`, `slope_sym_lo`,
@@ -185,11 +202,15 @@ plot_bland_altman <- function(pt, bins, band, cs, subtitle = NULL) {
   pt <- pt[pt$mod > 0 & pt$ref > 0, ]
   pt$gm <- sqrt(pt$mod * pt$ref)
   pt$d <- log(pt$mod / pt$ref)
+  if (!"comparable" %in% names(pt)) pt$comparable <- TRUE
   band$gm <- exp(band$a)
   cs$label <- sprintf("trend %.3f [%.3f, %.3f] per ln m\nsymmetric slope %.2f [%.2f, %.2f]", cs$ba_slope,
                       cs$ba_slope_lo, cs$ba_slope_hi, cs$slope_sym, cs$slope_sym_lo, cs$slope_sym_hi)
   xr <- range(pt$gm)
+  ctx <- geom_context_points(pt, ggplot2::aes(gm, d))
+  pt <- pt[pt$comparable %in% TRUE, ]
   ggplot2::ggplot(pt, ggplot2::aes(gm, d)) +
+    ctx +
     ggplot2::geom_bin2d(bins = 40) +
     ratio_lines() +
     ggplot2::geom_ribbon(data = band, ggplot2::aes(x = gm, ymin = lo, ymax = hi), inherit.aes = FALSE,

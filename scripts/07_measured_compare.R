@@ -73,14 +73,16 @@ keep_regime <- function(r) keep_regime_by_distance(r, dclass)
 if (dclass == "daytime_climatology") cli::cli_alert_warning("Distance class {dclass}: pair metrics are indicative only.")
 
 # --- Pairs on exact values (qc 0/2) ---
-pairs <- dplyr::bind_rows(lapply(names(sources), function(p) {
+pairs_all <- dplyr::bind_rows(lapply(names(sources), function(p) {
   s <- sources[[p]]
   ref <- s$m[s$m$kind %in% "exact", c("timestamp_utc", "pblh_m")]
   pt <- pair_table(s$x, ref, p)
   pt$hour_utc <- hour_bin_centred(pt$timestamp_utc + s$half) # bins centred on the full hour (interval midpoint)
-  pt[keep_regime(pt$regime), ]
+  pt
 }))
-pairs$source <- vapply(sources, `[[`, "", "src")[pairs$pair]
+pairs_all$source <- vapply(sources, `[[`, "", "src")[pairs_all$pair]
+pairs_all$comparable <- keep_regime(pairs_all$regime) # figures: the other rows faded (spec 11 E)
+pairs <- pairs_all[pairs_all$comparable, setdiff(names(pairs_all), "comparable")]
 p4 <- pair_table(mod_h, era_ch, "4_pblhmod_default_vs_era5_center")
 metrics <- dplyr::bind_rows(pblh_metrics_long(pairs), pblh_metrics_long(p4))
 cls <- c(vapply(sources, `[[`, "", "cls"), `4_pblhmod_default_vs_era5_center` = "parameterisation vs model")
@@ -181,7 +183,7 @@ readr::write_csv(dplyr::bind_rows(
 
 # --- Figures ---
 cli::cli_h2("Figures")
-pairs_fig <- pairs[pairs$pair %in% c("1_pblhmod_default_vs_measured", "2_era5_center_vs_measured"), ]
+pairs_fig <- pairs_all[pairs_all$pair %in% c("1_pblhmod_default_vs_measured", "2_era5_center_vs_measured"), ]
 figs <- list(
   list(plot_measured_diurnal(dm, ds[ds$variable != "era5_blh_bilinear", ]), "07_diurnal_by_season", 17, 13),
   list(plot_measured_scatter(pairs_fig), "07_scatter", 24, 18),
