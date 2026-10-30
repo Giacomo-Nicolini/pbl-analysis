@@ -243,6 +243,8 @@ so code must be reproducible, documented and traceable to references.
   change in `R/` therefore reruns every step. The first failing step stops the site.
 - **SLURM**: `scripts/slurm_submit.R --what=sites|chunks [--dry-run]` renders `slurm/sites_array.sbatch` (one task per
   row of `config/run_sites.txt`) or `slurm/footprint_chunks.sbatch` (one task per chunk) with `slurm/local.env`.
+  MaxArraySize on the cluster is 1001: a chunk list longer than `SLURM_MAX_ARRAY_TASKS` (default 1000) is submitted as
+  several independent arrays (row offset per array). Example default: 2 CPUs per chunk (`CHUNK_CPUS_PER_TASK`).
 - **Footprints**: after step 08a and G's approval of the reference years (`scripts/09_collect.R` writes the proposal
   `output/tables/08_reference_years.csv`; the approved list is committed as `config/reference_years.csv`),
   `scripts/08c_make_chunks.R` writes `<derived_dir>/footprint/chunk_list.csv` (site × case × month, half-months above

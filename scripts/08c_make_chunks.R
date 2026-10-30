@@ -7,7 +7,7 @@
 # Output: <derived_dir>/footprint/chunk_list.csv (one row per array task) and
 #         <output_dir>/tables/09_chunks_summary.csv (per site: chunks, half-hours, CPU-hours, longest chunk).
 #
-# Usage: Rscript scripts/08c_make_chunks.R [SITE ...] [--cpus=6] [--with-oper]
+# Usage: Rscript scripts/08c_make_chunks.R [SITE ...] [--cpus=2] [--with-oper]
 #   Without sites: every site of config/reference_years.csv. A requested site without an approved year aborts.
 
 for (f in list.files(here::here("R"), pattern = "\\.R$", full.names = TRUE)) source(f)
@@ -18,7 +18,7 @@ opt <- function(k, def = NULL) {
   if (length(v)) v else def
 }
 cfg <- get_cfg()
-cpus <- as.integer(opt("cpus", "6"))
+cpus <- as.integer(opt("cpus", "2"))
 with_oper <- "--with-oper" %in% args
 ry_file <- resolve_path(cfg$reference_years_file, must_exist = FALSE)
 if (!file.exists(ry_file)) {

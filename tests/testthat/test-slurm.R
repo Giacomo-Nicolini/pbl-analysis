@@ -42,6 +42,13 @@ test_that("site and chunk templates render to valid job scripts with only local.
   expect_true("#SBATCH --cpus-per-task=6" %in% ch)
   expect_true("#SBATCH --mem-per-cpu=4G" %in% ch)
   expect_true(any(grepl("--chunk-list=\"/lists_x/chunks.csv\"", ch, fixed = TRUE)))
+  expect_true("ROW=$(( SLURM_ARRAY_TASK_ID + 0 ))" %in% ch)
+  expect_true(any(grepl("--chunk-row=\"${ROW}\"", ch, fixed = TRUE)))
+  ch2 <- render_sbatch(readLines(here::here("slurm", "footprint_chunks.sbatch")),
+                       sbatch_values(e, "/lists_x/chunks.csv", 900, row_offset = 1000))
+  expect_true("#SBATCH --array=1-900%10" %in% ch2)
+  expect_true("ROW=$(( SLURM_ARRAY_TASK_ID + 1000 ))" %in% ch2)
+  expect_error(sbatch_values(e, "/l", 1, row_offset = -1), "row_offset")
   # only the fake machine values appear
   for (x in list(s, ch)) {
     expect_false(any(grepl("/bigdata|/home/|@unitus|nicolini|trotta", x)))
@@ -52,6 +59,18 @@ test_that("site and chunk templates render to valid job scripts with only local.
   expect_error(render_sbatch(readLines(here::here("slurm", "sites_array.sbatch")), sbatch_values(e2, "/l", 1)),
                "SLURM_PARTITION")
   expect_error(sbatch_values(e, "/l", 0), "n_tasks")
+})
+
+test_that("array_parts splits a long list into arrays below MaxArraySize", {
+  p <- array_parts(1900, 1000)
+  expect_equal(p$row_offset, c(0L, 1000L))
+  expect_equal(p$n_tasks, c(1000L, 900L))
+  expect_equal(p$last_row, c(1000L, 1900L))
+  expect_equal(nrow(array_parts(1000, 1000)), 1L)
+  p3 <- array_parts(2001, 1000)
+  expect_equal(p3$n_tasks, c(1000L, 1000L, 1L))
+  expect_equal(sum(p3$n_tasks), 2001L)
+  expect_error(array_parts(0), "n")
 })
 
 test_that("tracked SLURM files and the example env hold no machine data", {

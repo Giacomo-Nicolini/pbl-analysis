@@ -92,7 +92,7 @@ footprint_task <- function(inp, case, part, start, end, sets = c("kljun", "kljun
 #' @return Tibble: `site_id`, `case`, `part`, `start`, `end` [character, UTC], `n_halfhours`, `est_min` [min wall
 #'   time with `cpus` workers], `cpu_hours` [h].
 make_chunk_list <- function(inp, year, cases, sets = c("kljun", "kljun_norsl", "etc", "none"), sec_per_hh = 2,
-                            cpus = 6, target_min = 120) {
+                            cpus = 2, target_min = 120) {
   t <- inp$tab$timestamp_start_utc
   t_mo <- format(t, "%Y-%m")
   months <- sprintf("%d-%02d", as.integer(year), 1:12)
