@@ -4,15 +4,66 @@
 
 #' Find the ONEFlux BIF file of a station
 #'
+#' Folder from `cfg$oneflux_bif_dir` (spec 09 A1; default `"{icos_l2_dir}/{site}_output_L2I_2026"`, next to the L2
+#' zips). The value may contain a glob (`*`): on the cluster the BIF files live in one ONEFlux run folder per site and
+#' processing run. Candidates `ICOSETC_<site>_FLUXNET_BIF_*.csv` are kept if their `PRODUCT_NAME` years and version
+#' match the HH FLUXNET file (`hh_path`, as [read_oneflux_bif()] checks); if several remain, the newest processing run
+#' is taken (`PRODUCT_PROCESSING_DATE`, then the `proc<YYYYMMDDHHMM>` stamp of the folder name) and the choice is
+#' reported.
+#'
 #' @param site_id Station code [character].
-#' @param cfg Configuration list with `icos_l2_dir`.
-#' @return Path [character]; aborts if none or more than one.
-find_oneflux_bif <- function(site_id, cfg) {
-  dir <- file.path(resolve_path(cfg$icos_l2_dir), paste0(site_id, "_output_L2I_2026"))
-  f <- list.files(dir, pattern = paste0("^ICOSETC_", gsub("-", "\\\\-", site_id), "_FLUXNET_BIF_.*\\.csv$"),
-                  full.names = TRUE)
-  if (length(f) != 1) cli::cli_abort("{site_id}: {length(f)} ONEFlux BIF file{?s} in {.path {dir}} (expected 1).")
-  f
+#' @param cfg Configuration list with `icos_l2_dir` and optionally `oneflux_bif_dir`.
+#' @param hh_path Path of the FLUXNET FLUXMET HH zip in use, or `NULL` (no product check: exactly one candidate
+#'   required).
+#' @return Path [character]; aborts if no candidate matches, or if the newest run is not unique.
+find_oneflux_bif <- function(site_id, cfg, hh_path = NULL) {
+  pat <- cfg$oneflux_bif_dir
+  if (is.null(pat)) pat <- "{icos_l2_dir}/{site}_output_L2I_2026"
+  if (grepl("{icos_l2_dir}", pat, fixed = TRUE)) {
+    pat <- gsub("{icos_l2_dir}", resolve_path(cfg$icos_l2_dir, site = site_id), pat, fixed = TRUE)
+  }
+  pat <- resolve_path(pat, site = site_id, must_exist = FALSE)
+  dirs <- Sys.glob(pat)
+  dirs <- dirs[dir.exists(dirs)]
+  f <- unlist(lapply(dirs, list.files, pattern = paste0("^ICOSETC_", gsub("-", "\\\\-", site_id), "_FLUXNET_BIF_.*\\.csv$"),
+                     full.names = TRUE))
+  if (length(f) == 0) cli::cli_abort("{site_id}: no ONEFlux BIF file in {.path {pat}}.")
+  info <- bif_candidates(f)
+  if (!is.null(hh_path)) {
+    keep <- !is.na(info$tag) & info$tag == fluxnet_product_tag(hh_path)
+    if (!any(keep)) {
+      cli::cli_abort(c("{site_id}: no ONEFlux BIF file matches the HH file {.val {basename(hh_path)}}.",
+                       stats::setNames(paste0(basename(f), " (", info$product, ")"), rep("*", length(f)))))
+    }
+    info <- info[keep, ]
+  } else if (nrow(info) > 1) {
+    cli::cli_abort("{site_id}: {nrow(info)} ONEFlux BIF files in {.path {pat}} and no HH file to choose by.")
+  }
+  if (nrow(info) == 1) return(info$path)
+  key <- paste(info$processing_date, info$folder_stamp)
+  newest <- info[key == max(key), ]
+  if (nrow(newest) > 1) {
+    cli::cli_abort(c("{site_id}: {nrow(newest)} ONEFlux BIF files of the same processing run:",
+                     stats::setNames(newest$path, rep("*", nrow(newest)))))
+  }
+  cli::cli_inform(c("{site_id}: {nrow(info)} matching ONEFlux BIF files; newest processing run taken:",
+                    "*" = "{.path {newest$path}} (PRODUCT_PROCESSING_DATE {newest$processing_date}, folder stamp {newest$folder_stamp})."))
+  newest$path
+}
+
+# Product tag, processing date (GRP_ONEFLUX/PRODUCT_PROCESSING_DATE, "" if absent) and folder stamp
+# ("proc<12 digits>", last one in the folder path, "" if absent) of BIF candidates.
+bif_candidates <- function(paths) {
+  one <- function(p) {
+    b <- readr::read_csv(p, col_types = readr::cols(.default = readr::col_character()), progress = FALSE)
+    g <- b[b$VARIABLE_GROUP %in% "GRP_ONEFLUX", ]
+    val <- function(v) { x <- g$DATAVALUE[g$VARIABLE == v]; if (length(x)) x[1] else NA_character_ }
+    st <- regmatches(dirname(p), gregexpr("proc[0-9]{12}", dirname(p)))[[1]] # last one in the folder path
+    dplyr::tibble(path = p, product = val("PRODUCT_NAME"), tag = fluxnet_product_tag(val("PRODUCT_NAME")),
+                  processing_date = dplyr::coalesce(val("PRODUCT_PROCESSING_DATE"), ""),
+                  folder_stamp = if (length(st)) sub("^proc", "", st[length(st)]) else "")
+  }
+  dplyr::bind_rows(lapply(paths, one))
 }
 
 # Product years and version of a FLUXNET file name, e.g.

@@ -289,3 +289,13 @@ test_that("l_source L2 reproduces the run without the L check", {
   b <- run(d, l_source = "forcing")
   expect_equal(b$L[!is.na(b$L_forcing)], b$L_forcing[!is.na(b$L_forcing)])
 })
+
+test_that("pblh_options_cfg takes gamma from the configuration (spec 09 A1)", {
+  expect_equal(pblh_options_cfg(list(pblh_gamma_default = 0.005))$gamma, 0.005)
+  o <- pblh_options_cfg(list(pblh_gamma_default = 0.01), gamma_source = "era5_clim", label = "clim")
+  expect_equal(o[c("gamma", "gamma_source", "label")], list(gamma = 0.01, gamma_source = "era5_clim", label = "clim"))
+  expect_equal(pblh_options_cfg(get_cfg(local_file = NULL))$gamma, 0.01)
+  expect_error(pblh_options_cfg(list()), "pblh_gamma_default")
+  expect_error(pblh_options_cfg(list(pblh_gamma_default = -1)), "positive")
+  expect_error(pblh_options_cfg(list(pblh_gamma_default = 0.01), gamma = 0.02), "from the configuration")
+})

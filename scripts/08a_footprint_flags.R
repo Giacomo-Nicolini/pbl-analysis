@@ -79,7 +79,8 @@ print_tbl(cov[cov$stratum == "all" & cov$case %in% c("pblhmod", "era5") & cov$se
 
 cli::cli_h2("ONEFlux u* thresholds vs FLUXNET NEE QC")
 uc <- tryCatch({
-  fr <- read_oneflux_bif(find_oneflux_bif(site_id, cfg), "GRP_FLUX_REF", hh_path = find_icos_files(site_id, cfg)$fluxnet)
+  hh <- find_icos_files(site_id, cfg)$fluxnet
+  fr <- read_oneflux_bif(find_oneflux_bif(site_id, cfg, hh_path = hh), "GRP_FLUX_REF", hh_path = hh)
   thr <- oneflux_ustar_ref(fr, "VUT")
   print_tbl(thr)
   x <- oneflux_ustar_check(d, thr)

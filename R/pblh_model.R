@@ -159,6 +159,26 @@ validate_pblh_options <- function(opts) {
   invisible(TRUE)
 }
 
+#' PBLHmod options with the configured constant gamma
+#'
+#' [pblh_options()] with `gamma = cfg$pblh_gamma_default` (spec 09 A2): the EC-only constant of PBLHmod (case
+#' `default`) and the fallback of PBLHmod-clim (case `clim`) come from `config.yml`, so that the revision after the
+#' network gamma climatology (spec 09, decision point 3b) is a configuration change. The reference cases
+#' `gamma001` / `gamma0025` keep their fixed values and do not use this helper.
+#'
+#' @param cfg Configuration list ([get_cfg()]) with `pblh_gamma_default` [K m-1].
+#' @param ... Other options passed to [pblh_options()] (not `gamma`).
+#' @return Named list of options.
+pblh_options_cfg <- function(cfg, ...) {
+  if ("gamma" %in% names(list(...))) cli::cli_abort("{.fn pblh_options_cfg} sets {.field gamma} from the configuration.")
+  g <- cfg$pblh_gamma_default
+  if (is.null(g)) cli::cli_abort("{.field pblh_gamma_default} missing in {.file config.yml}.")
+  if (!(is.numeric(g) && length(g) == 1 && is.finite(g) && g > 0)) {
+    cli::cli_abort("{.field pblh_gamma_default} must be one positive number [K m-1], not {.val {g}}.")
+  }
+  pblh_options(gamma = g, ...)
+}
+
 #' Run the PBLH model (PBLHmod v2)
 #'
 #' Daily cycle of Kljun et al. (2015) App. B: diagnostic height (Eqs. B1-B4,

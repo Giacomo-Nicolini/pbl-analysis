@@ -1,5 +1,6 @@
 # Spec 02: run PBLHmod v2 for the test site(s) and print a summary.
-# Runs: default (= PBLHmod, EC data only: bg_only, neutral auto, constant gamma 0.01 K/m); reference gamma values
+# Runs: default (= PBLHmod, EC data only: bg_only, neutral auto, constant gamma = config pblh_gamma_default, now
+# 0.01 K/m; every case except the reference gamma values uses it, spec 09 A1); reference gamma values
 # (G 2026-10-30): gamma001 (0.01 K/m, Batchvarova & Gryning 1991 as cited by Kljun et al. 2015; equal to default
 # until the EC-only constant is revised) and gamma0025 (0.0025 K/m, legacy ETC code; no literature source found);
 # max_B2 (combine max, neutral B2: behaviour before amendment 11); max_auto;
@@ -41,24 +42,24 @@ out_dir <- file.path(resolve_path(cfg$derived_dir, must_exist = FALSE), "pblhmod
 dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
 
 runs <- list(
-  default = pblh_options(),
+  default = pblh_options_cfg(cfg),
   gamma0025 = pblh_options(gamma = 0.0025, label = "gamma0025"),
-  max_B2 = pblh_options(combine = "max", neutral_method = "B2", label = "max_B2"),
-  max_auto = pblh_options(combine = "max", neutral_method = "auto", label = "max_auto"),
-  ustar04 = pblh_options(ustar_ws_max = 0.4, label = "ustar04"),
-  ustar06 = pblh_options(ustar_ws_max = 0.6, label = "ustar06"),
-  nofilter = pblh_options(ustar_ws_max = Inf, ustar_max = Inf, label = "nofilter"),
-  l_L2 = pblh_options(l_source = "L2", label = "l_L2"),
-  l_forcing = pblh_options(l_source = "forcing", label = "l_forcing"),
-  lcons2 = pblh_options(l_consistency_factor = 2, label = "lcons2"),
-  lcons5 = pblh_options(l_consistency_factor = 5, label = "lcons5"),
-  nofilter_l2 = pblh_options(ustar_ws_max = Inf, ustar_max = Inf, l_source = "L2", label = "nofilter_l2"),
-  l_check_allday = pblh_options(l_check_daytime_only = FALSE, label = "l_check_allday"),
-  clim = pblh_options(gamma_source = "era5_clim", label = "clim"),
+  max_B2 = pblh_options_cfg(cfg, combine = "max", neutral_method = "B2", label = "max_B2"),
+  max_auto = pblh_options_cfg(cfg, combine = "max", neutral_method = "auto", label = "max_auto"),
+  ustar04 = pblh_options_cfg(cfg, ustar_ws_max = 0.4, label = "ustar04"),
+  ustar06 = pblh_options_cfg(cfg, ustar_ws_max = 0.6, label = "ustar06"),
+  nofilter = pblh_options_cfg(cfg, ustar_ws_max = Inf, ustar_max = Inf, label = "nofilter"),
+  l_L2 = pblh_options_cfg(cfg, l_source = "L2", label = "l_L2"),
+  l_forcing = pblh_options_cfg(cfg, l_source = "forcing", label = "l_forcing"),
+  lcons2 = pblh_options_cfg(cfg, l_consistency_factor = 2, label = "lcons2"),
+  lcons5 = pblh_options_cfg(cfg, l_consistency_factor = 5, label = "lcons5"),
+  nofilter_l2 = pblh_options_cfg(cfg, ustar_ws_max = Inf, ustar_max = Inf, l_source = "L2", label = "nofilter_l2"),
+  l_check_allday = pblh_options_cfg(cfg, l_check_daytime_only = FALSE, label = "l_check_allday"),
+  clim = pblh_options_cfg(cfg, gamma_source = "era5_clim", label = "clim"),
   gamma001 = pblh_options(gamma = 0.01, label = "gamma001"),
-  gamma_era5daily = pblh_options(gamma_source = "era5_daily", label = "gamma_era5daily"),
-  gamma_era5clim_zmin1000 = pblh_options(gamma_source = "era5_clim", label = "gamma_era5clim_zmin1000"),
-  gamma_era5clim_bgonly = pblh_options(gamma_source = "era5_clim", gamma_scope = "bg_only",
+  gamma_era5daily = pblh_options_cfg(cfg, gamma_source = "era5_daily", label = "gamma_era5daily"),
+  gamma_era5clim_zmin1000 = pblh_options_cfg(cfg, gamma_source = "era5_clim", label = "gamma_era5clim_zmin1000"),
+  gamma_era5clim_bgonly = pblh_options_cfg(cfg, gamma_source = "era5_clim", gamma_scope = "bg_only",
                                        label = "gamma_era5clim_bgonly")
 )
 # ERA5 gamma tables per case (file suffix in <derived_dir>/gamma/: "" = fit layer 500-3500 m, "_zmin1000")
@@ -304,8 +305,10 @@ for (site_id in site_ids) {
     if (file.exists(ref_k)) check_reference(outs[[k]], ref_k, paste0(k, " vs before gamma_source (pre_spec11)"))
   }
   # gamma001 equals default while the default constant is 0.01 (G 2026-10-30).
-  check_reference(outs$gamma001, file.path(out_dir, paste0(site_id, "_pblhmod_default.csv.gz")),
-                  "gamma001 vs default (equal while the default gamma is 0.01)")
+  if (isTRUE(cfg$pblh_gamma_default == 0.01)) {
+    check_reference(outs$gamma001, file.path(out_dir, paste0(site_id, "_pblhmod_default.csv.gz")),
+                    "gamma001 vs default (equal while the default gamma is 0.01)")
+  }
 
   cli::cli_h2("Side by side: quantiles per regime [m] (rows valid in all cases and in the operational PBLH)")
   reg <- outs[[1]]$regime # regimes do not depend on combine / neutral_method / gamma

@@ -69,7 +69,7 @@ find_icos_files <- function(site_id, cfg, dir_suffix = "_output_L2I_2026") {
   site_re <- gsub("([.\\-])", "\\\\\\1", site_id)
   patterns <- c(
     fluxes = paste0("^ICOSETC_", site_re, "_FLUXES_INTERIM_L2\\.zip$"),
-    fluxnet = paste0("^ICOSETC_", site_re, "_FLUXNET_FLUXMET_HH_.*\\.zip$"),
+    fluxnet = paste0("^ICOSETC_", site_re, "_FLUXNET_FLUXMET_HH_[0-9]{4}-[0-9]{4}_v[^_]+(_r[0-9]+)?\\.zip$"), # any years
     meteo = paste0("^ICOSETC_", site_re, "_METEO_INTERIM_L2\\.zip$")
   )
   out <- list(fluxes = NULL, fluxnet = NULL, meteo = NULL)
