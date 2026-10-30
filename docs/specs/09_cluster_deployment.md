@@ -2,7 +2,8 @@
 
 Phases 1–5 (network scale). Branch: `spec-09-cluster` (from `main`).
 Read first: `CLAUDE.md`, `docs/STATUS.md`, `docs/project_plan.md` ("Scope"), `docs/specs/08_footprint_sensitivity.md`
-(sections 3, 4b, 4c and the storage analysis), `docs/specs/07_measured_pblh_cloudnet.md`. Agreed with G on 2026-10-28.
+(sections 3, 4b, 4c and the storage analysis), `docs/specs/07_measured_pblh_cloudnet.md`,
+`docs/specs/11_gamma_era5_davos.md`. Agreed with G on 2026-10-28; γ strategy added 2026-10-30.
 
 ## Goal
 
@@ -41,12 +42,24 @@ failure costs little and the array spreads well across nodes; restartable as in 
 
 ### A2. Per-site driver and run status
 
-- `scripts/run_site.R SITE --steps=01,02,04,08a [--force] [--with-oper]`: runs the steps in order for one site, each
+- `scripts/run_site.R SITE --steps=01,11a,02,04,08a [--force] [--with-oper]`: runs the steps in order for one site, each
   in a fresh R process (`callr` or `Rscript`), logging to `{output_dir}/logs/{site}/{step}_{timestamp}.log`.
 - Status file per site × step in `{derived_dir}/run_status/{site}__{step}.json`: start, end, exit code, git commit,
   R version, host name (written only to the untracked derived folder), inputs hash. A step whose status is "ok" with
   the same inputs hash is skipped unless `--force`.
 - A failing step stops the site and is reported; other sites continue (one SLURM array task per site).
+
+- **γ strategy (G, 2026-10-30).** Two PBLHmod variants at every site: **PBLHmod** (`pblhmod_default`, EC data
+  only, constant γ: the code default) and **PBLHmod-clim** (`pblhmod_clim`, site × month γ climatology from ERA5,
+  spec 11). Step `11a` computes the site's γ climatology before step 02; step 02 writes both variants (plus the
+  existing sensitivity cases). The EC-only constant is **revised after the network γ climatology** (decision point
+  in Part B), so the constant is an option read from `config.yml` (`pblh_gamma_default`, now 0.01), not hard-coded.
+- **Reference cases for the supplement (G, 2026-10-30):** the two constants found in the literature and in practice
+  are kept as named standard sources at every site, written by step 02/04 and compared like the main variants:
+  `pblhmod_gamma001` (γ = 0.01 K m⁻¹, Batchvarova & Gryning 1991 as cited by Kljun et al. 2015) and
+  `pblhmod_gamma0025` (γ = 0.0025 K m⁻¹, the value of the legacy ETC code; check whether it also has a literature
+  source and cite it if so). Tables always; supplementary figures (same layout as the main ones, labelled "reference
+  γ values"); not in the main figures.
 
 ### A3. SLURM templates (tracked, no machine data)
 
@@ -60,7 +73,8 @@ failure costs little and the array spreads well across nodes; restartable as in 
 ### A4. Network collection
 
 `scripts/09_collect.R`: reads the per-site outputs and writes network tables `{output_dir}/tables/09_network_*.csv`:
-input availability and reference period (01), PBLHmod summary per regime (02), u* filter / L check counts, PBLHmod vs
+input availability and reference period (01), γ climatology per site × month (11a) and the network summary
+(median, p25, p75 per month and overall, sites with only 2 fit levels), PBLHmod and PBLHmod-clim summary per regime (02), u* filter / L check counts, PBLHmod vs
 ERA5 metrics (04, tower cell and bilinear), ERA5 cell distance and orography, footprint coverage per case × set ×
 subset (08a), reference-year table (spec 08 section 4c), run status. Flags sites with problems (missing inputs,
 unit-check failures, > 5 km values, low coverage). Figures: network maps are out of scope; a dot plot of median ln
@@ -72,7 +86,8 @@ Settings as spec 08 (ETC grid ±1000 m at 1 m, umean only, smoothing EBImage-com
 - **Storage `c5`** (G, 2026-10-28): summed grids stored as 5 m × 5 m block sums (mass-conserving, tower cell at a
   block centre), float32 + gzip, for all validity sets; per-half-hour metrics computed at 1 m and stored as tables.
   Monthly sums kept, annual climatologies built from them (sum, upsample, smooth, normalise).
-- **Cases:** `pblhmod` and `era5` at every site; `measured` where a measured source exists; `era5_bilinear` and the
+- **Cases:** `pblhmod` (with the revised EC-only constant), `pblhmod_clim` and `era5` at every site; the reference
+  cases `pblhmod_gamma001` and `pblhmod_gamma0025` at the extra sites below (supplement); `measured` where a measured source exists; `era5_bilinear` and the
   ±20 % anchors (`pblhmod_x0.8`, `pblhmod_x1.2`) at the sites listed in `config/footprint_extra_sites.txt` (default:
   BE-Bra, FI-Hyy, FR-Gri, CH-Dav, SE-Svb, IT-Cp2: one per climate/canopy type; G may edit); `oper` only with
   `--with-oper` (internal outputs).
@@ -101,8 +116,13 @@ annual = sum of months) — reuse spec-08 tests where they exist.
 2. **Regression:** BE-Bra and FI-Hyy steps 01/02/04 on the cluster; compare with the PC outputs (copied over):
    PBLHmod max |diff| < 1e-9 m, identical NA/regime/method, identical pair-1 metrics. Same inputs required (check
    the md5 of the L2 zips and BIF on both machines; if they differ, report and stop).
-3. All sites, steps 01, 02, 04, 08a (array). Review `09_network_*.csv` with Cowork: input problems, per-site
+3. All sites, steps 01, 11a, 02, 04, 08a (array). Review `09_network_*.csv` with Cowork: input problems, per-site
    specifics, the reference-year table → G approves the years.
+3b. **Decision point (before any footprint run):** from the network γ table, G chooses the recommended EC-only
+   constant (e.g. the network median, rounded) and the γ tables to publish (ERA5-derived: Copernicus attribution).
+   Set `pblh_gamma_default`, commit `config/gamma_era5_clim.csv` (site × month), rerun step 02 and 04 at all sites
+   (cheap; γ = 0.01 and 0.0025 stay as the reference sources `pblhmod_gamma001` / `pblhmod_gamma0025`), collect
+   again.
 4. Footprint chunks (array) on the reference years, then per-site compare and collection.
 5. Measured (after spec 10 is merged, which generalises the comparison code): Cloudnet for FI-Lom, DE-RuS, FR-Gri
    (07b download on the login node, size first; 07c; comparison), FI-Hyy Cloudnet re-downloaded on the cluster
@@ -110,7 +130,8 @@ annual = sum of months) — reuse spec-08 tests where they exist.
 
 ## Docs
 
-`CLAUDE.md`: cluster workflow (driver, status files, SLURM templates, local.env, chunks), the new config keys, the
+`CLAUDE.md`: cluster workflow (driver, status files, SLURM templates, local.env, chunks), the γ step and the two
+PBLHmod variants, the new config keys, the
 "no machine data in tracked files" rule extended to `slurm/`. `docs/STATUS.md`: spec 09 row. `docs/project_plan.md`:
 execution on the cluster, cases and extra-site list. The runbook stays in `docs/local/` (Cowork).
 
@@ -123,7 +144,7 @@ execution on the cluster, cases and extra-site list. The runbook stays in `docs/
 
 ## Out of scope
 
-Network maps; Monte Carlo (phase 5b); own MLH retrievals; Python port; changes to PBLHmod.
+Network maps; Monte Carlo (phase 5b); own MLH retrievals; Python port; changes to PBLHmod other than the γ constant.
 
 ## Summary to report back
 

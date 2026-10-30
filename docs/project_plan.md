@@ -65,7 +65,20 @@ and results; for each measured source it cites the DOIs / references and the ack
     after sunrise, least-squares θ(z) over 500–3500 m above the site (2–3 levels; levels below the ground excluded;
     plausible range 0.001–0.02 K m-1); `gamma_scope = "bg_only"` keeps the constant γ in N of the neutral Eq. B3 (sensitivity).
     The morning profile includes the residual layer in summer: that is what the growing CBL meets (G 2026-10-30).
-    The default stays 0.01 K m-1 until G decides (spec 11 summary).
+    **Two PBLHmod variants (G 2026-10-30).** **PBLHmod** (`pblhmod_default`): the code default, EC data only,
+    constant γ (now 0.01 K m-1). **PBLHmod-clim** (`pblhmod_clim`): the site × month ERA5 γ climatology (option 2),
+    the improved option for users who can compute a γ climatology. Rationale: PBLHmod must be computable from EC
+    data alone; PBLHmod-clim removes most of the convective deficit where a measured MLH exists (spec 11). A month
+    without a climatology value falls back to the constant (flagged); no network fallback in the code. The EC-only
+    constant is revised after the network γ climatology (cluster, spec 09 decision point 3b), with the value then
+    recommended for ICOS stations. Reference γ values kept as named standard sources for the supplement:
+    `pblhmod_gamma001` (0.01 K m-1, Batchvarova & Gryning 1991 as cited by Kljun et al. 2015; equal to
+    `pblhmod_default` until the constant is revised) and `pblhmod_gamma0025` (0.0025 K m-1, the legacy ETC code; no
+    literature source found in our collection or in a web search, 2026-10-30). The γ tables of all sites (site ×
+    month, ERA5-derived) are a deliverable, released with the Copernicus/ERA5 attribution.
+    **Figures (G 2026-10-30, spec 11 and from now on):** main figures show PBLHmod, PBLHmod-clim, ERA5 and the
+    measurement; other γ cases in tables only; the reference γ values in supplementary figures with the same layout,
+    labelled "reference γ values".
   - convective trigger: H > 0 vs 1/L class (must be consistent);
   - H forcing: `H_F_MDS` (gap-filled, default; values with `H_F_MDS_QC` above a threshold, default > 1, treated as
     missing because poor gap-filling can be very bad) vs `H` (FLUXES) vs `H_CORR` (energy-balance corrected,
@@ -358,7 +371,8 @@ too shallow when deep") is a **hypothesis under test**.
   (37 % vs ≤ 22 %). (c) CL31 (CABAM)
   < 150 m while CHM15k > 300 m on 95 of 4295 window convective hours (2.2 %; 201 of 8407 convective hours), most in
   2022 MAM–SON and 2023 DJF–MAM: low-layer detections, kept as is.
-- Spec 11 (γ from ERA5; 2026-10-30), **decision for G: the default γ** (needed before spec 09). ERA5 morning γ
+- Spec 11 (γ from ERA5; 2026-10-30). **Decided (G 2026-10-30): default unchanged (EC-only, constant γ); ERA5
+  climatology = variant PBLHmod-clim** (phase 1, γ options). Results that led to it: ERA5 morning γ
   (500–3500 m above the site) median 0.0047 (BE-Bra), 0.0046 (FI-Hyy), 0.0048 (FR-Gri), 0.0044 K m-1 (CH-Dav), i.e.
   ≈ 0.47 × 0.01, little seasonal change; daily values scatter ± 20 % around the climatology (median), 39–45 % of days
   outside ± 25 %. Median ln(PBLHmod / reference), primary sets (`11_gamma_cases_metrics.csv`):
@@ -370,9 +384,16 @@ too shallow when deep") is a **hypothesis under test**.
   CH-Dav +0.09, +0.39, +0.59 (ERA5 cell orography 362 m above the tower). ERA5 daily ≈ ERA5 clim (≤ 0.03 apart);
   zmin1000 and bg_only ≈ clim (neutral B3 heights change, e.g. FR-Gri median 161 → 191 m, but not the window). The
   ERA5 γ reduces the window bias in every season at FR-Gri (−0.33 DJF to −0.10 JJA) and CH-Dav (−0.25 SON to +0.08
-  MAM); γ = 0.0025 overshoots at CH-Dav and against ERA5 at BE-Bra and FI-Hyy. Proposal: default `gamma_source =
-  "era5_clim"` (option 2, a site × month table; EC-only at run time), constant 0.01 as fallback. Open: the FR-Gri
-  residual (−0.20) and why the measured window MLH is deeper than an ERA5-γ B&G at the low-zm crop site.
+  MAM); γ = 0.0025 overshoots at CH-Dav and against ERA5 at BE-Bra and FI-Hyy. Open points:
+  (a) the residual −0.20 of PBLHmod-clim at FR-Gri (window, vs CHM15k): why the measured window MLH is deeper than
+  an ERA5-γ B&G at the low-zm crop site; candidates: the mechanical term and the entrainment constants of B5
+  (A, B, C); (b) FI-Hyy censored-tail test (`11_gamma_censored_null.csv`): the night-time (stable) discrepancy is a
+  stable-formula issue (B1), not γ (G 2026-10-30). It lies at the deep end, PBLHmod below the lidar lower bound on
+  43 % vs ≤ 30 % under scatter alone, the same in every γ case; at the shallow end the stable set is consistent
+  (32 % vs ≥ 27 %). The shallow end that remains too deep is the convective set: PBLHmod ≤ 105 m where the lidar
+  MLH is < 105 m on 13 % vs ≥ 16 % (PBLHmod-clim; default 14 % vs ≥ 23 %, γ 0.0025 12 % vs ≥ 13 %); (c) the EC-only constant to be revised after the network γ
+  climatology (cluster, spec 09 decision point 3b), and the value then recommended for ICOS stations; (d) γ tables
+  of all sites as a deliverable (ERA5 attribution).
 - Timing of EC vs ERA5 sensible heat (evaluation; possible error driver for the evening transition). EC timestamps
   are correct (SW_IN_POT and EC H centred on solar noon within 4 min, Cowork 2026-10-23). With every value at its
   interval midpoint (EC start + 15 min, ERA5 accumulation timestamp − 30 min), ERA5 H is earlier than EC H:

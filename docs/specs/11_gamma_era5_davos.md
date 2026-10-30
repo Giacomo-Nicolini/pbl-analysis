@@ -116,3 +116,16 @@ Footprints; cluster runs; γ from sources other than ERA5; changes to B&G other 
 As in `CLAUDE.md`, plus: γ climatology per site (vs 0.01), how often the fit has only 2 levels, the case metrics at
 each site (which γ option removes the bias, and does it hold across sites and seasons?), CH-Dav specifics, and a
 recommendation for the default γ, with the evidence — G decides.
+
+## Decision (G, 2026-10-30)
+
+1. The code default stays EC-only: `gamma_source = "constant"`, γ = 0.01, standard source `pblhmod_default`
+   ("PBLHmod"). The ERA5 γ climatology is the named variant: case `clim` (renamed from `gamma_era5clim`; identical
+   output), standard source `pblhmod_clim` ("PBLHmod-clim"), written by scripts 02/04 at every site.
+2. No network fallback in the code: `era5_clim` falls back to the constant where a month has no value
+   (`gamma_source_used = "constant_fallback"`, warning).
+3. Main figures (spec 11 and from now on): PBLHmod, PBLHmod-clim, ERA5, measured. Other γ cases in tables only.
+4. Reference γ values for the supplement: `pblhmod_gamma001` (γ = 0.01, Batchvarova & Gryning 1991 via Kljun et
+   al. 2015; equal to `pblhmod_default` for now) and `pblhmod_gamma0025` (γ = 0.0025, legacy ETC code; no literature
+   source found), as standard sources at the four sites, in the 11 tables, and in supplementary figures
+   (`11s_ref_*`, same layout as the main ones, labelled "reference γ values").

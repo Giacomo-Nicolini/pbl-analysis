@@ -187,6 +187,19 @@ so code must be reproducible, documented and traceable to references.
 - **Exclusions**: `config/exclusion_periods.csv` lists periods that must be removed for a site (e.g. SE-Nor clearcut).
   Every pipeline step must apply them and report how many records were excluded. Never skip this silently.
 
+## PBLHmod variants and γ (spec 11; G 2026-10-30)
+
+- **PBLHmod** (`pblhmod_default`, case `default`): the code default, EC data only, constant γ (`gamma_source =
+  "constant"`, γ = 0.01 K m-1 until the network revision, spec 09 decision point 3b). Never make the default depend
+  on external data.
+- **PBLHmod-clim** (`pblhmod_clim`, case `clim`): `gamma_source = "era5_clim"`, site × month ERA5 γ climatology from
+  `scripts/11a_gamma_era5.R` (`<derived_dir>/gamma/`); a month without a value uses the constant (flagged in
+  `gamma_source_used = "constant_fallback"`). Written by scripts 02/04 at every site.
+- **Reference γ values** (supplement only): `pblhmod_gamma001` (0.01, Batchvarova & Gryning 1991 as cited by Kljun
+  et al. 2015; equal to the default for now, keep both names) and `pblhmod_gamma0025` (0.0025, legacy ETC code).
+- **Figures**: main figures show PBLHmod, PBLHmod-clim, ERA5 and the measurement; reference γ values in
+  supplementary figures with the same layout, labelled "reference γ values"; other γ cases in tables only.
+
 ## Footprints (phase 5, spec 08)
 
 - **FFP code**: Kljun's `calc_footprint_FFP.R` (v1.3) and `calc_footprint_FFP_climatology.R` (v1.31), © N. Kljun,

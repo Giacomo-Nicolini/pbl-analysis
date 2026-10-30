@@ -289,9 +289,16 @@ Added output columns: `L_l2`, `L_forcing` [m], `L_source`, `L_check`, `flag_L_re
     on height over 500–3500 m above the site, levels below the ground excluded, gamma outside [0.001, 0.02] K m-1
     NA). To compute the per-row gamma, the day block of `run_pblh_model()` now runs before the diagnostic heights
     (no numerical change). **With `gamma_source = "constant"` the output is unchanged** (pre_spec11 check, < 1e-9 m,
-    every case at BE-Bra, FI-Hyy, FR-Gri). The default stays `gamma = 0.01`, `gamma_source = "constant"` until G
-    decides (spec 11). Cases in script 02: `gamma_era5clim`, `gamma_era5daily`, `gamma_era5clim_zmin1000` (fit from
-    1000 m above the site), `gamma_era5clim_bgonly`.
+    every case at BE-Bra, FI-Hyy, FR-Gri).
+    **Decision (G 2026-10-30): the default is unchanged**, `gamma_source = "constant"`, `gamma = 0.01`: PBLHmod must
+    be computable from EC data alone. `"era5_clim"` is the named variant **PBLHmod-clim** (case `clim`, standard
+    source `pblhmod_clim`), for users who can compute a γ climatology. A month without a climatology value falls
+    back to the constant `gamma` with `gamma_source_used = "constant_fallback"` and a warning (no network fallback
+    in the code). The EC-only constant will be revised after the network γ climatology (spec 09, decision point 3b).
+    Cases in script 02: `clim`, the reference γ values `gamma001` (0.01, Batchvarova & Gryning 1991 as cited by
+    Kljun et al. 2015; equal to `default` until the constant is revised) and `gamma0025` (0.0025, legacy ETC code),
+    and the sensitivity cases `gamma_era5daily`, `gamma_era5clim_zmin1000` (fit from 1000 m above the site),
+    `gamma_era5clim_bgonly`.
 
 Added output columns: `gamma_used` [K m-1, in B&G], `gamma_n_used` [K m-1, in N of the neutral Eq. B3 and the B2/B3 switch], `gamma_source_used`
-(`constant`, `era5_clim`, `era5_daily`, `era5_clim_fallback`).
+(`constant`, `era5_clim`, `era5_daily`, `era5_clim_fallback`, `constant_fallback`).
