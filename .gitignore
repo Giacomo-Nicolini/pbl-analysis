@@ -38,3 +38,6 @@ config.local.yml
 # --- Third-party code kept locally only (copyright N. Kljun, no licence stated; docs/legacy_review.md) ---
 legacy/calc_footprint_FFP.R
 legacy/calc_footprint_FFP_climatology.R
+
+# --- SLURM machine settings (partition, mail, paths; spec 09 A3) ---
+slurm/local.env
