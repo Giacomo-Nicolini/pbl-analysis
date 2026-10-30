@@ -90,6 +90,11 @@ cli::cli_inform("Period {format(t0, '%Y-%m-%d')} to {format(t1 - 1, '%Y-%m-%d')}
 fl <- footprint_flags_all(tab, m_etc)
 cov <- footprint_coverage(tab, fl)
 readr::write_csv(cov, file.path(tables_dir, paste0("08_coverage_", site_id, per, ".csv")))
+# Per calendar year, for the reference-year proposal of scripts/09_collect.R (spec 09 A5, spec 08 section 4c)
+if (per == "") {
+  yc <- footprint_year_counts(tab, fl$subsets)
+  readr::write_csv(dplyr::mutate(yc, site_id = site_id, .before = 1), file.path(tables_dir, paste0("08_year_counts_", site_id, ".csv")))
+}
 saveRDS(list(site_id = site_id, tab = tab, flags = fl$flags, subsets = fl$subsets, m_etc = m_etc, period = per,
              t0 = t0, t1 = t1), file.path(fp_dir, paste0(site_id, "_footprint_inputs", per, ".rds")))
 
