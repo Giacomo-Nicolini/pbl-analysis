@@ -1,6 +1,7 @@
 # Spec 01: check the input layer for the test site(s).
 # Reads ICOS L2 (FLUXES, FLUXNET, METEO) and ERA5 BLH, prints a concise report
-# and writes the range/coverage report to <output_dir>/tables/01_check_inputs_<site>.csv.
+# and writes the range/coverage report to <output_dir>/tables/01_check_inputs_<site>.csv and the input summary
+# (files, reference period, ERA5 cell; spec 09 A4) to 01_inputs_<site>.csv.
 #
 # Usage: Rscript scripts/01_check_inputs.R [SITE ...]
 #   Without arguments the sites in cfg$test_sites are used.
@@ -92,4 +93,25 @@ for (site_id in site_ids) {
   out <- file.path(tables_dir, paste0("01_check_inputs_", site_id, ".csv"))
   readr::write_csv(dplyr::mutate(rr, site_id = site_id, .before = 1), out)
   cli::cli_alert_success("Range report written to {.path {out}}")
+
+  # Input summary for the network collection (spec 09 A4), long format: one value per item. Reaching this point
+  # means the unit checks of the readers passed (they abort otherwise).
+  fi <- function(k, what) { x <- info[[what]][info$file == k]; if (length(x)) as.character(x[1]) else NA_character_ }
+  cc <- cells[cells$cell_row == 0 & cells$cell_col == 0, ]
+  items <- c(
+    file_fluxes = fi("FLUXES", "path"), file_fluxnet = fi("FLUXNET", "path"), file_meteo = fi("METEO", "path"),
+    reference_start_utc = fmt_t(min(d$timestamp_start_utc)), reference_end_utc = fmt_t(max(d$timestamp_end_utc)),
+    n_halfhours = nrow(d), n_excluded = sum(d$excl_flag),
+    n_fluxes = sum(d$src_fluxes), n_fluxnet = sum(d$src_fluxnet), n_meteo = sum(d$src_meteo),
+    meteo_ta_levels = if (length(ta_lev) && nzchar(ta_lev)) ta_lev else NA_character_,
+    zm_min_m = min(d$zm_m, na.rm = TRUE), zm_max_m = max(d$zm_m, na.rm = TRUE),
+    hc_min_m = min(d$canopy_height_m, na.rm = TRUE), hc_max_m = max(d$canopy_height_m, na.rm = TRUE),
+    units_checked = "ok",
+    era5_first_utc = cc$first, era5_last_utc = cc$last, era5_n_hours = cc$n_hours, era5_n_valid = cc$n_valid,
+    era5_cell_dist_km = cc$grid_dist_km
+  )
+  items[c("file_fluxes", "file_fluxnet", "file_meteo")] <- basename(items[c("file_fluxes", "file_fluxnet", "file_meteo")])
+  out_i <- file.path(tables_dir, paste0("01_inputs_", site_id, ".csv"))
+  readr::write_csv(dplyr::tibble(site_id = site_id, item = names(items), value = unname(items)), out_i)
+  cli::cli_alert_success("Input summary written to {.path {out_i}}")
 }
