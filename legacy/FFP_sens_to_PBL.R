@@ -23,9 +23,9 @@ remove(kpacks, new.packs)
 
 
 # Single footprint
-source("C:/WORK/R/PROJECTS/FOOTPRINT/calc_footprint_FFP.R")
+source("<local path>/calc_footprint_FFP.R")
 # Footprint climatology
-source("C:/WORK/R/PROJECTS/FOOTPRINT/calc_footprint_FFP_climatology.R")
+source("<local path>/calc_footprint_FFP_climatology.R")
 
 # ..............................................................................
 

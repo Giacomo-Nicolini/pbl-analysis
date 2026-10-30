@@ -138,7 +138,7 @@ Search was in English; Chinese-language literature and conference-only work were
 | ALICENET (Italy) | ceilometer backscatter; MAL/CAL heights | Italian network | layer products not yet public; relevant for Italian ICOS sites |
 | Guo2024 product | merged radiosonde/ERA5/GLDAS PBLH | global land, 3-hourly, 0.25° | extra comparison dataset (ESSD) |
 
-## 7. Papers to download into `C:\WORK\bibliography_new_win11\`
+## 7. Papers to download into `<local path>`
 
 Open-access papers I can read online; PDFs are still welcome. **Priority downloads (key, not open access or
 uncertain):**
