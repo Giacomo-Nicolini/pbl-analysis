@@ -44,9 +44,15 @@ so code must be reproducible, documented and traceable to references.
 - **The repository is public: no absolute machine paths or user names in tracked files.** Machine-specific values
   are `"LOCAL"` in `config.yml` and are set in the untracked `config.local.yml` (gitignored; template
   `config.local.yml.example`), which `get_cfg()` merges over `config.yml` (its `default:` section, then the active
-  profile). `resolve_path()` aborts on `"LOCAL"` and `"TODO"`.
+  profile). `resolve_path()` aborts on `"LOCAL"` and `"TODO"`. The same rule covers `slurm/`: machine data
+  (partition, mail address, R setup, project and log folders) only in the untracked `slurm/local.env` (template
+  `slurm/local.env.example`).
 - Development and testing happen locally on ONE site (BE-Bra); production loops over all ICOS stations on the cluster
-  as a SLURM array job (one task per station). Code must run identically in both places.
+  as a SLURM array job (one task per station). Code must run identically in both places. Workflow: "Cluster runs"
+  below.
+- Other config keys (spec 09): `oneflux_bif_dir` (`{icos_l2_dir}` placeholder, glob allowed), `pblh_gamma_default`
+  (EC-only constant γ), `chunk_target_min`, `sec_per_ffp_halfhour`, `footprint_extra_sites_file`,
+  `reference_years_file`.
 
 ## Input data (facts; do not guess beyond these)
 
@@ -190,8 +196,9 @@ so code must be reproducible, documented and traceable to references.
 ## PBLHmod variants and γ (spec 11; G 2026-10-30)
 
 - **PBLHmod** (`pblhmod_default`, case `default`): the code default, EC data only, constant γ (`gamma_source =
-  "constant"`, γ = 0.01 K m-1 until the network revision, spec 09 decision point 3b). Never make the default depend
-  on external data.
+  "constant"`, γ = `pblh_gamma_default` in `config.yml`, now 0.01 K m-1 until the network revision, spec 09 decision
+  point 3b; scripts build options with `pblh_options_cfg(cfg, ...)`, every case except the reference γ values). Never
+  make the default depend on external data.
 - **PBLHmod-clim** (`pblhmod_clim`, case `clim`): `gamma_source = "era5_clim"`, site × month ERA5 γ climatology from
   `scripts/11a_gamma_era5.R` (`<derived_dir>/gamma/`); a month without a value uses the constant (flagged in
   `gamma_source_used = "constant_fallback"`). Written by scripts 02/04 at every site.
@@ -218,17 +225,42 @@ so code must be reproducible, documented and traceable to references.
   no QC value; keeps the stable nights that the NEE u* filter removes).
 - **Target-area fraction** = integral of the footprint over the ICOS target area relative to the full footprint (the
   FFP function integrates to 1 over the plane); `f_domain` = part inside the ±1000 m domain.
+- **Cases (spec 09 A5)**: `pblhmod`, `pblhmod_clim`, `era5` at every site; at the extra sites
+  (`config/footprint_extra_sites.txt`) also `era5_bilinear`, `pblhmod_x0.8` / `x1.2`, `pblhmod_gamma001`,
+  `pblhmod_gamma0025` and `oper` (supplement); elsewhere `oper` only with `--with-oper` (internal). `measured` = the
+  site's primary source (`primary_source_id` in `config/measured_sites.csv`): aerosol sources only on their comparable
+  set (daytime window, PBLHmod convective), Cloudnet exact values plus `bound`.
+- **Storage (spec 09 A5, `c5`)**: summed fields as 5 m × 5 m block sums (`ffp_block_sums()`, tower cell at a block
+  centre), float32; climatologies (monthly, half-months joined, annual) all from the block sums (sum, upsample,
+  smooth, normalise); per-half-hour metrics at 1 m; 80 % regions packed as bitmasks. Old spec-08 chunks stay readable.
+
+## Cluster runs (spec 09)
+
+- **Per site**: `scripts/run_site.R SITE --steps=01,11a,02,04,08a [--force] [--with-oper]` runs each step in a fresh R
+  process (`R/run_status.R`); logs in `<output_dir>/logs/<site>/`, status JSON per site × step in
+  `<derived_dir>/run_status/`. A step whose last status is "ok" with the same inputs hash (step script, all `R/`
+  files, configuration, the site's raw inputs, arguments, upstream hashes) is skipped unless `--force`; any code
+  change in `R/` therefore reruns every step. The first failing step stops the site.
+- **SLURM**: `scripts/slurm_submit.R --what=sites|chunks [--dry-run]` renders `slurm/sites_array.sbatch` (one task per
+  row of `config/run_sites.txt`) or `slurm/footprint_chunks.sbatch` (one task per chunk) with `slurm/local.env`.
+- **Footprints**: after step 08a and G's approval of the reference years (`scripts/09_collect.R` writes the proposal
+  `output/tables/08_reference_years.csv`; the approved list is committed as `config/reference_years.csv`),
+  `scripts/08c_make_chunks.R` writes `<derived_dir>/footprint/chunk_list.csv` (site × case × month, half-months above
+  `chunk_target_min`); each array task runs `08b --chunk-list --chunk-row` with the job's CPUs as workers (result
+  independent of the worker count); then step `08` (`run_site.R SITE --steps=08`, reference year) and `09_collect.R`.
+- **Collection**: `scripts/09_collect.R` reads only the per-site tables (`01_inputs_`, `02_cases_`, `02_regimes_`,
+  `11a_gamma_summary_`, `04_metrics_`, `08_coverage_`, `08_year_counts_`) and writes `09_network_*.csv`.
 
 ## Code organisation
 
 ```
 R/            functions only (no top-level code). One topic per file: read_icos.R, read_era5.R, pblh_model.R, ...
-scripts/      thin entry points, numbered (01_..., 02_...)
+scripts/      thin entry points, numbered (01_..., 02_...); run_site.R, slurm_submit.R (spec 09)
 _targets.R    pipeline (targets package) once phase 0 is done
 tests/testthat/  unit tests
-config/       sites.csv, other small metadata
+config/       sites.csv, other small metadata; run_sites.txt, footprint_extra_sites.txt, reference_years.csv
 config.yml    path profiles
-cluster/      SLURM job scripts
+slurm/        SLURM templates (tracked) and local.env (untracked, machine data)
 docs/         plan, specs, references
 paper/        Quarto manuscript (later)
 data/         raw/, standard/, derived/ (gitignored)
@@ -244,6 +276,11 @@ output/       figures/, tables/ (gitignored)
 - Functions are pure: inputs in, data frame out. Plotting and file writing live in separate functions.
 - Every exported function has roxygen docs: purpose, params with units, return value with units, references.
 - Plots: `ggplot2`, publication style, saved via `save_figure()` to `output/figures/`: png by default; pdf only for paper figures (`formats = c("png", "pdf")`). Never `windows()`.
+- **Figure style (G 2026-10-30)**: every figure takes colours, labels, order and line types only from
+  `pblh_sources_style` (`R/plot_utils.R`; groups: sources, footprint cases, regimes, subsets, qc classes, legacy
+  variants, figure elements; read with `style_of()` / `style_ids()`) and its theme only from `theme_pblh()`. Never
+  hard-code a colour or another theme (a test checks it); add a row to the table instead. Colours are placeholders
+  until G sets the final theme.
 
 ## Testing
 

@@ -218,9 +218,16 @@ too shallow when deep") is a **hypothesis under test**.
   wind direction in [0, 360]), zm < h (needed by the FFP scaling, not enforced by the climatology code), inputs
   present, the exclusion periods and the spec-05 u* plausibility rule. `kljun` keeps no row at BE-Bra or FI-Hyy (20 z0 < zm never holds over forest):
   this resolves the open point on the published vs relaxed thresholds.
-- **Production run (cluster):** one reference year per station (G, 2026-10-27; the choice of the year is to be fixed
-  in the cluster spec). Monthly chunks keep the unsmoothed summed fields and counts per group, so annual
-  climatologies are built by summing months and smoothing at the end. Runtime ≈ 2 s per FFP half-hour (single core).
+- **Production run (cluster):** one reference year per station (G, 2026-10-27; selection rule in spec 09 A5). Monthly
+  chunks keep the unsmoothed summed fields and counts per group, so annual climatologies are built by summing months
+  and smoothing at the end. Runtime ≈ 2 s per FFP half-hour (single core).
+- **Execution on the cluster (spec 09, implemented 2026-10-30):** per-site driver `scripts/run_site.R` (steps 01,
+  11a, 02, 04, 08a; run status with inputs hash) as a SLURM array over `config/run_sites.txt` (all 40 stations);
+  footprint chunks site × case × month (half-months above `chunk_target_min`) of the approved reference year as a
+  second array; collection `scripts/09_collect.R`. Footprint cases: `pblhmod`, `pblhmod_clim`, `era5` everywhere;
+  `measured` where a primary measured source exists (aerosol: comparable set only); at the extra sites
+  (`config/footprint_extra_sites.txt`: BE-Bra, FI-Hyy, FR-Gri, CH-Dav, SE-Svb, IT-Cp2; G may edit) also
+  `era5_bilinear`, the ±20 % anchors, the reference γ values and `oper` (supplement). Storage `c5`.
 - Show explicitly that a bias in h does not average out in climatologies.
 
 ## Inputs
@@ -275,10 +282,15 @@ too shallow when deep") is a **hypothesis under test**.
   - EBImage check on the cluster (installed there): `ffp_smooth()` vs the code's `EBImage::filter2()` smoothing
     (`scripts/08v_ffp_verify.R` runs it when EBImage is available); on the PC it is verified only against an FFT
     circular convolution.
-  - Storage of the monthly summed fields: ≈ 14 MB per group (float32, gzip), up to 96 groups per case and month, i.e.
-    ≈ 0.3–1.4 GB per case-month. One reference year × 5–7 cases ≈ 30–100 GB per station: decide which sets, subsets
-    and row sets to keep before the network run.
-  - Reference year per station for the production run: selection rule to be fixed in the cluster spec.
+  - ~~Storage of the monthly summed fields: ≈ 14 MB per group (float32, gzip), up to 96 groups per case and month,
+    i.e. ≈ 0.3–1.4 GB per case-month. One reference year × 5–7 cases ≈ 30–100 GB per station: decide which sets,
+    subsets and row sets to keep before the network run.~~ See below.
+  - ~~Reference year per station for the production run: selection rule to be fixed in the cluster spec.~~ Fixed in
+    spec 09 A5 (G 2026-10-30): the calendar year with the most half-hours usable in both main cases (`pblhmod` and
+    `era5`, valid under `etc`, `valid_qc_used`), within the FLUXES period and ERA5, ≥ 9 months of data; within 2 %,
+    prefer a year overlapping the measured source, else the most recent. Proposal by `scripts/09_collect.R`, G approves.
+  - ~~Storage of the monthly summed fields~~: `c5` (5 m block sums, G 2026-10-28), implemented in spec 09; the 80 %
+    regions of the chunk climatologies are packed as bitmasks (they were ≈ 100 MB per chunk as cell indices).
   - The ICOS target-area criterion (≥ 90 % from the area of interest; Rebmann2018 p. 475) fails at BE-Bra and FI-Hyy
     whatever the PBLH source (test month): report the fraction distribution, use the criterion as a site-design
     reference only.
