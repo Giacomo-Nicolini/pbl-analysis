@@ -130,7 +130,7 @@ FFPanalysis <- function(
   source(paste0(FFP.func.dir, 'GDrive_files_dwld.R'))         # download files from GoogleDrive
   source(paste0(FFP.func.dir, 'SpatialData_ICOSDB_dwnld.R'))  # download spatial data files from ICOS database: it contains 2 functions,one to download polygond one for points (EC, CP, SPI and SPII)
   source(paste0(FFP.func.dir, 'long2UTM.R'))                  # longlat to UTM conversion
-  source(paste0(FFP.func.dir, 'calc_PBL_height.R'))           # Planetary boundary layer (Mixing) height estimation (GN) ATTUALMENTE USO QUESTA VERSIONE MA LA VERSIONE IN ("C:\WORK\R\PROJECTS\PBL") E' PIU ATTUALE E CI STO LAVORANDO
+  source(paste0(FFP.func.dir, 'calc_PBL_height.R'))           # Planetary boundary layer (Mixing) height estimation (GN) ATTUALMENTE USO QUESTA VERSIONE MA LA VERSIONE IN ("<local path>") E' PIU ATTUALE E CI STO LAVORANDO
   source(paste0(FFP.func.dir, 'proc_PBL_height.R'))           # Planetary boundary layer (Mixing) height quality check and gapfilling
   source(paste0(FFP.func.dir, 'EllipseFit.R'))                # Fit ellipse to data points
   # source(paste0(FFP.func.dir, 'FFP_calc_parallel.R'))       # Parallel execution of FFP calculation and analysis of the interactions with spatial data
