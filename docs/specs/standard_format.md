@@ -101,3 +101,24 @@ instrument), `x_tcf_oktas` (CL31 total cloud fraction), `x_coverage` (`n_samples
 
 Comparisons (`measured_time_base()`): PBLHmod = mean of the two half-hours inside the hour (both required; regime
 common to both, else `mixed`); ERA5 (instantaneous) = mean of the values at t and t + 1 h (both required).
+
+## Example of an aerosol-based source aggregated from 1-min values: `meteoswiss_stratfinder_mlh` (spec 11)
+
+STRATfinder mixed-layer height of the MeteoSwiss CHM15k ceilometer at Davos (DAV), delivered at the native ~60 s
+resolution with a quality level per profile. Aggregated by `standardize_meteoswiss_mlh()` (`scripts/11b_meteoswiss_mlh.R`)
+to half-hourly interval values (`time_reference = interval_mean`, UTC [start, start + 30 min)), `method_class = aerosol`,
+`height_reference = agl` (above ground at the ceilometer; `instrument_altitude_m` = 1590 m). `pblh_m` = median of the
+quality-level-0 profiles in the half-hour (provider recommendation: level 0 only); `n_samples` = number of distinct
+minutes with a level-0 value (profile times jitter around 60 s); `uncertainty_m` = `NA`.
+
+| `qc_flag` | `pblh_m` | Meaning |
+|---|---|---|
+| 0 | value | level-0 values in ≥ 75 % of the 30 minutes |
+| 1 | value | level-0 values in ≥ 50 % and < 75 % of the minutes |
+| `NA` | `NA` | no level-0 value, or in < 50 % of the minutes |
+
+Not censored. `x_` columns: `x_coverage` (`n_samples` / 30), `x_ablh_m` (median level-0 ABLH, aerosol-layer top),
+`x_share_lowest` (share of level-0 profiles at the lowest detectable height, bit 8), `x_segment` (homogeneous
+instrument segment), `x_n_profiles` (all profiles). Comparisons (`measured_time_base()`, half-hourly base without
+censoring): PBLHmod on the same half-hours; ERA5 hours against the mean of the two adjacent half-hours (both
+required); qc is a coverage flag, not a censoring code.

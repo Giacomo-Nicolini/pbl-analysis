@@ -13,6 +13,16 @@
 #'   - `gamma` [K m-1] potential-temperature gradient above the CBL, scalar or
 #'     one value per half-hour (default 0.01; Batchvarova & Gryning 1991 as cited
 #'     in Kljun et al. 2015);
+#'   - `gamma_source` [`"constant"` (default, uses `gamma`), `"era5_clim"`
+#'     (site x month climatology of the ERA5 morning gamma), `"era5_daily"`
+#'     (the day's ERA5 morning gamma, else the climatology)] (spec 11 B, spec 02
+#'     Amendment 14); the ERA5 tables are passed to [run_pblh_model()]; a month
+#'     without a climatology value uses the constant `gamma` (flagged in
+#'     `gamma_source_used`). The default stays `"constant"`: PBLHmod is computable
+#'     from EC data alone (G 2026-10-30); `"era5_clim"` is the variant PBLHmod-clim;
+#'   - `gamma_scope` [`"all"` (default: the ERA5 gamma in B&G and in N of the neutral
+#'     Eq. B3 and the B2/B3 switch) or `"bg_only"` (ERA5 gamma in B&G only, N from the constant `gamma`;
+#'     G 2026-10-30)] used only when `gamma_source` is not `"constant"`;
 #'   - `h_source` [`"H_F_MDS"` (default), `"H"`, `"H_CORR"`] sensible heat flux;
 #'   - `h_qc_max` [-] highest accepted `H_F_MDS_QC` (default 1);
 #'   - `h_fallback` [logical] use FLUXES `H` where `H_F_MDS` is missing in the
@@ -53,6 +63,8 @@ pblh_options <- function(...) {
     stable_method = "nieuwstadt",
     c_s = 0.4,
     gamma = 0.01,
+    gamma_source = "constant",
+    gamma_scope = "all",
     h_source = "H_F_MDS",
     h_qc_max = 1,
     h_fallback = TRUE,
@@ -107,6 +119,8 @@ validate_pblh_options <- function(opts) {
   one_of("h_source", c("H_F_MDS", "H", "H_CORR"))
   one_of("combine", c("max", "bg_only"))
   one_of("neutral_method", c("auto", "B2", "B3"))
+  one_of("gamma_source", c("constant", "era5_clim", "era5_daily"))
+  one_of("gamma_scope", c("all", "bg_only"))
   pos_num("c_s")
   g <- opts$gamma
   if (!(is.numeric(g) && length(g) >= 1 && all(is.finite(g)) && all(g > 0))) {
@@ -173,6 +187,8 @@ validate_pblh_options <- function(opts) {
 #' @param site_meta One row of [read_sites()] (`site_id`, `lat`, `lon`,
 #'   `utc_offset_h`; `altitude_m` for the barometric fallback).
 #' @param opts Output of [pblh_options()].
+#' @param gamma_era5 `NULL`, or, for `opts$gamma_source` other than `"constant"`, a list with `daily`
+#'   ([gamma_daily()]) and `clim` ([gamma_climatology()]) of the site (spec 11 B).
 #' @return Tibble, one row per input row: `site_id`, `timestamp_start_utc`,
 #'   `timestamp_end_utc` [POSIXct UTC], `pblh_m` [m], `regime` (`"stable"`,
 #'   `"unstable_diag"`, `"convective"`, `"excluded"`, `NA`), `method` (`"B1"`,
@@ -186,9 +202,11 @@ validate_pblh_options <- function(opts) {
 #'   12), `flag_ustar_interp`,
 #'   `flag_L_interp`, `flag_H_interp`, `flag_H_qc_masked`, `flag_no_h0`,
 #'   `flag_bg_stopped_gap`, `flag_sign_inconsistent`, `flag_no_positive_h`,
-#'   `flag_polar_day`, `flag_below_zm` (`pblh_m < zm_m`), and `excl_flag`.
+#'   `flag_polar_day`, `flag_below_zm` (`pblh_m < zm_m`), `excl_flag`; `gamma_used` [K m-1, in B&G],
+#'   `gamma_n_used` [K m-1, in N of the neutral Eq. B3 and the B2/B3 switch], `gamma_source_used` (`constant`, `era5_clim`, `era5_daily`,
+#'   `era5_clim_fallback`, `constant_fallback`; spec 11 B).
 #'   Attribute `pblh_options`: the options used.
-run_pblh_model <- function(data, site_meta, opts = pblh_options()) {
+run_pblh_model <- function(data, site_meta, opts = pblh_options(), gamma_era5 = NULL) {
   validate_pblh_options(opts)
   if (nrow(site_meta) != 1 || is.na(site_meta$utc_offset_h)) {
     cli::cli_abort("{.arg site_meta} must be one row with non-missing {.field utc_offset_h}.")
@@ -203,15 +221,11 @@ run_pblh_model <- function(data, site_meta, opts = pblh_options()) {
   } else if (length(gamma) != n) {
     cli::cli_abort("Option {.field gamma} must be a scalar or have one value per row ({n}), not {length(gamma)}.")
   }
+  if (opts$gamma_source != "constant" && is.null(gamma_era5)) {
+    cli::cli_abort("{.field gamma_source} = {.val {opts$gamma_source}} needs {.arg gamma_era5} (daily and climatology tables).")
+  }
   const <- pblh_constants()
   f <- prepare_pblh_forcing(data, site_meta, opts)
-  dg <- h_diagnostic(f$L, f$ustar, f$f_cor, opts, T_K = f$T_K, gamma = gamma)
-
-  pblh <- dg$h_diag_m
-  method <- dg$method
-  regime <- ifelse(is.na(f$L), NA_character_, ifelse(f$L > 0, "stable", "unstable_diag"))
-  h_bg <- rep(NA_real_, n)
-  flag_no_h0 <- flag_stop <- flag_sign <- flag_nopos <- flag_polar <- rep(FALSE, n)
 
   # --- days: local standard time dates, polar status, day starts ---
   local_date <- as.Date(format(f$timestamp_start_utc + site_meta$utc_offset_h * 3600,
@@ -232,6 +246,23 @@ run_pblh_model <- function(data, site_meta, opts = pblh_options()) {
     if (day_start[1] > 1) day_id[seq_len(day_start[1] - 1)] <- local_date[day_start[1]] - 1
   }
   day_id[!is.na(polar)] <- local_date[!is.na(polar)] # polar day/night: local date (Amendment 2)
+
+  # --- gamma per row (spec 11 B, Amendment 14): one value per day_id from the ERA5 tables ---
+  gamma_bg <- gamma         # B&G (Eq. B5)
+  gamma_src <- rep("constant", n)
+  if (opts$gamma_source != "constant") {
+    gr <- gamma_for_rows(day_id, opts$gamma_source, gamma_era5$daily, gamma_era5$clim, gamma_const = gamma)
+    gamma_bg <- gr$gamma
+    gamma_src <- gr$source_used
+    if (opts$gamma_scope == "all") gamma <- gamma_bg # else N (Eq. B3, B2/B3 switch) keeps the constant gamma
+  }
+
+  dg <- h_diagnostic(f$L, f$ustar, f$f_cor, opts, T_K = f$T_K, gamma = gamma)
+  pblh <- dg$h_diag_m
+  method <- dg$method
+  regime <- ifelse(is.na(f$L), NA_character_, ifelse(f$L > 0, "stable", "unstable_diag"))
+  h_bg <- rep(NA_real_, n)
+  flag_no_h0 <- flag_stop <- flag_sign <- flag_nopos <- flag_polar <- rep(FALSE, n)
 
   # --- convective window per day ---
   for (j in seq_along(day_start)) {
@@ -267,7 +298,7 @@ run_pblh_model <- function(data, site_meta, opts = pblh_options()) {
     i <- s
     while (i <= e) {
       w <- f$wtheta[i]
-      if (anyNA(c(w, f$ustar[i], f$L[i], f$T_K[i], gamma[i]))) {
+      if (anyNA(c(w, f$ustar[i], f$L[i], f$T_K[i], gamma_bg[i]))) {
         flag_stop[day_rows] <- TRUE # forcing gap: stop for the rest of the day
         break
       }
@@ -283,7 +314,7 @@ run_pblh_model <- function(data, site_meta, opts = pblh_options()) {
           flag_sign[i] <- TRUE # positive heat flux with stable L: hold
           h_bg[i] <- h
         } else {
-          st <- bg_step(h, w, f$ustar[i], f$L[i], f$T_K[i], gamma[i],
+          st <- bg_step(h, w, f$ustar[i], f$L[i], f$T_K[i], gamma_bg[i],
                         dt = 1800, n_sub = opts$n_sub, const = const, method = opts$bg_integration)
           if (!st$ok) flag_sign[i] <- TRUE
           h_bg[i] <- st$h_mean
@@ -350,7 +381,10 @@ run_pblh_model <- function(data, site_meta, opts = pblh_options()) {
     flag_no_positive_h = flag_nopos,
     flag_polar_day = flag_polar,
     flag_below_zm = dplyr::coalesce(pblh < zm, FALSE),
-    excl_flag = excl
+    excl_flag = excl,
+    gamma_used = gamma_bg,      # [K m-1] in B&G (Eq. B5)
+    gamma_n_used = gamma,       # [K m-1] in N (Eq. B3, B2/B3 switch)
+    gamma_source_used = gamma_src
   )
   attr(out, "pblh_options") <- opts
   out

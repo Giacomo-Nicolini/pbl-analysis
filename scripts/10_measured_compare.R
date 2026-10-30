@@ -11,8 +11,8 @@
 #   ERA5: mean of the values at t and t + 1 h (both required), an approximation of the hourly mean.
 #   Primary stratum: PBLHmod convective and apparent solar time at the interval midpoint in opts$aerosol_window
 #   (10-16 h; Schween2014, Kotthaus2018); sensitivity: all convective hours. The distance class (23 km:
-#   daytime_convective) keeps night and transition hours out of every metric; they appear in the diurnal figure as
-#   context only.
+#   daytime_convective) keeps night and transition hours out of every metric; in the figures the hours outside the
+#   primary set are drawn faded as context (spec 11 E, plot_utils.R).
 #   Pairs: 1 PBLHmod vs CHM15k; 2 / 2b ERA5 tower cell / bilinear vs CHM15k; 3 PBLHmod vs CL31; 4 / 4b ERA5 vs CL31;
 #   5 CL31 vs CHM15k (inter-method spread, "definitional uncertainty"); 6 PBLHmod vs ERA5 tower cell at the ERA5
 #   hours (record, as spec 04). Figures: ERA5 tower cell only; bilinear in the tables only.
@@ -307,14 +307,16 @@ cli::cli_h2("Figures")
 fig_pairs <- c(`1_pblhmod_default_vs_chm15k` = "1 PBLHmod vs CHM15k", `2_era5_center_vs_chm15k` = "2 ERA5 vs CHM15k",
                `3_pblhmod_default_vs_cl31` = "3 PBLHmod vs CL31", `4_era5_center_vs_cl31` = "4 ERA5 vs CL31",
                `5_cl31_vs_chm15k` = "5 CL31 vs CHM15k")
+# all rows of each pair: the primary set (window, convective) is the comparable set, the rest drawn faded (spec 11 E)
 sc <- dplyr::bind_rows(lapply(names(fig_pairs), function(p) {
-  x <- pairs[[p]][sets$window_convective(pairs[[p]]), ]
+  x <- pairs[[p]]
+  x$comparable <- sets$window_convective(x)
   x$panel <- fig_pairs[[p]]
   x
 }))
 cs <- comp[comp$pair %in% names(fig_pairs) & comp$stratum_set == "window_convective", ]
 cs$panel <- unname(fig_pairs[cs$pair])
-win_pairs <- lapply(pairs, function(pt) pt[sets$window_convective(pt), ])
+win_pairs <- lapply(pairs, function(pt) dplyr::mutate(pt, comparable = sets$window_convective(pt)))
 figs <- list(
   list(plot_aerosol_diurnal(ds[c("season", "x_utc", "variable", "median")], bands), "10_diurnal_by_season", 17, 13),
   list(plot_compression_scatter(sc, cs), "10_scatter", 24, 17),

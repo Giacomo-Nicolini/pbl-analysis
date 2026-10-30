@@ -1,12 +1,13 @@
 # Rebuild the synthetic ICOS L2, ERA5, Cloudnet and ONEFlux BIF test fixtures (tiny, no real data).
 # Run from the project root: Rscript tests/testthat/fixtures/make_fixtures.R [icos] [era5] [cloudnet] [oneflux] [reobs]
+#   [meteoswiss]
 # (no argument = all parts; rebuilding the ICOS zips changes their bytes even
 # when the content is unchanged, so rebuild only the part you need).
 # Requires a `zip` program for utils::zip() (on Windows: Rtools).
 # Synthetic site XX-Tst, UTC+1.
 
 parts <- commandArgs(trailingOnly = TRUE)
-if (length(parts) == 0) parts <- c("icos", "era5", "cloudnet", "oneflux", "reobs")
+if (length(parts) == 0) parts <- c("icos", "era5", "cloudnet", "oneflux", "reobs", "meteoswiss")
 
 fx <- here::here("tests", "testthat", "fixtures")
 site <- "XX-Tst"
@@ -370,6 +371,56 @@ if ("reobs" %in% parts) {
   old <- setwd(tempdir())
   utils::zip(zipfile, file.path("reobs_fixture", basename(f_nc)), flags = "-9Xq")
   setwd(old)
+}
+
+if ("meteoswiss" %in% parts) {
+  # MeteoSwiss STRATfinder client file structure (spec 11 C): time = seconds since 1970-01-01 00:00:00 UTC, ~60 s.
+  # Three half-hours from 2022-06-01 00:00 UTC:
+  #   1: 30 profiles, 28 quality 0 (MLH 200, 202, ..., 254; 7 of them bit 8), 2 quality 1 (MLH 5000) -> 28 minutes,
+  #      qc 0, median 227, ABLH 900 on all;
+  #   2: 21 profiles in 20 distinct minutes (two in minute 10), all quality 0, MLH 500 -> 20 minutes, qc 1;
+  #   3: 12 profiles, 10 quality 0 (MLH 800), 2 quality 9 (NaN) -> 10 minutes, no value; segment 1 from here.
+  ms_dir <- file.path(fx, "meteoswiss")
+  dir.create(ms_dir, recursive = TRUE, showWarnings = FALSE)
+  t0 <- as.numeric(as.POSIXct("2022-06-01", tz = "UTC"))
+  t1 <- t0 + 30 + 60 * (0:29)
+  t2 <- t0 + 1800 + c(30 + 60 * (0:19), 600 + 50) # minutes 0-19 at +30 s, a second profile in minute 10 at +50 s
+  t3 <- t0 + 3600 + 30 + 60 * (0:11)
+  tt <- c(t1, t2, t3)
+  mlh <- c(200 + 2 * (0:27), 5000, 5000, rep(500, 21), rep(800, 10), NaN, NaN)
+  qual <- c(rep(0L, 28), 1L, 1L, rep(0L, 21), rep(0L, 10), 9L, 9L)
+  qcf <- c(rep(8L, 7), rep(0L, 21), 4L, 4L, rep(0L, 21), rep(0L, 10), 1L, 1L)
+  ablh <- c(rep(900, 30), rep(NaN, 21), rep(1200, 10), NaN, NaN)
+  qual_a <- ifelse(is.nan(ablh), 9L, 0L)
+  seg <- c(rep(0L, 51), rep(1L, 12))
+  o <- order(tt)
+  dim_t <- ncdf4::ncdim_def("time", "seconds since 1970-01-01 00:00:00 UTC", tt[o], unlim = FALSE)
+  fv <- function(name) ncdf4::ncvar_def(name, "m", list(dim_t), missval = NaN, prec = "float")
+  bv <- function(name, prec = "short") ncdf4::ncvar_def(name, "1", list(dim_t), missval = NULL, prec = prec)
+  sv <- function(name, units) ncdf4::ncvar_def(name, units, list(), prec = "float")
+  v <- list(mlh = fv("mlh"), ablh = fv("ablh"), quality_level_mlh = bv("quality_level_mlh"),
+            quality_level_ablh = bv("quality_level_ablh"), qc_flag_mlh = bv("qc_flag_mlh"),
+            homogeneous_segment = bv("homogeneous_segment"), station_altitude = sv("station_altitude", "m"),
+            sensor_height = sv("sensor_height", "m"), search_upper_limit = sv("search_upper_limit", "m"),
+            lat = sv("lat", "degrees_north"), lon = sv("lon", "degrees_east"))
+  f_nc <- file.path(ms_dir, "meteoswiss_test.nc")
+  unlink(f_nc)
+  nc <- ncdf4::nc_create(f_nc, unname(v), force_v4 = TRUE)
+  put <- list(mlh = mlh, ablh = ablh, quality_level_mlh = qual, quality_level_ablh = qual_a, qc_flag_mlh = qcf,
+              homogeneous_segment = seg)
+  for (k in names(put)) ncdf4::ncvar_put(nc, v[[k]], put[[k]][o])
+  for (k in c("station_altitude", "sensor_height", "search_upper_limit", "lat", "lon")) {
+    ncdf4::ncvar_put(nc, v[[k]], c(station_altitude = 1590, sensor_height = 0, search_upper_limit = 4000,
+                                   lat = 46.813, lon = 9.8435)[[k]])
+  }
+  ncdf4::ncatt_put(nc, "mlh", "height_reference", "above ground level (a.g.l.) at the ceilometer site")
+  ga <- list(title = "MeteoSwiss STRATfinder MLH (synthetic test)", product_version = "1.0 (test)",
+             date_created = "2026-10-29T00:00:00Z", license = "CC BY-NC 4.0", acknowledgement = "Test acknowledgement.",
+             references = "Kotthaus et al. (2020)", instrument = "Lufft CHM15k Nimbus (test).",
+             source = "STRATfinder 2021a (test)", institution = "MeteoSwiss (test)", station_name = "Test",
+             station_code = "TST", instrument_events = "2022-06-01T01:00 [breakpoint] test")
+  for (k in names(ga)) ncdf4::ncatt_put(nc, 0, k, ga[[k]])
+  ncdf4::nc_close(nc)
 }
 
 message("Fixtures written to ", fx, " (parts: ", paste(parts, collapse = ", "), ")")

@@ -62,3 +62,29 @@ daily_clearness <- function(day, sw_in, sw_in_pot) {
                         kt = sum(sw[!is.na(sw)]) / sum(pot[!is.na(sw)]), .groups = "drop")
   d[c("day_id", "kt", "coverage", "n_light")]
 }
+
+#' Growth curves by apparent solar hour
+#'
+#' Median and interquartile range of each variable per season and apparent solar hour (floor of the hour at the
+#' interval midpoint), on the rows where all variables are valid (spec 10 item 3b, spec 11 D). The caller selects
+#' the rows (e.g. clear days).
+#'
+#' @param g Tibble with `timestamp_utc` [POSIXct UTC, interval start], `day_id` [Date] and the columns `vars` [m].
+#' @param vars Variables [character].
+#' @param lon Site longitude [decimal degrees E] (apparent solar time, [apparent_solar_hour()]).
+#' @param mid_s Offset from the time stamp to the interval midpoint [s] (1800 hourly, 900 half-hourly).
+#' @return List: `summary` (tibble per `season`, `ast_hour` [h], `variable`: `n`, `median`, `q25`, `q75` [m],
+#'   `n_clear_days` [-, days in the season]) and `rows` (the rows used, with `season` and `ast_hour`).
+growth_curves <- function(g, vars, lon, mid_s) {
+  g <- g[stats::complete.cases(g[vars]), ]
+  g$season <- season_of(g$timestamp_utc)
+  g$ast_hour <- floor(apparent_solar_hour(g$timestamp_utc + mid_s, lon))
+  gl <- dplyr::bind_rows(lapply(vars, function(v) {
+    dplyr::tibble(season = g$season, ast_hour = g$ast_hour, variable = v, pblh_m = g[[v]])
+  }))
+  gs <- dplyr::summarise(dplyr::group_by(gl, season, ast_hour, variable), n = dplyr::n(),
+                         median = stats::median(pblh_m), q25 = stats::quantile(pblh_m, 0.25, names = FALSE),
+                         q75 = stats::quantile(pblh_m, 0.75, names = FALSE), .groups = "drop")
+  nd <- dplyr::summarise(dplyr::group_by(g, season), n_clear_days = dplyr::n_distinct(day_id), .groups = "drop")
+  list(summary = dplyr::left_join(gs, nd, by = "season"), rows = g)
+}

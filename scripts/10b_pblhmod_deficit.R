@@ -173,18 +173,10 @@ g <- dplyr::tibble(timestamp_utc = tb$meas$timestamp_utc, sirta_mlh_chm15k = ife
 g$pblhmod_default <- tb$mod$pblh_m[match(as.numeric(g$timestamp_utc), as.numeric(tb$mod$timestamp_utc))]
 g$era5_blh_center <- tb$era$era5_blh_center$pblh_m[match(as.numeric(g$timestamp_utc), as.numeric(tb$era$era5_blh_center$timestamp_utc))]
 g$day_id <- as.Date(d$day_id)[match(as.numeric(g$timestamp_utc), as.numeric(as_utc_time(d$timestamp_start_utc)))]
-g <- g[g$day_id %in% clear & stats::complete.cases(g[c("sirta_mlh_chm15k", "pblhmod_default", "era5_blh_center")]), ]
-g$season <- season_of(g$timestamp_utc)
-g$ast_hour <- floor(apparent_solar_hour(g$timestamp_utc + 1800, meta_site$lon))
 vars <- c("sirta_mlh_chm15k", "pblhmod_default", "era5_blh_center")
-gl <- dplyr::bind_rows(lapply(vars, function(v) {
-  dplyr::tibble(season = g$season, ast_hour = g$ast_hour, variable = v, pblh_m = g[[v]])
-}))
-gs <- dplyr::summarise(dplyr::group_by(gl, season, ast_hour, variable), n = dplyr::n(),
-                       median = stats::median(pblh_m), q25 = stats::quantile(pblh_m, 0.25, names = FALSE),
-                       q75 = stats::quantile(pblh_m, 0.75, names = FALSE), .groups = "drop")
-nd <- dplyr::summarise(dplyr::group_by(g, season), n_clear_days = dplyr::n_distinct(day_id), .groups = "drop")
-gs <- dplyr::left_join(gs, nd, by = "season")
+gc <- growth_curves(g[g$day_id %in% clear, ], vars, meta_site$lon, mid_s = 1800)
+gs <- gc$summary
+nd <- dplyr::distinct(gs[c("season", "n_clear_days")])
 wr(gs, "10b_growth_clear_days")
 pal <- aerosol_palette()
 gp <- gs[gs$n >= 10, ]

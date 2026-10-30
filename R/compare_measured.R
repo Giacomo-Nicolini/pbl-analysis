@@ -225,9 +225,20 @@ measured_time_base <- function(meas, mod, era) {
   if (step == 1800) {
     hours <- era[[1]]$timestamp_start_utc
     mod_h <- match_halfhours_to_hours(mod, hours)
-    mhr <- match_measured_to_hours(meas, hours)
-    mhr <- dplyr::bind_cols(mhr, measured_interval(mhr$pblh_m, mhr$qc_flag, mhr$x_censor_below_m)[c("left", "right", "kind")])
-    mhr$z_min <- mhr$x_censor_below_m
+    if ("x_censor_below_m" %in% names(meas)) {
+      # censored source (spec 07): keep the censoring on the ERA5 hours
+      mhr <- match_measured_to_hours(meas, hours)
+      mhr <- dplyr::bind_cols(mhr, measured_interval(mhr$pblh_m, mhr$qc_flag, mhr$x_censor_below_m)[c("left", "right", "kind")])
+      mhr$z_min <- mhr$x_censor_below_m
+    } else {
+      # source without censoring (spec 11, e.g. a half-hourly aerosol MLH): qc is a coverage flag, not a censoring
+      # code; mean of the two adjacent half-hours, both required (G 2026-10-30)
+      mhr <- match_halfhours_to_hours(meas[c("timestamp_start_utc", "timestamp_end_utc", "pblh_m", "qc_flag")], hours)
+      ex <- !is.na(mhr$pblh_m)
+      mhr <- dplyr::tibble(timestamp_utc = mhr$timestamp_utc, pblh_m = mhr$pblh_m, qc_flag = mhr$qc_flag,
+                           z_min = NA_real_, left = ifelse(ex, mhr$pblh_m, NA_real_),
+                           right = ifelse(ex, mhr$pblh_m, NA_real_), kind = ifelse(ex, "exact", NA_character_))
+    }
     list(base = "halfhour", meas = measured_values(meas), mod = dplyr::rename(mod, timestamp_utc = timestamp_start_utc),
          mid_s = 900, era = lapply(era, function(e) with_regime(dplyr::rename(e, timestamp_utc = timestamp_start_utc), mod_h)),
          era_meas = mhr, era_mid_s = 0, mod_on_era = mod_h)

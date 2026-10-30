@@ -1,12 +1,14 @@
 # Project status (handover note)
 
-Last update: 2026-10-29. Read this first in a new session, then `docs/project_plan.md` and `CLAUDE.md`.
+Last update: 2026-10-30. Read this first in a new session, then `docs/project_plan.md` and `CLAUDE.md`.
 
 ## PBLH sources (names used in the code and in the standard files)
 
 | Source | `source_id` | What it is | Class |
 |---|---|---|---|
-| PBLHmod v2 | `pblhmod_default`, `pblhmod_gamma0025` | Our EC-based model (Kljun et al. 2015 App. B): stable B1 Nieuwstadt, neutral B2/B3 auto, convective B5 Batchvarova–Gryning slab daily cycle. `run_pblh_model()`, `R/pblh_*.R`; label = options case (γ = 0.01 default, 0.0025 sensitivity) | parameterisation |
+| PBLHmod v2 ("PBLHmod") | `pblhmod_default` | Our EC-based model (Kljun et al. 2015 App. B): stable B1 Nieuwstadt, neutral B2/B3 auto, convective B5 Batchvarova–Gryning slab daily cycle. `run_pblh_model()`, `R/pblh_*.R`; EC data only, constant γ (0.01 K/m until the network revision, spec 09 3b) | parameterisation |
+| PBLHmod-clim | `pblhmod_clim` | PBLHmod with the site × month ERA5 γ climatology (`gamma_source = "era5_clim"`, spec 11; G 2026-10-30); constant γ where a month has no value (flagged) | parameterisation |
+| PBLHmod, reference γ values (supplement) | `pblhmod_gamma001`, `pblhmod_gamma0025` | γ = 0.01 K/m (Batchvarova & Gryning 1991 as cited by Kljun et al. 2015; = `pblhmod_default` for now) and 0.0025 K/m (legacy ETC code); tables and supplementary figures only | parameterisation |
 | ERA5 BLH | `era5_blh_center`, `era5_blh_bilinear` | ECMWF reanalysis diagnostic (bulk Ri = 0.25, IFS Cy41r2 §3.10.1); tower cell, or bilinear to the tower from 4 cells | model |
 | Operational ICOS PBLH | `icos_oper` | `PBLH` column of L2 FLUXES, produced by the ETC pipeline with `legacy/calc_PBL_height_operational.R` + `legacy/proc_PBL_height.R`; `qc_flag` 1 = 50 m floor, 2 = run-mean fill. Used in the phase-1 regression only (spec 03), not in the evaluation (project plan "Scope", G 2026-10-23); script 04 compares it only with `--with-oper` | parameterisation |
 | Legacy (spec 03) | `legacy_<variant>` | Port of the operational legacy code with switches, for the regression (in `data/derived`, not a standard file) | parameterisation |
@@ -26,13 +28,14 @@ Last update: 2026-10-29. Read this first in a new session, then `docs/project_pl
 | 03 | Legacy regression: reproduce operational PBLH from L2 (operational code `calc_PBL_height_operational.R` + `proc_PBL_height.R`), port it, attribute differences to PBLHmod v2 (amendments 1–2) | 1 | merged (`main`, e224c4b) |
 | 07 | Cloudnet inventory (FI-Hyy, FI-Lom, DE-RuS, SE-Nor, FR-Gri); turbulence-based MLH from Doppler-lidar ε (Manninen et al. 2018) in the standard format; FI-Hyy runs (PBLHmod, ERA5) and first comparison against measured MLH (amendment 1: no operational PBLH, ERA5 tower cell in figures); reference period = FLUXES range; METEO TA levels from the header | 2, 3 | merged (`main`, b22f7e2) |
 | 08 | Footprint sensitivity to the PBLH source (FFP, Kljun et al. 2015) at BE-Bra and FI-Hyy; one-month PC test (FI-Hyy 2022-09); ONEFlux BIF reader and u* thresholds | 5a | in progress on `spec-08-footprint-sensitivity` |
-| 10 | Aerosol-based measured MLH: Part A SIRTA ReOBS at FR-Gri (reader, two standard sources, FR-Gri runs 01/02/04, generalised spec-07 comparison, range-compression statistics also for FI-Hyy; review additions 2026-10-29: FB/nRMSD, symmetric slope + Bland–Altman, censored-tail null, PBLHmod-deficit diagnostics, NEE column check); Part B Lanzhot not started (two sample days only); Part C (Cloudnet ε at Palaiseau) only with G's go | 2, 3 | Part A implemented on `spec-10-measured-aerosol` (2026-10-29), to review |
+| 10 | Aerosol-based measured MLH: Part A SIRTA ReOBS at FR-Gri (reader, two standard sources, FR-Gri runs 01/02/04, generalised spec-07 comparison, range-compression statistics also for FI-Hyy; review additions 2026-10-29: FB/nRMSD, symmetric slope + Bland–Altman, censored-tail null, PBLHmod-deficit diagnostics, NEE column check); Part B Lanzhot not started (two sample days only); Part C (Cloudnet ε at Palaiseau) only with G's go | 2, 3 | Part A merged (`main`, 63497d8) |
+| 11 | γ from ERA5 profiles (`gamma_source` option, spec 02 Amendment 14); MeteoSwiss STRATfinder MLH at CH-Dav; CH-Dav runs 01/02/04; four-site evaluation of the γ cases; faded-context plotting convention | 1, 3 | implemented on `spec-11-gamma-era5` (2026-10-30); decided: default unchanged (EC-only), ERA5 climatology = variant PBLHmod-clim; to merge |
 
 Phases (see `project_plan.md`): 0 done; 1 done (model, input QC, legacy regression); 2 standard format, three
 sources (spec 04) and the first measured source (spec 07, FI-Hyy) done; 3 BE-Bra (vs ERA5) and FI-Hyy (vs ERA5 and
 measured MLH) done; 4–6 not started.
 
-- Tests: 1,212 expectations passing (`spec-10-measured-aerosol`, 2026-10-29). Environment: R 4.4.1 + renv (Posit Package
+- Tests: 1,319 expectations passing (`spec-11-gamma-era5`, 2026-10-30). Environment: R 4.4.1 + renv (Posit Package
   Manager), same as the cluster. Machine-specific paths in the untracked `config.local.yml` (template
   `config.local.yml.example`).
 - PBLHmod defaults: `stable_method = "nieuwstadt"` (B1), `neutral_method = "auto"` (B2 if 10 < N/|f| < 70, else
@@ -91,6 +94,26 @@ measured MLH) done; 4–6 not started.
   - Refactor check: FI-Hyy script 07 outputs (6 tables, 4 figures, console report) byte-identical after moving the
     matching into `measured_time_base()`. After adding `fb`/`nrmsd` (2026-10-29): 5 tables and 4 figures
     byte-identical; `07_metrics_FI-Hyy.csv` keeps its 1,441 rows unchanged and in order, plus 262 `fb`/`nrmsd` rows.
+- Spec 11 (2026-10-30, `spec-11-gamma-era5`):
+  - CH-Dav inputs: reference period 2018-12-31 → 2026-08-31 (134,400 half-hours), no exclusions; zm 35 m, hc 19–20 m;
+    ERA5 tower cell 10.85 km, orography 1999 m (tower 1637 m, −362 m), sdor 366 m; EC H vs ERA5 H bias −18.6 W m-2.
+    PBLHmod default 86 % valid, convective median 483 m (γ 0.0025: 810 m), stable 168 m; B&G stopped at a gap on
+    14.6 % of days. PBLHmod vs ERA5 (all regimes) median ln ratio +0.84 (convective +0.09). 850 hPa lies below the
+    ground at CH-Dav, so the spec-04 850–700 hPa γ table is not meaningful there.
+  - MeteoSwiss STRATfinder (`meteoswiss_stratfinder_mlh`): 93,344 half-hours, 72,488 with a value (qc 0 71,309);
+    79–89 % valid per year, 2025 50 % (window contamination); night floor 262 m; midday medians DJF 741 → JJA
+    1698 m. Facts and three corrections to the spec (first profile 08:20, 59–61 s steps, bit-4 spells to 2026-02)
+    in `CLAUDE.md`.
+  - ERA5 γ (500–3500 m above the site): medians BE-Bra 0.0047, FI-Hyy 0.0046, FR-Gri 0.0048, CH-Dav 0.0044 K m-1
+    (≈ 0.47 × default); 2 levels on 0.7 % (BE-Bra), 28 % (FI-Hyy), 4 % (FR-Gri), 100 % (CH-Dav, 700/600 hPa) of days;
+    implausible < 0.2 %; `zmin1000`: 1 level only on 71 FI-Hyy days (no γ), identical to the default layer at CH-Dav.
+  - `gamma_source = "constant"` reproduces every existing case at BE-Bra, FI-Hyy, FR-Gri (all 37 old columns of the
+    written files identical; the automatic check flagged only FI-Hyy `nofilter` on L, a CSV round-off at
+    |L| = 2.3 × 10^10 m). 07, 10, 10b tables byte-identical (10b gains rows for the new cases); 07 FI-Hyy figures
+    byte-identical; 10 FR-Gri figures regenerated with the faded context.
+  - Evaluation (`scripts/11_gamma_evaluation.R`, 11.6 min): see `project_plan.md` open points (spec 11). Window bias
+    FR-Gri −0.53 → −0.20 (ERA5 clim), CH-Dav −0.43 → −0.08; γ 0.0025 +0.08 / +0.17. γ in N affects only the neutral
+    B3 heights (no B2 rows at any site), not the window.
 - NEE columns for spec 09 (`scripts/10c_fluxes_nee_columns.R`, header check + value counts; run on the cluster for
   all 40 stations of `config/sites.csv`): BE-Bra, FI-Hyy, FR-Gri have FLUXES NEE + NEE_DATA_FLAG and FLUXNET
   NEE_VUT_REF_QC.
@@ -264,7 +287,11 @@ collected for the ETC QC report in `docs/local/etc_qc_report.md` (local working 
 - B1 on windy stable nights tends to the B2 limit (p95 ≈ 1.5 km at BE-Bra); candidate: bound by B3. Decide after
   comparison with ERA5/measurements.
 - Polar-day convective rule (GL-ZaF, SE-Sto, FI-Lom).
-- γ options 2–3 (ERA5 climatology / time-varying) after phase 1.
+- γ (spec 11, G 2026-10-30): PBLHmod (EC-only, constant γ) and PBLHmod-clim (ERA5 γ climatology). Open: residual
+  −0.20 of PBLHmod-clim at FR-Gri (crop site; candidates: mechanical term, entrainment constants of B5); FI-Hyy
+  night-time discrepancy = stable formula, not γ (deep end: below the lidar lower bound 43 % vs ≤ 30 %, every γ
+  case; the shallow end is too deep in the convective set, 13 % vs ≥ 16 % with PBLHmod-clim); EC-only constant to be revised after the network γ
+  climatology (spec 09 3b); γ tables of all sites as a deliverable (ERA5 attribution).
 
 ## Local setup notes
 

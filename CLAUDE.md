@@ -96,6 +96,9 @@ so code must be reproducible, documented and traceable to references.
     `XX-Yyy__reanalysis_era5_pressure_levels-pl__<temperature|geopotential>__20200101T0000__20261007T1800__north_..._west_<w>.csv`.
     Local: `data/raw/era5_pressure_levels/XX-Yyy/`; cluster path: set in `config.local.yml` (see
     `config.local.yml.example`).
+    **No 775 hPa**: in the gamma fit layer 500–3500 m above the site (spec 11 A, `gamma_options()`; G 2026-10-30)
+    there are only 2–3 levels (lowland: 925/850/700; 700 hPa lies at ≈ 2800–3200 m agl). At high sites low levels
+    are below the ground (CH-Dav, 1637 m: 850 hPa at ≈ −120 m agl; fit uses 700/600 only): never use them.
   - Static fields, one row each (valid time 1979-01-20 12:00): `z` (surface geopotential [m2 s-2]; height = z / 9.80665),
     `lsm` (land–sea mask [0–1]), `sdor` (std of sub-grid orography [m]):
     `XX-Yyy__single-levels__<z|lsm|sdor>__197901201200__197901201200__north_<r>__south_+0__east_<c>__west_+0.csv`.
@@ -159,6 +162,23 @@ so code must be reproducible, documented and traceable to references.
   - `ablh_chm15k` = aerosol-layer top (residual layer at night): not a mixing height, kept only as `x_ablh_m`.
   - Standard sources `sirta_mlh_chm15k` (primary) and `sirta_mlh_cl31` (`scripts/10a_sirta_reobs.R`): hourly
     `interval_mean`, `method_class = aerosol`; qc 0 if nb ≥ 75 % of nominal (60 / 4), 1 if ≥ 50 %, else `pblh_m` NA.
+- **MeteoSwiss STRATfinder, Davos (spec 11 C; checked 2026-10-30).**
+  `<measured_dir>/MeteoSwiss_STRATfinder_MLH_ABLH_DAV_20210701_20261027.nc` (CH-Dav, via the PI; three PNGs not
+  used). CF-1.8, product 1.0 (2026-10-29); licence **CC BY-NC 4.0**; acknowledgement attribute: cite MeteoSwiss as data
+  provider and `Kotthaus2020`. Lufft CHM15k Nimbus, station DAV 46.81297 N, 9.84355 E, **1590 m** (CH-Dav tower 0.977
+  km away, 1637 m: 47 m offset; heights used as is, G 2026-10-30).
+  - `time` seconds since 1970-01-01 UTC, first profile 2021-07-01 08:20, last 2026-10-27 23:59 (2,731,834 profiles);
+    steps 59–61 s (median 60, only 31 % exactly 60, second offsets drift): aggregate by **distinct minutes**. 37
+    gaps > 1 h (longest 11.9 d, 2023-04/05).
+  - `mlh`, `ablh` m above ground at the ceilometer (sensor at ground), `NaN` fill; `mlh_asl` = + 1590 m.
+    `quality_level_mlh` 0 good (79 %), 1 suspect, 2 bad, 9 missing: **use 0 only** (provider). `qc_flag_mlh` bits:
+    4 maintenance / window contamination (2025-06-14 → 11-27 and shorter spells 2023-07, 2023-11/12, 2024-01,
+    2024-06/07, 2026-01, 2026-02; makes quality 1), 8 at lowest detectable height ≤ 30 m (informational), 16 at the
+    4000 m search ceiling. `homogeneous_segment` 0/1/2 (optical unit 2022-06-27, firmware 2023-03-29). Night MLH on
+    a floor (median 262 m all seasons; night search 0–700 m): not a stable-layer depth.
+  - Standard source `meteoswiss_stratfinder_mlh` (`scripts/11b_meteoswiss_mlh.R`): half-hourly median of the
+    quality-0 values, `n_samples` = distinct minutes, qc 0 if ≥ 75 % of 30 min, 1 if ≥ 50 %, else NA; `x_ablh_m`,
+    `x_share_lowest`, `x_segment`. Primary comparison set: daytime window, PBLHmod convective (G 2026-10-30).
 - **Lanzhot BL-View (spec 10 Part B)**: only two sample days in `data/raw/measured/CZ-Lnz/samples/` (2026-10-29);
   not implemented.
 - Site metadata: `config/sites.csv` (lat, lon, altitude, UTC offset, zm, canopy height, d, z0...).
@@ -166,6 +186,19 @@ so code must be reproducible, documented and traceable to references.
   Time-varying zm / canopy height: `config/sites_timevarying.csv` (derived from `config/sites_H_EC_canopy_formBIF.csv`).
 - **Exclusions**: `config/exclusion_periods.csv` lists periods that must be removed for a site (e.g. SE-Nor clearcut).
   Every pipeline step must apply them and report how many records were excluded. Never skip this silently.
+
+## PBLHmod variants and γ (spec 11; G 2026-10-30)
+
+- **PBLHmod** (`pblhmod_default`, case `default`): the code default, EC data only, constant γ (`gamma_source =
+  "constant"`, γ = 0.01 K m-1 until the network revision, spec 09 decision point 3b). Never make the default depend
+  on external data.
+- **PBLHmod-clim** (`pblhmod_clim`, case `clim`): `gamma_source = "era5_clim"`, site × month ERA5 γ climatology from
+  `scripts/11a_gamma_era5.R` (`<derived_dir>/gamma/`); a month without a value uses the constant (flagged in
+  `gamma_source_used = "constant_fallback"`). Written by scripts 02/04 at every site.
+- **Reference γ values** (supplement only): `pblhmod_gamma001` (0.01, Batchvarova & Gryning 1991 as cited by Kljun
+  et al. 2015; equal to the default for now, keep both names) and `pblhmod_gamma0025` (0.0025, legacy ETC code).
+- **Figures**: main figures show PBLHmod, PBLHmod-clim, ERA5 and the measurement; reference γ values in
+  supplementary figures with the same layout, labelled "reference γ values"; other γ cases in tables only.
 
 ## Footprints (phase 5, spec 08)
 
