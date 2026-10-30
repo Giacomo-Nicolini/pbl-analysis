@@ -8,7 +8,8 @@
 #' Pipeline steps
 #'
 #' @return Named list per step: `script` (path relative to the project root), `upstream` (steps whose outputs it
-#'   reads), `inputs` (raw input groups hashed, see [site_input_files()]), `oper` (logical: accepts `--with-oper`).
+#'   reads), `inputs` (raw input groups hashed, see [site_input_files()]), `oper` (logical: accepts `--with-oper`),
+#'   optional `args` (function `(site_id, cfg)` returning extra arguments, e.g. the reference year).
 pipeline_steps <- function() {
   list(
     `01` = list(script = "scripts/01_check_inputs.R", upstream = character(), inputs = c("l2", "era5_sl"), oper = FALSE),
@@ -18,8 +19,20 @@ pipeline_steps <- function() {
     `04` = list(script = "scripts/04_era5_compare.R", upstream = "02", inputs = c("l2", "era5_sl", "era5_pl", "era5_static"),
                 oper = TRUE),
     `08a` = list(script = "scripts/08a_footprint_flags.R", upstream = "04", inputs = c("l2", "bif", "measured_std"),
-                 oper = TRUE)
+                 oper = TRUE),
+    # after the footprint chunks of the site (array of scripts/08c_make_chunks.R): reference-year analysis
+    `08` = list(script = "scripts/08_footprint_compare.R", upstream = "08a", inputs = "chunks", oper = FALSE,
+                args = function(site_id, cfg) paste0("--year=", reference_year_of(site_id, cfg)))
   )
+}
+
+# Approved reference year of a site (config/reference_years.csv); aborts without one.
+reference_year_of <- function(site_id, cfg) {
+  p <- resolve_path(cfg$reference_years_file, must_exist = FALSE)
+  ry <- if (file.exists(p)) readr::read_csv(p, col_types = readr::cols(.default = "c"), progress = FALSE) else NULL
+  y <- if (is.null(ry)) character() else ry$year[ry$site_id == site_id & !is.na(ry$year)]
+  if (length(y) != 1) cli::cli_abort("{site_id}: no approved reference year in {.path {p}}.")
+  y
 }
 
 #' Raw input files of a site
@@ -27,7 +40,8 @@ pipeline_steps <- function() {
 #' @param site_id Station code [character].
 #' @param cfg Configuration list ([get_cfg()]).
 #' @param groups Input groups: `l2` (ICOS L2 folder), `bif` (ONEFlux BIF), `era5_sl`, `era5_pl` (ERA5 folders),
-#'   `era5_static` (static files of the site), `measured_std` (standard files of measured sources).
+#'   `era5_static` (static files of the site), `measured_std` (standard files of measured sources), `chunks`
+#'   (footprint chunk meta files of the site).
 #' @return Tibble: `group`, `path`, `size` [bytes], `mtime` [character, UTC]; a group whose folder is not configured
 #'   or missing gives no rows (the step itself reports missing inputs).
 site_input_files <- function(site_id, cfg, groups) {
@@ -51,6 +65,8 @@ site_input_files <- function(site_id, cfg, groups) {
              list.files(d, pattern = paste0("^", site_re, "__.*__", v, "__"), full.names = TRUE)
            }))),
            measured_std = in_dir("standard_dir", paste0("^", site_re, "__(cloudnet|sirta|meteoswiss).*\\.csv\\.gz$")),
+           chunks = safe(list.files(file.path(resolve_path(cfg$derived_dir, must_exist = FALSE), "footprint", site_id,
+                                              "chunks"), pattern = "_meta\\.rds$", full.names = TRUE)),
            cli::cli_abort("Unknown input group {.val {g}}."))
   })
   out <- dplyr::bind_rows(lapply(names(files), function(g) {
@@ -168,7 +184,7 @@ run_site_steps <- function(site_id, steps, cfg, force = FALSE, with_oper = FALSE
   for (k in seq_along(steps)) {
     s <- steps[k]
     st <- reg[[s]]
-    args <- c(site_id, if (with_oper && st$oper) "--with-oper")
+    args <- c(site_id, if (with_oper && st$oper) "--with-oper", if (!is.null(st$args)) st$args(site_id, cfg))
     up <- vapply(st$upstream, function(u) {
       x <- read_run_status(run_status_path(site_id, u, cfg))
       if (is.null(x) || !identical(x$state, "ok")) NA_character_ else x$inputs_hash

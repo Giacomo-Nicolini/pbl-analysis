@@ -1,0 +1,9 @@
+# Extra footprint sites (spec 09 A5): era5_bilinear, the +-20 % anchors, the reference gamma values
+# (pblhmod_gamma001, pblhmod_gamma0025) and the operational ICOS PBLH (oper, supplement). One per climate / canopy
+# type; G may edit.
+BE-Bra
+FI-Hyy
+FR-Gri
+CH-Dav
+SE-Svb
+IT-Cp2

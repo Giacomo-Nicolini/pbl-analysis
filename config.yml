@@ -31,6 +31,8 @@ default:
   # spec-08 timing 1.7-2.1 s]
   chunk_target_min: 120
   sec_per_ffp_halfhour: 2.0
+  footprint_extra_sites_file: "config/footprint_extra_sites.txt"   # supplementary footprint cases (spec 09 A5)
+  reference_years_file: "config/reference_years.csv"               # approved reference years (G; spec 09 A5)
 
 cluster:
   icos_l2_dir: "LOCAL"

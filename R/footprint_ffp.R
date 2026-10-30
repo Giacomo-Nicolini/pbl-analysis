@@ -197,36 +197,83 @@ ffp_field_metrics <- function(f, grid, mask = NULL, r = c(0.5, 0.7, 0.8, 0.9), k
   list(metrics = m, region = region)
 }
 
+#' Block sums of a field (storage `c5`)
+#'
+#' Sums over `k` x `k` cells (spec 09 A5, storage `c5`, G 2026-10-28). The grid is padded with `(k - 1) / 2` empty
+#' cells per side, so that the tower cell (the centre of an odd grid such as 2001 x 2001 at 1 m) is the centre of a
+#' block: 2001 + 4 = 2005 = 401 blocks of 5 m. Mass-conserving: the block sums add up to the field sum.
+#'
+#' @param m Matrix [any unit per cell], odd dimensions with `(dim + k - 1) %% k == 0`.
+#' @param k Block size [cells, odd].
+#' @return Matrix of block sums (`(nrow + k - 1) / k` x `(ncol + k - 1) / k`).
+ffp_block_sums <- function(m, k = 5L) {
+  p <- (k - 1L) %/% 2L
+  nr <- nrow(m) + 2L * p
+  nc <- ncol(m) + 2L * p
+  if (k %% 2L != 1L || nr %% k != 0L || nc %% k != 0L) {
+    cli::cli_abort("Grid {nrow(m)} x {ncol(m)} cannot be split in {k} x {k} blocks centred on the middle cell.")
+  }
+  big <- matrix(0, nr, nc)
+  big[(p + 1L):(p + nrow(m)), (p + 1L):(p + ncol(m))] <- m
+  colSums(aperm(array(big, c(k, nr %/% k, k, nc %/% k)), c(1, 3, 2, 4)), dims = 2)
+}
+
+#' Spread block sums over the grid
+#'
+#' Inverse of [ffp_block_sums()] up to the within-block distribution: each block sum is spread evenly over the real
+#' (not padded) cells of its block, so the field sum is kept exactly, also in the edge blocks.
+#'
+#' @param b Matrix of block sums.
+#' @param dim_full Dimensions of the full grid [cells].
+#' @param k Block size [cells].
+#' @return Matrix with `dim_full` dimensions (piecewise constant per block).
+ffp_block_upsample <- function(b, dim_full, k = 5L) {
+  p <- (k - 1L) %/% 2L
+  cells <- ffp_block_sums(matrix(1, dim_full[1], dim_full[2]), k)
+  big <- kronecker(b / cells, matrix(1, k, k))
+  big[(p + 1L):(p + dim_full[1]), (p + 1L):(p + dim_full[2])]
+}
+
 #' Write the summed footprint fields of a chunk
 #'
 #' Unsmoothed sums of the per-half-hour fields and their counts, one per climatology
 #' group (`set|subset|day or night|rowset`), so that climatologies over any set of months
 #' (e.g. a year) are built by summing months and smoothing at the end
 #' ([ffp_clim_from_sums()]; G 2026-10-27). Stored as single precision (float32, relative
-#' precision about 6e-8) in a gzip-compressed RDS to halve the size.
+#' precision about 6e-8) in a gzip-compressed RDS to halve the size. With `block = 5` (storage `c5`, spec 09 A5)
+#' the 5 m x 5 m block sums ([ffp_block_sums()]) are stored instead of the 1 m field (about 25 times smaller;
+#' `scripts/dev/08_storage_options.R`: within every tolerance).
 #'
 #' @param sums Named list of matrices [m-2, sum over half-hours] on the footprint grid.
 #' @param cnt Named list of counts (same names) [half-hours].
 #' @param path Output file (`.rds`).
+#' @param block `NULL` (full grid) or the block size [cells].
+#' @param dim_full `NULL`, or the full-grid dimensions when `sums` already holds block sums (chunks of spec 09).
 #' @return `path`, invisibly.
-ffp_sums_write <- function(sums, cnt, path) {
-  d <- if (length(sums)) dim(sums[[1]]) else c(0L, 0L)
-  x <- list(dim = d, n = unlist(cnt[names(sums)]),
-            data = lapply(sums, function(m) writeBin(as.vector(m), raw(), size = 4)))
+ffp_sums_write <- function(sums, cnt, path, block = NULL, dim_full = NULL) {
+  d <- if (!is.null(dim_full)) dim_full else if (length(sums)) dim(sums[[1]]) else c(0L, 0L)
+  if (!is.null(block) && is.null(dim_full)) sums <- lapply(sums, ffp_block_sums, k = block)
+  x <- list(dim = d, block = block, dim_stored = if (length(sums)) dim(sums[[1]]) else c(0L, 0L),
+            n = unlist(cnt[names(sums)]), data = lapply(sums, function(m) writeBin(as.vector(m), raw(), size = 4)))
   saveRDS(x, path, compress = "gzip")
   invisible(path)
 }
 
 #' Read the summed footprint fields of a chunk
 #'
+#' Files with block sums ([ffp_sums_write()] with `block`) are spread back over the full grid
+#' ([ffp_block_upsample()]); files written before spec 09 (full grid, no `block` element) are read as before.
+#'
 #' @param path File written by [ffp_sums_write()].
 #' @param keys Groups to read (default all).
-#' @return List: `n` (named counts [half-hours]) and `sums` (named matrices [m-2]).
+#' @return List: `n` (named counts [half-hours]) and `sums` (named matrices [m-2] on the full grid).
 ffp_sums_read <- function(path, keys = NULL) {
   x <- readRDS(path)
   k <- if (is.null(keys)) names(x$data) else intersect(keys, names(x$data))
+  ds <- if (is.null(x$dim_stored)) x$dim else x$dim_stored
   list(n = x$n[k], sums = lapply(stats::setNames(k, k), function(g) {
-    matrix(readBin(x$data[[g]], "double", n = prod(x$dim), size = 4), x$dim[1], x$dim[2])
+    m <- matrix(readBin(x$data[[g]], "double", n = prod(ds), size = 4), ds[1], ds[2])
+    if (is.null(x$block)) m else ffp_block_upsample(m, x$dim, x$block)
   }))
 }
 

@@ -14,7 +14,9 @@
 #           08_clim_contours_<site><period>, 08_topaffected_<site><period>
 # ERA5 tower cell only in figures; era5_bilinear in the tables.
 #
-# Usage: Rscript scripts/08_footprint_compare.R SITE [--start=YYYY-MM-DD --end=YYYY-MM-DD]
+# Usage: Rscript scripts/08_footprint_compare.R SITE [--start=YYYY-MM-DD --end=YYYY-MM-DD] [--year=YYYY]
+#   --year: reference year of the cluster run (spec 09 A5), from the full-period input table; chunks may be
+#   half-months (joined from their block sums); oper kept at the extra sites (supplement).
 
 for (f in list.files(here::here("R"), pattern = "\\.R$", full.names = TRUE)) source(f)
 
@@ -36,6 +38,16 @@ label <- if (per == "") site_id else paste0(site_id, ", ", sub("^_", "", per), "
 inp <- readRDS(file.path(fp_dir, paste0(site_id, "_footprint_inputs", per, ".rds")))
 tab <- inp$tab
 sub_cols <- inp$subsets
+# Spec 09 A5: reference year of the cluster run, from the full-period input table
+if (!is.null(opt("year"))) {
+  yr_sel <- format(tab$timestamp_start_utc, "%Y") == opt("year")
+  if (!any(yr_sel)) cli::cli_abort("No half-hour of {opt('year')} in the input table of {site_id}.")
+  tab <- tab[yr_sel, ]
+  sub_cols <- sub_cols[yr_sel, ]
+  per <- paste0("_", opt("year"))
+  label <- paste0(site_id, ", ", opt("year"), " (reference year)")
+}
+extra <- site_id %in% footprint_extra_sites(resolve_path(cfg$footprint_extra_sites_file))
 mask <- readRDS(file.path(fp_dir, paste0(site_id, "_target_area_mask.rds")))
 grid <- ffp_grid(c(-1000, 1000, -1000, 1000), 1)
 print_tbl <- function(x) print(as.data.frame(x), row.names = FALSE, digits = 3)
@@ -43,20 +55,29 @@ cli::cli_h1("Footprint comparison: {label}")
 
 # ---- Chunks ----
 cases <- sub("^h_", "", grep("^h_", names(tab), value = TRUE))
-cases <- setdiff(cases, "oper")
+if (!extra) cases <- setdiff(cases, "oper") # oper: supplement at the extra sites only (spec 09 A5)
 months <- sort(unique(format(tab$timestamp_start_utc, "%Y-%m")))
-chunk <- function(cs, mo, what) file.path(fp_dir, "chunks", paste0(site_id, "_", cs, "_", mo, "_", what))
+chunk_dir <- file.path(fp_dir, "chunks")
+chunk <- function(cs, mo, what) file.path(chunk_dir, paste0(site_id, "_", cs, "_", mo, "_", what))
+mo_parts <- list() # per case: month -> part labels on disk (the month, or its halves; spec 09 A5)
 hh <- list()
 clim <- list()
 for (cs in cases) {
-  f_hh <- chunk(cs, months, "hh.csv.gz")
-  have <- file.exists(f_hh) & file.exists(chunk(cs, months, "meta.rds"))
+  pp <- lapply(stats::setNames(months, months), function(mo) chunk_parts_on_disk(chunk_dir, site_id, cs, mo))
+  have <- lengths(pp) > 0
   if (!all(have)) cli::cli_warn("{cs}: chunks missing for {paste(months[!have], collapse = ', ')}.")
   if (!any(have)) next
-  x <- dplyr::bind_rows(lapply(f_hh[have], readr::read_csv, show_col_types = FALSE, progress = FALSE))
+  mo_parts[[cs]] <- pp[have]
+  x <- dplyr::bind_rows(lapply(chunk(cs, unlist(pp[have]), "hh.csv.gz"), readr::read_csv, show_col_types = FALSE,
+                               progress = FALSE))
   hh[[cs]] <- x[match(as.numeric(tab$timestamp_start_utc), as.numeric(x$timestamp_start_utc)), ]
   for (mo in months[have]) {
-    for (cl in readRDS(chunk(cs, mo, "clim.rds"))) clim[[length(clim) + 1]] <- c(list(case = cs, month = mo), cl)
+    cm <- if (length(pp[[mo]]) == 1) readRDS(chunk(cs, mo, "clim.rds")) else
+      ffp_clims_from_parts(lapply(chunk(cs, pp[[mo]], "sums.rds"), ffp_sums_read), grid, mask) # half-months joined
+    for (cl in cm) {
+      cl$region80 <- ffp_region_unpack(cl$region80) # packed in spec-09 chunks
+      clim[[length(clim) + 1]] <- c(list(case = cs, month = mo), cl)
+    }
   }
 }
 cases <- names(hh)
@@ -161,20 +182,9 @@ for (yr in unique(substr(months, 1, 4))) {
   mo_y <- months[substr(months, 1, 4) == yr]
   if (length(mo_y) < 2) next
   for (cs in cases) {
-    f_s <- chunk(cs, mo_y, "sums.rds")
-    if (!all(file.exists(f_s))) { cli::cli_warn("{cs} {yr}: monthly sums missing, no annual climatology."); next }
-    parts <- lapply(f_s, ffp_sums_read)
-    gk <- unique(unlist(lapply(parts, function(p) names(p$sums))))
-    for (key0 in unique(sub("\\|(day|night)\\|", "|", gk))) {
-      p <- strsplit(key0, "\\|")[[1]]
-      for (dn in c("day", "night", "all")) {
-        k <- paste(p[1], p[2], if (dn == "all") c("day", "night") else dn, p[3], sep = "|")
-        res <- ffp_clim_from_sums(parts, k, grid, mask)
-        if (is.null(res)) next
-        clim[[length(clim) + 1]] <- list(case = cs, month = yr, set = p[1], subset = p[2], daynight = dn, rowset = p[3],
-                                         n = res$n, metrics = res$metrics, region80 = res$region)
-      }
-    }
+    if (!all(mo_y %in% names(mo_parts[[cs]]))) { cli::cli_warn("{cs} {yr}: monthly sums missing, no annual climatology."); next }
+    parts <- lapply(chunk(cs, unlist(mo_parts[[cs]][mo_y]), "sums.rds"), ffp_sums_read)
+    for (cl in ffp_clims_from_parts(parts, grid, mask)) clim[[length(clim) + 1]] <- c(list(case = cs, month = yr), cl)
     rm(parts)
   }
 }
