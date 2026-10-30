@@ -2,16 +2,17 @@
 library(data.table)
 
 
+# Paths redacted for the public repository; in the current code, paths are set in config.local.yml.
 # importo dati estratti da CT
 # dati sito specifici in :
-# /bigdata/c.trotta/era2oneflux/ERA5_whole_available_region_nc__getDataPixel__yearly/[SITO]/reanalysis-era5-single-levels__boundary_layer_height
-BE_Bra_pblh_ERA5 <- fread("C:/WORK/R/PROJECTS/ETC_PROCESSING_SUITE/BRIDGE_PER_GDRIVE/BE-Bra__ERA5__reanalysis-era5-single-levels__boundary_layer_height__2024__lon+0__lat+0.csv", 
+# <cluster path>/[SITO]/reanalysis-era5-single-levels__boundary_layer_height
+BE_Bra_pblh_ERA5 <- fread("<local path>/BE-Bra__ERA5__reanalysis-era5-single-levels__boundary_layer_height__2024__lon+0__lat+0.csv", 
                           na.strings="-9999", sep=',', header = T, data.table = F)
 # str(BE_Bra_pblh_ERA5)
 # range(BE_Bra_pblh_ERA5$time)
 
-# importo i dati calcolati da me nei L2 (scaricati da /bigdata/g.nicolini/ETC/L2_DATA_backup/L2_2026/[SITO]_output_FP_yyyymmdd)
-BE_Bra_pblh_FFP <- fread("C:/WORK/R/PROJECTS/ETC_PROCESSING_SUITE/BRIDGE_PER_GDRIVE/PBL_heights.txt", 
+# importo i dati calcolati da me nei L2 (scaricati da <cluster path>/[SITO]_output_FP_yyyymmdd)
+BE_Bra_pblh_FFP <- fread("<local path>/PBL_heights.txt", 
                          na.strings="NA", sep='\t', header = T, data.table = F)
 # str(BE_Bra_pblh_FFP)
 

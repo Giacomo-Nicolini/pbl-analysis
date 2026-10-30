@@ -14,7 +14,9 @@
 #           08_clim_contours_<site><period>, 08_topaffected_<site><period>
 # ERA5 tower cell only in figures; era5_bilinear in the tables.
 #
-# Usage: Rscript scripts/08_footprint_compare.R SITE [--start=YYYY-MM-DD --end=YYYY-MM-DD]
+# Usage: Rscript scripts/08_footprint_compare.R SITE [--start=YYYY-MM-DD --end=YYYY-MM-DD] [--year=YYYY]
+#   --year: reference year of the cluster run (spec 09 A5), from the full-period input table; chunks may be
+#   half-months (joined from their block sums); oper kept at the extra sites (supplement).
 
 for (f in list.files(here::here("R"), pattern = "\\.R$", full.names = TRUE)) source(f)
 
@@ -36,6 +38,16 @@ label <- if (per == "") site_id else paste0(site_id, ", ", sub("^_", "", per), "
 inp <- readRDS(file.path(fp_dir, paste0(site_id, "_footprint_inputs", per, ".rds")))
 tab <- inp$tab
 sub_cols <- inp$subsets
+# Spec 09 A5: reference year of the cluster run, from the full-period input table
+if (!is.null(opt("year"))) {
+  yr_sel <- format(tab$timestamp_start_utc, "%Y") == opt("year")
+  if (!any(yr_sel)) cli::cli_abort("No half-hour of {opt('year')} in the input table of {site_id}.")
+  tab <- tab[yr_sel, ]
+  sub_cols <- sub_cols[yr_sel, ]
+  per <- paste0("_", opt("year"))
+  label <- paste0(site_id, ", ", opt("year"), " (reference year)")
+}
+extra <- site_id %in% footprint_extra_sites(resolve_path(cfg$footprint_extra_sites_file))
 mask <- readRDS(file.path(fp_dir, paste0(site_id, "_target_area_mask.rds")))
 grid <- ffp_grid(c(-1000, 1000, -1000, 1000), 1)
 print_tbl <- function(x) print(as.data.frame(x), row.names = FALSE, digits = 3)
@@ -43,20 +55,29 @@ cli::cli_h1("Footprint comparison: {label}")
 
 # ---- Chunks ----
 cases <- sub("^h_", "", grep("^h_", names(tab), value = TRUE))
-cases <- setdiff(cases, "oper")
+if (!extra) cases <- setdiff(cases, "oper") # oper: supplement at the extra sites only (spec 09 A5)
 months <- sort(unique(format(tab$timestamp_start_utc, "%Y-%m")))
-chunk <- function(cs, mo, what) file.path(fp_dir, "chunks", paste0(site_id, "_", cs, "_", mo, "_", what))
+chunk_dir <- file.path(fp_dir, "chunks")
+chunk <- function(cs, mo, what) file.path(chunk_dir, paste0(site_id, "_", cs, "_", mo, "_", what))
+mo_parts <- list() # per case: month -> part labels on disk (the month, or its halves; spec 09 A5)
 hh <- list()
 clim <- list()
 for (cs in cases) {
-  f_hh <- chunk(cs, months, "hh.csv.gz")
-  have <- file.exists(f_hh) & file.exists(chunk(cs, months, "meta.rds"))
+  pp <- lapply(stats::setNames(months, months), function(mo) chunk_parts_on_disk(chunk_dir, site_id, cs, mo))
+  have <- lengths(pp) > 0
   if (!all(have)) cli::cli_warn("{cs}: chunks missing for {paste(months[!have], collapse = ', ')}.")
   if (!any(have)) next
-  x <- dplyr::bind_rows(lapply(f_hh[have], readr::read_csv, show_col_types = FALSE, progress = FALSE))
+  mo_parts[[cs]] <- pp[have]
+  x <- dplyr::bind_rows(lapply(chunk(cs, unlist(pp[have]), "hh.csv.gz"), readr::read_csv, show_col_types = FALSE,
+                               progress = FALSE))
   hh[[cs]] <- x[match(as.numeric(tab$timestamp_start_utc), as.numeric(x$timestamp_start_utc)), ]
   for (mo in months[have]) {
-    for (cl in readRDS(chunk(cs, mo, "clim.rds"))) clim[[length(clim) + 1]] <- c(list(case = cs, month = mo), cl)
+    cm <- if (length(pp[[mo]]) == 1) readRDS(chunk(cs, mo, "clim.rds")) else
+      ffp_clims_from_parts(lapply(chunk(cs, pp[[mo]], "sums.rds"), ffp_sums_read), grid, mask) # half-months joined
+    for (cl in cm) {
+      cl$region80 <- ffp_region_unpack(cl$region80) # packed in spec-09 chunks
+      clim[[length(clim) + 1]] <- c(list(case = cs, month = mo), cl)
+    }
   }
 }
 cases <- names(hh)
@@ -161,20 +182,9 @@ for (yr in unique(substr(months, 1, 4))) {
   mo_y <- months[substr(months, 1, 4) == yr]
   if (length(mo_y) < 2) next
   for (cs in cases) {
-    f_s <- chunk(cs, mo_y, "sums.rds")
-    if (!all(file.exists(f_s))) { cli::cli_warn("{cs} {yr}: monthly sums missing, no annual climatology."); next }
-    parts <- lapply(f_s, ffp_sums_read)
-    gk <- unique(unlist(lapply(parts, function(p) names(p$sums))))
-    for (key0 in unique(sub("\\|(day|night)\\|", "|", gk))) {
-      p <- strsplit(key0, "\\|")[[1]]
-      for (dn in c("day", "night", "all")) {
-        k <- paste(p[1], p[2], if (dn == "all") c("day", "night") else dn, p[3], sep = "|")
-        res <- ffp_clim_from_sums(parts, k, grid, mask)
-        if (is.null(res)) next
-        clim[[length(clim) + 1]] <- list(case = cs, month = yr, set = p[1], subset = p[2], daynight = dn, rowset = p[3],
-                                         n = res$n, metrics = res$metrics, region80 = res$region)
-      }
-    }
+    if (!all(mo_y %in% names(mo_parts[[cs]]))) { cli::cli_warn("{cs} {yr}: monthly sums missing, no annual climatology."); next }
+    parts <- lapply(chunk(cs, unlist(mo_parts[[cs]][mo_y]), "sums.rds"), ffp_sums_read)
+    for (cl in ffp_clims_from_parts(parts, grid, mask)) clim[[length(clim) + 1]] <- c(list(case = cs, month = yr), cl)
     rm(parts)
   }
 }
@@ -267,8 +277,12 @@ cli::cli_h2("Anchor: h x 0.8 / x 1.2 vs Kljun et al. (2015) Table 5 (|change| fo
 print_tbl(an[an$set == "none", ])
 
 # ---- Figures ----
-pal <- c(pblhmod = "#0072B2", era5 = "#D55E00", era5_bilinear = "#E69F00", measured = "#009E73", bound = "#CC79A7",
-         "pblhmod_x0.8" = "#56B4E9", "pblhmod_x1.2" = "#000000")
+# Colours and labels from pblh_sources_style (group footprint_case); main figures: PBLHmod, PBLHmod-clim, ERA5,
+# measured (G 2026-10-30)
+fp_ids <- style_ids("footprint_case")
+pal <- style_of(fp_ids, "colour", "footprint_case")
+pal_lab <- style_of(fp_ids, "label", "footprint_case")
+main_cases <- c("pblhmod", "pblhmod_clim", "era5", "measured")
 fig_sub <- function(x) ggplot2::labs(subtitle = paste0(label, if (nzchar(x)) paste0("; ", x) else ""))
 
 # Coverage by month (full-period input table)
@@ -277,16 +291,16 @@ if (file.exists(full_file)) {
   fi <- readRDS(full_file)
   mo <- format(fi$tab$timestamp_start_utc, "%Y-%m")
   cv <- list()
-  for (cs in intersect(c("pblhmod", "era5", "measured"), sub("^h_", "", grep("^h_", names(fi$tab), value = TRUE)))) for (s in setdiff(sets, "kljun")) for (u in subsets) {
+  for (cs in intersect(main_cases, sub("^h_", "", grep("^h_", names(fi$tab), value = TRUE)))) for (s in setdiff(sets, "kljun")) for (u in subsets) {
     v <- fi$subsets[[paste(u, s, cs, sep = "__")]]
     cv[[length(cv) + 1]] <- dplyr::tibble(case = cs, set = s, subset = u, month = as.Date(paste0(names(tapply(v, mo, sum)), "-01")),
                                           share = as.numeric(tapply(v, mo, mean)))
   }
   cv <- dplyr::bind_rows(cv)
   p <- ggplot2::ggplot(cv, ggplot2::aes(month, 100 * share, colour = case)) + ggplot2::geom_line(linewidth = 0.4) +
-    ggplot2::facet_grid(set ~ subset) + ggplot2::scale_colour_manual(values = pal) +
+    ggplot2::facet_grid(set ~ subset) + ggplot2::scale_colour_manual(values = pal, labels = pal_lab) +
     ggplot2::labs(x = NULL, y = "Valid half-hours [% of month]", colour = NULL, title = "Footprint coverage per PBLH case",
-                  subtitle = paste0(site_id, ", full period")) + theme_pub()
+                  subtitle = paste0(site_id, ", full period")) + theme_pblh()
   save_figure(p, paste0("08_coverage_", site_id), 18, 14)
 }
 
@@ -296,21 +310,25 @@ if ("era5" %in% cases) {
                       regime = tab$regime, qc_used = valid_of("valid_qc_used", "none", "era5") & valid_of("valid_qc_used", "none", "pblhmod"),
                       qc_h = valid_of("valid_qc_h", "none", "era5") & valid_of("valid_qc_h", "none", "pblhmod"),
                       hour = hour_bin_centred(t_mid), season = season_of(t_mid))[common, ]
-  p <- ggplot2::ggplot(dd, ggplot2::aes(zmh, lr, colour = regime)) + ggplot2::geom_hline(yintercept = 0, colour = "grey50") +
+  p <- ggplot2::ggplot(dd, ggplot2::aes(zmh, lr, colour = regime)) + ggplot2::geom_hline(yintercept = 0, colour = style_of("reference_line", "colour", "element")) +
     ggplot2::geom_point(size = 0.7, alpha = 0.6) + ggplot2::scale_x_log10() +
+    ggplot2::scale_colour_manual(values = style_of(style_ids("regime", unique(dd$regime)), "colour", "regime"),
+                                 labels = style_of(style_ids("regime", unique(dd$regime)), "label", "regime")) +
     ggplot2::labs(x = "zm / h (PBLHmod)", y = "ln(x80 ERA5 / x80 PBLHmod)", colour = NULL,
-                  title = "Footprint 80 % distance: ERA5 vs PBLHmod h") + fig_sub("set none, subset valid") + theme_pub()
+                  title = "Footprint 80 % distance: ERA5 vs PBLHmod h") + fig_sub("set none, subset valid") + theme_pblh()
   save_figure(p, paste0("08_dx80_by_zmh_", site_id, per))
 
   dl <- dplyr::bind_rows(
     dplyr::summarise(dplyr::group_by(dd, season, hour), med = stats::median(lr), n = dplyr::n(), .groups = "drop") |> dplyr::mutate(subset = "valid"),
     dplyr::summarise(dplyr::group_by(dd[dd$qc_used, ], season, hour), med = stats::median(lr), n = dplyr::n(), .groups = "drop") |> dplyr::mutate(subset = "valid_qc_used"),
     dplyr::summarise(dplyr::group_by(dd[dd$qc_h, ], season, hour), med = stats::median(lr), n = dplyr::n(), .groups = "drop") |> dplyr::mutate(subset = "valid_qc_h"))
-  p <- ggplot2::ggplot(dl, ggplot2::aes(hour, med, colour = subset)) + ggplot2::geom_hline(yintercept = 0, colour = "grey50") +
+  p <- ggplot2::ggplot(dl, ggplot2::aes(hour, med, colour = subset)) + ggplot2::geom_hline(yintercept = 0, colour = style_of("reference_line", "colour", "element")) +
     ggplot2::geom_line() + ggplot2::geom_point(size = 1) + ggplot2::facet_wrap(~season) +
+    ggplot2::scale_colour_manual(values = style_of(unique(dl$subset), "colour", "subset"),
+                                 labels = style_of(unique(dl$subset), "label", "subset")) +
     ggplot2::scale_x_continuous(breaks = seq(0, 21, 3)) +
     ggplot2::labs(x = "Hour (UTC, centred bins)", y = "Median ln(x80 ERA5 / x80 PBLHmod)", colour = NULL,
-                  title = "Diurnal cycle of the footprint difference") + fig_sub("set none") + theme_pub()
+                  title = "Diurnal cycle of the footprint difference") + fig_sub("set none") + theme_pblh()
   save_figure(p, paste0("08_dx80_diurnal_", site_id, per))
 
   tp <- ta[ta$set == "none" & ta$group %in% c("all", "top25", "top10"), ]
@@ -319,10 +337,11 @@ if ("era5" %in% cases) {
   tl$what <- factor(sub("^share_", "", tl$what), levels = c("stable", "unstable_diag", "convective", "night", "removed_by_qc", "removed_by_qc_or_used", "removed_by_h_qc"))
   tl$group <- factor(tl$group, levels = c("all", "top25", "top10"))
   p <- ggplot2::ggplot(tl, ggplot2::aes(what, 100 * share, fill = group)) + ggplot2::geom_col(position = "dodge") +
-    ggplot2::scale_fill_manual(values = c(all = "grey60", top25 = "#E69F00", top10 = "#D55E00")) +
+    ggplot2::scale_fill_manual(values = stats::setNames(style_of(c("top_all", "top25", "top10"), "colour", "element"),
+                                                          c("all", "top25", "top10"))) +
     ggplot2::labs(x = NULL, y = "Share of half-hours [%]", fill = NULL,
                   title = "Half-hours most affected by the PBLH source (|ln x80 ratio|, ERA5 vs PBLHmod)") +
-    fig_sub("set none, subset valid") + theme_pub() + ggplot2::theme(axis.text.x = ggplot2::element_text(angle = 30, hjust = 1))
+    fig_sub("set none, subset valid") + theme_pblh() + ggplot2::theme(axis.text.x = ggplot2::element_text(angle = 30, hjust = 1))
   save_figure(p, paste0("08_topaffected_", site_id, per))
 
   # 80 % source regions of the monthly climatologies (common rows), over the target area; 5 m resolution for drawing
@@ -332,7 +351,7 @@ if ("era5" %in% cases) {
   as_df <- function(m, what) dplyr::tibble(x = rep(grid$x[ix], each = length(iy)), y = rep(grid$y[iy], times = length(ix)), z = c(m[iy, ix] * 1), what = what)
   cc <- list(as_df(mask, "target area"))
   for (c0 in clim) {
-    if (!(c0$case %in% c("pblhmod", "era5") && c0$set == "none" && c0$rowset == "common_pe" && c0$subset %in% c("valid", "valid_qc_used", "valid_qc_h") && nchar(c0$month) == 7 && c0$daynight %in% c("day", "night"))) next
+    if (!(c0$case %in% c("pblhmod", "pblhmod_clim", "era5") && c0$set == "none" && c0$rowset == "common_pe" && c0$subset %in% c("valid", "valid_qc_used", "valid_qc_h") && nchar(c0$month) == 7 && c0$daynight %in% c("day", "night"))) next
     m <- matrix(FALSE, length(grid$y), length(grid$x))
     m[c0$region80] <- TRUE
     cc[[length(cc) + 1]] <- dplyr::mutate(as_df(m, c0$case), subset = c0$subset, daynight = c0$daynight)
@@ -342,12 +361,13 @@ if ("era5" %in% cases) {
   if (nrow(rg)) {
     panels <- unique(rg[c("subset", "daynight")])
     ta_df <- dplyr::bind_rows(lapply(seq_len(nrow(panels)), function(k) dplyr::mutate(ta_df, subset = panels$subset[k], daynight = panels$daynight[k])))
-    p <- ggplot2::ggplot() + ggplot2::geom_contour(data = ta_df, ggplot2::aes(x, y, z = z), breaks = 0.5, colour = "grey40", linetype = "dashed") +
+    p <- ggplot2::ggplot() + ggplot2::geom_contour(data = ta_df, ggplot2::aes(x, y, z = z), breaks = 0.5, colour = style_of("target_area", "colour", "element"),
+                                                 linetype = style_of("target_area", "linetype", "element")) +
       ggplot2::geom_contour(data = rg, ggplot2::aes(x, y, z = z, colour = what), breaks = 0.5) +
-      ggplot2::facet_grid(daynight ~ subset) + ggplot2::coord_equal() + ggplot2::scale_colour_manual(values = pal) +
+      ggplot2::facet_grid(daynight ~ subset) + ggplot2::coord_equal() + ggplot2::scale_colour_manual(values = pal, labels = pal_lab) +
       ggplot2::labs(x = "x [m, east]", y = "y [m, north]", colour = NULL,
                     title = "80 % source region, monthly climatology", caption = "Dashed: ICOS target area") +
-      fig_sub("set none, common rows") + theme_pub()
+      fig_sub("set none, common rows") + theme_pblh()
     save_figure(p, paste0("08_clim_contours_", site_id, per), 20, 14)
   }
 }

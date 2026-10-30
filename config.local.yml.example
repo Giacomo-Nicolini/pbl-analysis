@@ -8,24 +8,25 @@
 #      (argument `profile`, else env var R_CONFIG_ACTIVE, else "default").
 #      The keys taken from config.local.yml are reported once per R session.
 # Values "LOCAL" in config.yml must be set here (resolve_path() aborts otherwise).
-# Placeholders: {site} = station code (e.g. BE-Bra); {var} = ERA5 static variable (z, lsm, sdor).
+# Placeholders: {site} = station code (e.g. BE-Bra); {var} = ERA5 static variable (z, lsm, sdor);
+# {icos_l2_dir} = the value of icos_l2_dir (oneflux_bif_dir only).
 
 # default:                       # local PC: only if your data are not under data/raw/
 #   icos_l2_dir: "D:/my_data/icos_l2"
 
 cluster:
   icos_l2_dir: "/path/to/icos/L2I_2026"                                  # contains XX-Yyy_output_L2I_2026/ folders
+  oneflux_bif_dir: "/path/to/oneflux_runs/{site}__*/99_fluxnet2015"      # BIF csv; glob (*) allowed (spec 09 A1)
   era5_sl_dir: "/path/to/era5/ERA5_surface_single_level/{site}"          # hourly single levels
   era5_pl_dir: "/path/to/era5/ERA5_pressure_levels/{site}"               # 6-hourly pressure levels
   era5_static_dir: "/path/to/era5_static/{var}"                          # one folder per static variable
   cloudnet_dir: "/path/to/cloudnet/{site}"                               # ACTRIS/Cloudnet daily files (spec 07)
   measured_dir: "/path/to/measured/{site}"                               # measured PBLH from PIs / providers (spec 10)
   ffp_code_dir: "/path/to/ffp_code"                                      # Kljun FFP R code (local only; spec 08)
-  # Still TODO in config.yml (set them here when known):
-  # target_areas_dir: "/path/to/target_areas"
-  # standard_dir: "/path/to/standard"
-  # derived_dir: "/path/to/derived"
-  # output_dir: "/path/to/output"
+  target_areas_dir: "/path/to/target_areas"                              # ICOS target-area KML files
+  standard_dir: "/path/to/standard"
+  derived_dir: "/path/to/derived"
+  output_dir: "/path/to/output"
   # Relative to the project root, normally not overridden:
   # sites_file: "config/sites.csv"
   # sites_timevarying_file: "config/sites_timevarying.csv"

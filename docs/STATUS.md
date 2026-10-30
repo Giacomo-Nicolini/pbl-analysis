@@ -27,15 +27,16 @@ Last update: 2026-10-30. Read this first in a new session, then `docs/project_pl
 | 06 | Consistency check of L2 `MO_LENGTH` against the forcing (option C, G 2026-10-21): L2 L kept where consistent (same sign, within 3×), otherwise replaced by L from the forcing and flagged (spec 02 amendment 13); checked only where the heat flux is positive (spec 06 amendment 1) and in daytime (amendment 2) | 1 | merged (`main`, 2026-10-21; amendment 2 merged 2026-10-21) |
 | 03 | Legacy regression: reproduce operational PBLH from L2 (operational code `calc_PBL_height_operational.R` + `proc_PBL_height.R`), port it, attribute differences to PBLHmod v2 (amendments 1–2) | 1 | merged (`main`, e224c4b) |
 | 07 | Cloudnet inventory (FI-Hyy, FI-Lom, DE-RuS, SE-Nor, FR-Gri); turbulence-based MLH from Doppler-lidar ε (Manninen et al. 2018) in the standard format; FI-Hyy runs (PBLHmod, ERA5) and first comparison against measured MLH (amendment 1: no operational PBLH, ERA5 tower cell in figures); reference period = FLUXES range; METEO TA levels from the header | 2, 3 | merged (`main`, b22f7e2) |
-| 08 | Footprint sensitivity to the PBLH source (FFP, Kljun et al. 2015) at BE-Bra and FI-Hyy; one-month PC test (FI-Hyy 2022-09); ONEFlux BIF reader and u* thresholds | 5a | in progress on `spec-08-footprint-sensitivity` |
+| 08 | Footprint sensitivity to the PBLH source (FFP, Kljun et al. 2015) at BE-Bra and FI-Hyy; one-month PC test (FI-Hyy 2022-09); ONEFlux BIF reader and u* thresholds | 5a | merged (`main`, 320f4ec); production run in spec 09 |
 | 10 | Aerosol-based measured MLH: Part A SIRTA ReOBS at FR-Gri (reader, two standard sources, FR-Gri runs 01/02/04, generalised spec-07 comparison, range-compression statistics also for FI-Hyy; review additions 2026-10-29: FB/nRMSD, symmetric slope + Bland–Altman, censored-tail null, PBLHmod-deficit diagnostics, NEE column check); Part B Lanzhot not started (two sample days only); Part C (Cloudnet ε at Palaiseau) only with G's go | 2, 3 | Part A merged (`main`, 63497d8) |
-| 11 | γ from ERA5 profiles (`gamma_source` option, spec 02 Amendment 14); MeteoSwiss STRATfinder MLH at CH-Dav; CH-Dav runs 01/02/04; four-site evaluation of the γ cases; faded-context plotting convention | 1, 3 | implemented on `spec-11-gamma-era5` (2026-10-30); decided: default unchanged (EC-only), ERA5 climatology = variant PBLHmod-clim; to merge |
+| 11 | γ from ERA5 profiles (`gamma_source` option, spec 02 Amendment 14); MeteoSwiss STRATfinder MLH at CH-Dav; CH-Dav runs 01/02/04; four-site evaluation of the γ cases; faded-context plotting convention | 1, 3 | merged (`main`, ccc6c08); decided: default unchanged (EC-only), ERA5 climatology = variant PBLHmod-clim |
+| 09 | Cluster deployment. Part A (PC): config (BIF folder with glob, FLUXNET year spans, `pblh_gamma_default`), per-site driver with run status, SLURM templates and submit script, footprint chunks (c5 storage, chunk list, chunk mode, new cases, measured primary source), network collection and reference-year proposal, one figure style (`pblh_sources_style`, `theme_pblh()`). Part B (cluster runs) by G | 1–5 | Part A implemented on `spec-09-cluster` (2026-10-30), to review; Part B not started |
 
 Phases (see `project_plan.md`): 0 done; 1 done (model, input QC, legacy regression); 2 standard format, three
 sources (spec 04) and the first measured source (spec 07, FI-Hyy) done; 3 BE-Bra (vs ERA5) and FI-Hyy (vs ERA5 and
 measured MLH) done; 4–6 not started.
 
-- Tests: 1,319 expectations passing (`spec-11-gamma-era5`, 2026-10-30). Environment: R 4.4.1 + renv (Posit Package
+- Tests: 1,483 expectations passing (`spec-09-cluster`, 2026-10-30). Environment: R 4.4.1 + renv (Posit Package
   Manager), same as the cluster. Machine-specific paths in the untracked `config.local.yml` (template
   `config.local.yml.example`).
 - PBLHmod defaults: `stable_method = "nieuwstadt"` (B1), `neutral_method = "auto"` (B2 if 10 < N/|f| < 70, else
@@ -295,7 +296,7 @@ collected for the ETC QC report in `docs/local/etc_qc_report.md` (local working 
 
 ## Local setup notes
 
-- PC rebuild procedure: `docs/setup/pc_rebuild_checklist.md` (+ `backup_before_format.ps1`).
+- PC rebuild procedure: `docs/local/setup/pc_rebuild_checklist.md` (+ `backup_before_format.ps1`; local only).
 - Gitignored but needed: `data/raw/` (ICOS L2 zips for BE-Bra, ERA5 CSVs in `era5/`, `era5_pressure_levels/`,
   `era5_single_levels/`, `target_areas/*.kml`), the local secrets folder, `docs/local/` (local working notes).
 - Reference PDFs live in a local bibliography folder outside the repo (not in git; the `file` fields were removed

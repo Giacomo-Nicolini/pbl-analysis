@@ -1,8 +1,11 @@
 # Spec 08 (phase 5a): footprint input table, validity flags and coverage for one station, over the requested period
 # (default: the full reference period). No FFP run: the FFP code's own checks are reproduced as conditions.
-# PBLH cases: pblhmod, era5 (tower cell, interpolated to the half-hour midpoint), era5_bilinear, pblhmod_x0.8,
-# pblhmod_x1.2, measured (exact MLH, qc 0/2) and bound (qc 3 lower bounds) where a Cloudnet MLH exists; oper with
-# --with-oper (internal use only: outputs under output/*/oper_internal/).
+# PBLH cases (spec 09 A5): pblhmod, pblhmod_clim, era5 (tower cell, interpolated to the half-hour midpoint) at every
+# site; at the extra sites (config/footprint_extra_sites.txt) also era5_bilinear, pblhmod_x0.8, pblhmod_x1.2, the
+# reference gamma values pblhmod_gamma001 / pblhmod_gamma0025 and oper (supplement); measured from the site's primary
+# source (config/measured_sites.csv): Cloudnet exact MLH (qc 0/2) and bound (qc 3 lower bounds), aerosol MLH only on
+# the comparable set (daytime window, PBLHmod convective). Elsewhere oper only with --with-oper (internal use only:
+# outputs under output/*/oper_internal/).
 # Validity sets: kljun (Kljun et al. 2015, Eq. 27), kljun_norsl (Eq. 27 without the roughness condition), etc (ETC
 # pipeline, stability from zm/L), none; all include the code checks and zm < h. Subsets: valid, valid_qc (NEE QC good
 # in FLUXES), valid_qc_used (and NEE not gap-filled in FLUXNET), valid_qc_h (valid and H measured and QC-good).
@@ -44,8 +47,28 @@ rd <- function(src) {
   p <- file.path(std_dir, paste0(site_id, "__", src, ".csv.gz"))
   if (file.exists(p)) suppressMessages(read_standard_pblh(p)) else NULL
 }
+# Cases (spec 09 A5): pblhmod, pblhmod_clim, era5 everywhere; at the extra sites also era5_bilinear, the +-20 %
+# anchors, the reference gamma values and oper (supplement); oper elsewhere only with --with-oper (internal).
+# Measured: the site's primary source (config/measured_sites.csv); aerosol sources only on their comparable set
+# (daytime window, PBLHmod convective; specs 10-11), turbulence sources exact values plus bound.
+extra <- site_id %in% footprint_extra_sites(resolve_path(cfg$footprint_extra_sites_file))
+ms <- measured_primary_source(read_measured_sites(resolve_path(cfg$measured_sites_file)), site_id)
+meas <- if (is.null(ms)) NULL else rd(ms$source_id)
+if (!is.null(ms) && is.null(meas)) cli::cli_alert_warning("Measured source {.val {ms$source_id}}: standard file not found, no measured case.")
+comparable <- NULL
+if (!is.null(meas) && ms$type == "aerosol") {
+  w <- measured_compare_options()$aerosol_window
+  a <- apparent_solar_hour(d$timestamp_start_utc + 900, meta$lon)
+  reg <- pm$regime[match(as.numeric(d$timestamp_start_utc), as.numeric(as_utc_time(pm$timestamp_start_utc)))]
+  comparable <- a >= w[1] & a < w[2] & reg %in% "convective"
+}
 cases <- footprint_h_cases(d$timestamp_start_utc, rd("pblhmod_default"), rd("era5_blh_center"), rd("era5_blh_bilinear"),
-                           measured = rd("cloudnet_eps_mlh"), oper = if (with_oper) rd("icos_oper") else NULL)
+                           measured = meas, oper = if (with_oper || extra) rd("icos_oper") else NULL,
+                           pblhmod_clim = rd("pblhmod_clim"),
+                           reference = Filter(Negate(is.null), list(pblhmod_gamma001 = rd("pblhmod_gamma001"),
+                                                                    pblhmod_gamma0025 = rd("pblhmod_gamma0025"))),
+                           extra = extra, measured_type = if (is.null(ms)) "turbulence" else ms$type, comparable = comparable)
+cli::cli_inform("Cases: {paste(names(cases), collapse = ', ')}{if (extra) ' (extra site)' else ''}; measured: {if (is.null(meas)) 'none' else paste0(ms$source_id, ' (', ms$type, ')')}.")
 tab <- footprint_input_table(d, pm, cases)
 
 # ETC multiplier: once per site, full period, rows with zm and z0 (independent of h and of the requested period)
@@ -67,6 +90,11 @@ cli::cli_inform("Period {format(t0, '%Y-%m-%d')} to {format(t1 - 1, '%Y-%m-%d')}
 fl <- footprint_flags_all(tab, m_etc)
 cov <- footprint_coverage(tab, fl)
 readr::write_csv(cov, file.path(tables_dir, paste0("08_coverage_", site_id, per, ".csv")))
+# Per calendar year, for the reference-year proposal of scripts/09_collect.R (spec 09 A5, spec 08 section 4c)
+if (per == "") {
+  yc <- footprint_year_counts(tab, fl$subsets)
+  readr::write_csv(dplyr::mutate(yc, site_id = site_id, .before = 1), file.path(tables_dir, paste0("08_year_counts_", site_id, ".csv")))
+}
 saveRDS(list(site_id = site_id, tab = tab, flags = fl$flags, subsets = fl$subsets, m_etc = m_etc, period = per,
              t0 = t0, t1 = t1), file.path(fp_dir, paste0(site_id, "_footprint_inputs", per, ".rds")))
 
@@ -79,7 +107,8 @@ print_tbl(cov[cov$stratum == "all" & cov$case %in% c("pblhmod", "era5") & cov$se
 
 cli::cli_h2("ONEFlux u* thresholds vs FLUXNET NEE QC")
 uc <- tryCatch({
-  fr <- read_oneflux_bif(find_oneflux_bif(site_id, cfg), "GRP_FLUX_REF", hh_path = find_icos_files(site_id, cfg)$fluxnet)
+  hh <- find_icos_files(site_id, cfg)$fluxnet
+  fr <- read_oneflux_bif(find_oneflux_bif(site_id, cfg, hh_path = hh), "GRP_FLUX_REF", hh_path = hh)
   thr <- oneflux_ustar_ref(fr, "VUT")
   print_tbl(thr)
   x <- oneflux_ustar_check(d, thr)

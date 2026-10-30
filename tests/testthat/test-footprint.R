@@ -13,7 +13,8 @@ test_that("ERA5 BLH interpolated to half-hour midpoints, NA without both neighbo
 
 test_that("footprint_h_cases builds the cases (scaled PBLHmod, measured exact / bound)", {
   t <- utc("2022-09-01 00:00:00") + 1800 * (0:2)
-  std <- function(v, q = NA_integer_) dplyr::tibble(timestamp_start_utc = t, pblh_m = v, qc_flag = q)
+  std <- function(v, q = NA_integer_) dplyr::tibble(timestamp_start_utc = t, timestamp_end_utc = t + 1800, pblh_m = v,
+                                                     qc_flag = q)
   era <- dplyr::tibble(timestamp_start_utc = utc("2022-09-01 00:00:00") + 3600 * (0:2), pblh_m = c(100, 200, 300))
   meas <- std(c(500, NA, 800), c(0L, 1L, 3L))
   x <- footprint_h_cases(t, std(c(400, 500, NA)), era, era, measured = meas)

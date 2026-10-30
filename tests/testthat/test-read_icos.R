@@ -124,6 +124,21 @@ test_that("find_icos_files: required, optional and ambiguous files", {
   expect_error(suppressWarnings(find_icos_files("XX-Tst", list(icos_l2_dir = tmp))), "FLUXES")
 })
 
+test_that("find_icos_files: FLUXNET HH zips with any year span; other names ignored (spec 09 A1)", {
+  tmp <- withr::local_tempdir()
+  d <- file.path(tmp, "XX-Tst_output_L2I_2026")
+  dir.create(d)
+  file.copy(c(f_fluxes, f_meteo), d)
+  for (nm in c("ICOSETC_XX-Tst_FLUXNET_FLUXMET_HH_2018-2026_v1.3_r1.zip", "ICOSETC_XX-Tst_FLUXNET_FLUXMET_DD_2018-2026_v1.3_r1.zip",
+               "ICOSETC_XX-Tst_FLUXNET_FLUXMET_HH_2018-2026_v1.3_r1.zip.bak", "ICOSETC_XX-Tst_FLUXNET_FLUXMET_HH_old.zip")) {
+    file.copy(f_fluxnet, file.path(d, nm))
+  }
+  expect_equal(basename(find_icos_files("XX-Tst", list(icos_l2_dir = tmp))$fluxnet),
+               "ICOSETC_XX-Tst_FLUXNET_FLUXMET_HH_2018-2026_v1.3_r1.zip")
+  file.copy(f_fluxnet, file.path(d, "ICOSETC_XX-Tst_FLUXNET_FLUXMET_HH_2005-2026_v1.4.zip"))
+  expect_error(find_icos_files("XX-Tst", list(icos_l2_dir = tmp)), "More than one")
+})
+
 test_that("read_icos_site merges the three files on a complete grid", {
   sites <- read_sites(fixture_path("sites.csv"))
   sites_tv <- read_sites_timevarying(fixture_path("sites_timevarying.csv"))

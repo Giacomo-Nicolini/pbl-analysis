@@ -1,5 +1,6 @@
 # Spec 02: run PBLHmod v2 for the test site(s) and print a summary.
-# Runs: default (= PBLHmod, EC data only: bg_only, neutral auto, constant gamma 0.01 K/m); reference gamma values
+# Runs: default (= PBLHmod, EC data only: bg_only, neutral auto, constant gamma = config pblh_gamma_default, now
+# 0.01 K/m; every case except the reference gamma values uses it, spec 09 A1); reference gamma values
 # (G 2026-10-30): gamma001 (0.01 K/m, Batchvarova & Gryning 1991 as cited by Kljun et al. 2015; equal to default
 # until the EC-only constant is revised) and gamma0025 (0.0025 K/m, legacy ETC code; no literature source found);
 # max_B2 (combine max, neutral B2: behaviour before amendment 11); max_auto;
@@ -8,7 +9,8 @@
 # l_forcing (L always from the forcing, option D), lcons2 / lcons5 (factor 2 / 5); nofilter_l2 (no u* filter,
 # no L check = spec 02). All other cases use the defaults (u* filter on, l_source = "L2_checked").
 # Ends with u* filter and L check summaries across cases and a side-by-side table of quantiles per regime.
-# Output: <derived_dir>/pblhmod/<site>_pblhmod_<label>.csv.gz
+# Output: <derived_dir>/pblhmod/<site>_pblhmod_<label>.csv.gz; <output_dir>/tables/02_cases_<site>.csv (per case:
+# u* filter, L check, validity, gamma) and 02_regimes_<site>.csv (per case x regime: share, quantiles; spec 09 A4)
 # Regression chain (if the backups exist in <derived_dir>/pblhmod/): nofilter_l2 vs pre_spec05/ (spec-02
 # default), l_L2 vs pre_spec06/ (spec-05 default) and l_check_allday (L check also at night = spec 06
 # amendment 1) vs pre_spec06a2/, and every case vs pre_spec07/ (outputs before the reference-period rule,
@@ -41,24 +43,24 @@ out_dir <- file.path(resolve_path(cfg$derived_dir, must_exist = FALSE), "pblhmod
 dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
 
 runs <- list(
-  default = pblh_options(),
+  default = pblh_options_cfg(cfg),
   gamma0025 = pblh_options(gamma = 0.0025, label = "gamma0025"),
-  max_B2 = pblh_options(combine = "max", neutral_method = "B2", label = "max_B2"),
-  max_auto = pblh_options(combine = "max", neutral_method = "auto", label = "max_auto"),
-  ustar04 = pblh_options(ustar_ws_max = 0.4, label = "ustar04"),
-  ustar06 = pblh_options(ustar_ws_max = 0.6, label = "ustar06"),
-  nofilter = pblh_options(ustar_ws_max = Inf, ustar_max = Inf, label = "nofilter"),
-  l_L2 = pblh_options(l_source = "L2", label = "l_L2"),
-  l_forcing = pblh_options(l_source = "forcing", label = "l_forcing"),
-  lcons2 = pblh_options(l_consistency_factor = 2, label = "lcons2"),
-  lcons5 = pblh_options(l_consistency_factor = 5, label = "lcons5"),
-  nofilter_l2 = pblh_options(ustar_ws_max = Inf, ustar_max = Inf, l_source = "L2", label = "nofilter_l2"),
-  l_check_allday = pblh_options(l_check_daytime_only = FALSE, label = "l_check_allday"),
-  clim = pblh_options(gamma_source = "era5_clim", label = "clim"),
+  max_B2 = pblh_options_cfg(cfg, combine = "max", neutral_method = "B2", label = "max_B2"),
+  max_auto = pblh_options_cfg(cfg, combine = "max", neutral_method = "auto", label = "max_auto"),
+  ustar04 = pblh_options_cfg(cfg, ustar_ws_max = 0.4, label = "ustar04"),
+  ustar06 = pblh_options_cfg(cfg, ustar_ws_max = 0.6, label = "ustar06"),
+  nofilter = pblh_options_cfg(cfg, ustar_ws_max = Inf, ustar_max = Inf, label = "nofilter"),
+  l_L2 = pblh_options_cfg(cfg, l_source = "L2", label = "l_L2"),
+  l_forcing = pblh_options_cfg(cfg, l_source = "forcing", label = "l_forcing"),
+  lcons2 = pblh_options_cfg(cfg, l_consistency_factor = 2, label = "lcons2"),
+  lcons5 = pblh_options_cfg(cfg, l_consistency_factor = 5, label = "lcons5"),
+  nofilter_l2 = pblh_options_cfg(cfg, ustar_ws_max = Inf, ustar_max = Inf, l_source = "L2", label = "nofilter_l2"),
+  l_check_allday = pblh_options_cfg(cfg, l_check_daytime_only = FALSE, label = "l_check_allday"),
+  clim = pblh_options_cfg(cfg, gamma_source = "era5_clim", label = "clim"),
   gamma001 = pblh_options(gamma = 0.01, label = "gamma001"),
-  gamma_era5daily = pblh_options(gamma_source = "era5_daily", label = "gamma_era5daily"),
-  gamma_era5clim_zmin1000 = pblh_options(gamma_source = "era5_clim", label = "gamma_era5clim_zmin1000"),
-  gamma_era5clim_bgonly = pblh_options(gamma_source = "era5_clim", gamma_scope = "bg_only",
+  gamma_era5daily = pblh_options_cfg(cfg, gamma_source = "era5_daily", label = "gamma_era5daily"),
+  gamma_era5clim_zmin1000 = pblh_options_cfg(cfg, gamma_source = "era5_clim", label = "gamma_era5clim_zmin1000"),
+  gamma_era5clim_bgonly = pblh_options_cfg(cfg, gamma_source = "era5_clim", gamma_scope = "bg_only",
                                        label = "gamma_era5clim_bgonly")
 )
 # ERA5 gamma tables per case (file suffix in <derived_dir>/gamma/: "" = fit layer 500-3500 m, "_zmin1000")
@@ -265,6 +267,32 @@ for (site_id in site_ids) {
   cli::cli_h2("L consistency summary across cases (checked: L_check consistent / sign / magnitude)")
   print_tbl(do.call(rbind, lapply(names(outs), function(k) l_report(outs[[k]], runs[[k]]))))
 
+  # Per-site summaries for the network collection (spec 09 A4): one row per case (u* filter, L check, validity,
+  # gamma) and one per case x regime (share, quantiles of pblh_m [m]).
+  cases_tbl <- do.call(rbind, lapply(names(outs), function(k) {
+    o <- outs[[k]]
+    ok <- !o$excl_flag
+    cbind(ustar_report(d, o, runs[[k]]), l_report(o, runs[[k]])[c("checked", "replaced", "pct_L_from_L2", "sign_inconsistent")],
+          pct_valid = round(100 * mean(!is.na(o$pblh_m[ok])), 2), gamma_source = runs[[k]]$gamma_source,
+          gamma_median = stats::median(o$gamma_used, na.rm = TRUE),
+          n_constant_fallback = sum(o$gamma_source_used %in% "constant_fallback"))
+  }))
+  regimes_tbl <- do.call(rbind, lapply(names(outs), function(k) {
+    o <- outs[[k]]
+    do.call(rbind, lapply(c("all", "stable", "unstable_diag", "convective"), function(r) {
+      i <- if (r == "all") !is.na(o$pblh_m) else o$regime %in% r & !is.na(o$pblh_m)
+      q <- stats::quantile(o$pblh_m[i], c(0.05, 0.25, 0.5, 0.75, 0.95), na.rm = TRUE, names = FALSE)
+      q <- round(q, 1)
+      data.frame(case = k, regime = r, share = round(mean(if (r == "all") rep(TRUE, nrow(o)) else o$regime %in% r), 5),
+                 n = sum(i), p5 = q[1], p25 = q[2], p50 = q[3], p75 = q[4], p95 = q[5])
+    }))
+  }))
+  tdir <- file.path(resolve_path(cfg$output_dir, must_exist = FALSE), "tables")
+  dir.create(tdir, recursive = TRUE, showWarnings = FALSE)
+  readr::write_csv(cbind(site_id = site_id, cases_tbl), file.path(tdir, paste0("02_cases_", site_id, ".csv")))
+  readr::write_csv(cbind(site_id = site_id, regimes_tbl), file.path(tdir, paste0("02_regimes_", site_id, ".csv")))
+  cli::cli_alert_success("Per-site summaries: {.path {file.path(tdir, paste0('02_cases_', site_id, '.csv'))}}, 02_regimes_{site_id}.csv")
+
   # Default case: where and when L is replaced, and every value > 5 km that remains.
   od <- outs$default
   if (!is.null(od)) {
@@ -304,8 +332,10 @@ for (site_id in site_ids) {
     if (file.exists(ref_k)) check_reference(outs[[k]], ref_k, paste0(k, " vs before gamma_source (pre_spec11)"))
   }
   # gamma001 equals default while the default constant is 0.01 (G 2026-10-30).
-  check_reference(outs$gamma001, file.path(out_dir, paste0(site_id, "_pblhmod_default.csv.gz")),
-                  "gamma001 vs default (equal while the default gamma is 0.01)")
+  if (isTRUE(cfg$pblh_gamma_default == 0.01)) {
+    check_reference(outs$gamma001, file.path(out_dir, paste0(site_id, "_pblhmod_default.csv.gz")),
+                    "gamma001 vs default (equal while the default gamma is 0.01)")
+  }
 
   cli::cli_h2("Side by side: quantiles per regime [m] (rows valid in all cases and in the operational PBLH)")
   reg <- outs[[1]]$regime # regimes do not depend on combine / neutral_method / gamma

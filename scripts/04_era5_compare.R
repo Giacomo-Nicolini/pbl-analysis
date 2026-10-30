@@ -40,8 +40,8 @@ dir.create(tables_dir, recursive = TRUE, showWarnings = FALSE)
 # Standard sources (G 2026-10-30): pblhmod_default (PBLHmod, EC data only), pblhmod_clim (PBLHmod-clim, ERA5 gamma
 # climatology) and the reference gamma values pblhmod_gamma001 / pblhmod_gamma0025 (supplement).
 runs <- list(
-  default = pblh_options(),
-  clim = pblh_options(gamma_source = "era5_clim", label = "clim"),
+  default = pblh_options_cfg(cfg),
+  clim = pblh_options_cfg(cfg, gamma_source = "era5_clim", label = "clim"),
   gamma001 = pblh_options(gamma = 0.01, label = "gamma001"),
   gamma0025 = pblh_options(gamma = 0.0025, label = "gamma0025")
 )

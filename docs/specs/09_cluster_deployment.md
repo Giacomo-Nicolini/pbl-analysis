@@ -87,11 +87,19 @@ Settings as spec 08 (ETC grid ±1000 m at 1 m, umean only, smoothing EBImage-com
   block centre), float32 + gzip, for all validity sets; per-half-hour metrics computed at 1 m and stored as tables.
   Monthly sums kept, annual climatologies built from them (sum, upsample, smooth, normalise).
 - **Cases:** `pblhmod` (with the revised EC-only constant), `pblhmod_clim` and `era5` at every site; the reference
-  cases `pblhmod_gamma001` and `pblhmod_gamma0025` at the extra sites below (supplement); `measured` where a measured source exists; `era5_bilinear` and the
+  cases `pblhmod_gamma001` and `pblhmod_gamma0025` and the operational ICOS PBLH (`oper`, i.e. `--with-oper`) at the
+  extra sites below, for the supplement only (tables and supplementary figures; never in the main figures); `measured` where a measured source exists; `era5_bilinear` and the
   ±20 % anchors (`pblhmod_x0.8`, `pblhmod_x1.2`) at the sites listed in `config/footprint_extra_sites.txt` (default:
-  BE-Bra, FI-Hyy, FR-Gri, CH-Dav, SE-Svb, IT-Cp2: one per climate/canopy type; G may edit); `oper` only with
-  `--with-oper` (internal outputs).
+  BE-Bra, FI-Hyy, FR-Gri, CH-Dav, SE-Svb, IT-Cp2: one per climate/canopy type; G may edit). `oper` runs by default
+  at the extra sites (supplement) and elsewhere only with `--with-oper` (internal outputs).
 - **Sets/subsets:** `etc`, `kljun`, `kljun_norsl`, `none`; `valid`, `valid_qc`, `valid_qc_used`, `valid_qc_h`.
+- **Reference-year rule** (proposal written by `09_collect.R`): as spec 08 section 4c — the calendar year with the most
+  half-hours usable in both main cases (`pblhmod` and `era5` h present, FFP inputs present, valid under `etc`, and in
+  `valid_qc_used`), within the FLUXES reference period and ERA5 (2020 →), with ≥ 9 months of data; within 2 %,
+  prefer a year overlapping the site's measured source, otherwise the most recent.
+- **Measured case:** the site's primary measured source from `config/measured_sites.csv` (not only Cloudnet). Aerosol
+  sources (SIRTA, MeteoSwiss, later Lanzhot) only on their comparable set (daytime window, PBLHmod convective), as in
+  specs 10–11; turbulence sources (Cloudnet) exact values plus the `bound` case, as in spec 08.
 - **Chunks:** `scripts/08c_make_chunks.R` writes the list site × case × month for each site's reference year
   from the approved reference years only: `09_collect.R` writes the proposal (`output/tables/08_reference_years.csv`);
   after review, the approved list is committed as `config/reference_years.csv` (site, year, reason); 08c aborts if a
@@ -132,7 +140,14 @@ annual = sum of months) — reuse spec-08 tests where they exist.
 
 `CLAUDE.md`: cluster workflow (driver, status files, SLURM templates, local.env, chunks), the γ step and the two
 PBLHmod variants, the new config keys, the
-"no machine data in tracked files" rule extended to `slurm/`. `docs/STATUS.md`: spec 09 row. `docs/project_plan.md`:
+"no machine data in tracked files" rule extended to `slurm/`. One colour and label scheme for all sources
+(PBLHmod, PBLHmod-clim, ERA5, measured, reference γ cases, operational) defined once in `R/plot_utils.R` and used by
+every figure, footprint figures included. **Figure style (G, 2026-10-30):** in `R/plot_utils.R`, (1) one named table
+`pblh_sources_style` (source id → colour, label, plotting order, line type) and (2) one `theme_pblh()` function (fonts,
+sizes, grid, legend position, panel spacing); every figure takes colours, labels and theme only from these two, so G
+can restyle all figures later by editing them alone. Current colours are placeholders (colour-blind-safe, e.g. the
+Okabe–Ito set: PBLHmod blue, PBLHmod-clim bluish green, ERA5 vermillion, measured black, reference γ values sky blue /
+orange, operational reddish purple); G will replace them with the final theme. `docs/STATUS.md`: spec 09 row. `docs/project_plan.md`:
 execution on the cluster, cases and extra-site list. The runbook stays in `docs/local/` (Cowork).
 
 ## Acceptance criteria

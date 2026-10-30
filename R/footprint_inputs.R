@@ -38,30 +38,83 @@ era5_at_halfhour_mid <- function(t_start, era_time, era_h) {
 #' @param t_start Half-hour start times [POSIXct UTC].
 #' @param pblhmod Standard table `pblhmod_default`.
 #' @param era5_center,era5_bilinear Standard tables `era5_blh_center`, `era5_blh_bilinear`.
-#' @param measured Standard table `cloudnet_eps_mlh`, or `NULL`.
-#' @param oper Standard table `icos_oper`, or `NULL` (optional case, internal use only).
-#' @return Tibble with one h column per case [m]: `pblhmod`, `era5`, `era5_bilinear`,
-#'   `pblhmod_x0.8`, `pblhmod_x1.2` (Kljun et al. 2015 Table 5: +-20 %), and if
-#'   given `measured` (exact values only, qc 0/2), `bound` (qc 3 lower bounds as h,
-#'   labelled "bound"), `oper`.
-footprint_h_cases <- function(t_start, pblhmod, era5_center, era5_bilinear, measured = NULL, oper = NULL) {
+#' @param measured Standard table of the site's primary measured source, or `NULL`.
+#' @param oper Standard table `icos_oper`, or `NULL` (optional case: supplement at the extra sites, internal
+#'   elsewhere).
+#' @param pblhmod_clim Standard table `pblhmod_clim` (PBLHmod-clim), or `NULL`.
+#' @param reference Named list of standard tables of the reference gamma values (`pblhmod_gamma001`,
+#'   `pblhmod_gamma0025`); used only with `extra = TRUE`.
+#' @param extra `TRUE` at the extra sites (`config/footprint_extra_sites.txt`, spec 09 A5): adds `era5_bilinear`,
+#'   the +-20 % anchors and the reference gamma cases. Default `TRUE` (spec 08 behaviour).
+#' @param measured_type `"turbulence"` (Cloudnet: exact values qc 0/2 as `measured`, qc 3 lower bounds as `bound`) or
+#'   `"aerosol"` (SIRTA, MeteoSwiss: values only on `comparable`, no `bound`; specs 10-11).
+#' @param comparable Logical per half-hour: the comparable set of an aerosol source (daytime window and PBLHmod
+#'   convective); required for `"aerosol"`.
+#' @return Tibble with one h column per case [m]: `pblhmod`, `pblhmod_clim` (if given), `era5`; at extra sites also
+#'   `era5_bilinear`, `pblhmod_x0.8`, `pblhmod_x1.2` (Kljun et al. 2015 Table 5: +-20 %) and the reference cases;
+#'   `measured` and (turbulence) `bound` if a measured source is given; `oper` if given. Measured values are matched
+#'   by interval (`timestamp_start_utc` <= half-hour start < `timestamp_end_utc`), so an hourly mean applies to both
+#'   half-hours of its hour.
+footprint_h_cases <- function(t_start, pblhmod, era5_center, era5_bilinear, measured = NULL, oper = NULL,
+                              pblhmod_clim = NULL, reference = list(), extra = TRUE,
+                              measured_type = c("turbulence", "aerosol"), comparable = NULL) {
+  measured_type <- match.arg(measured_type)
   at <- function(std) std$pblh_m[match(as.numeric(t_start), as.numeric(std$timestamp_start_utc))]
   p <- at(pblhmod)
-  out <- dplyr::tibble(
-    pblhmod = p,
-    era5 = era5_at_halfhour_mid(t_start, era5_center$timestamp_start_utc, era5_center$pblh_m),
-    era5_bilinear = era5_at_halfhour_mid(t_start, era5_bilinear$timestamp_start_utc, era5_bilinear$pblh_m),
-    `pblhmod_x0.8` = 0.8 * p,
-    `pblhmod_x1.2` = 1.2 * p
-  )
+  out <- dplyr::tibble(pblhmod = p)
+  if (!is.null(pblhmod_clim)) out$pblhmod_clim <- at(pblhmod_clim)
+  out$era5 <- era5_at_halfhour_mid(t_start, era5_center$timestamp_start_utc, era5_center$pblh_m)
+  if (extra) {
+    out$era5_bilinear <- era5_at_halfhour_mid(t_start, era5_bilinear$timestamp_start_utc, era5_bilinear$pblh_m)
+    out$`pblhmod_x0.8` <- 0.8 * p
+    out$`pblhmod_x1.2` <- 1.2 * p
+    for (k in names(reference)) out[[k]] <- at(reference[[k]])
+  }
   if (!is.null(measured)) {
-    i <- match(as.numeric(t_start), as.numeric(measured$timestamp_start_utc))
+    ts <- as.numeric(t_start)
+    i <- findInterval(ts, as.numeric(measured$timestamp_start_utc))
+    i[i == 0] <- NA
+    i[!is.na(i) & ts >= as.numeric(measured$timestamp_end_utc[pmax(i, 1)])] <- NA
+    v <- measured$pblh_m[i]
     q <- measured$qc_flag[i]
-    out$measured <- ifelse(q %in% c(0L, 2L), measured$pblh_m[i], NA_real_)
-    out$bound <- ifelse(q %in% 3L, measured$pblh_m[i], NA_real_)
+    if (measured_type == "turbulence") {
+      out$measured <- ifelse(q %in% c(0L, 2L), v, NA_real_)
+      out$bound <- ifelse(q %in% 3L, v, NA_real_)
+    } else {
+      if (length(comparable) != length(t_start)) cli::cli_abort("{.arg comparable} must have one value per half-hour.")
+      out$measured <- ifelse(comparable %in% TRUE, v, NA_real_)
+    }
   }
   if (!is.null(oper)) out$oper <- at(oper)
   out
+}
+
+#' Extra footprint sites
+#'
+#' Sites with the supplementary footprint cases (`era5_bilinear`, +-20 % anchors, reference gamma values, `oper`;
+#' spec 09 A5): one station code per line, `#` comments.
+#'
+#' @param path File (`config/footprint_extra_sites.txt`).
+#' @return Character vector of station codes.
+footprint_extra_sites <- function(path) {
+  x <- trimws(readLines(path, warn = FALSE))
+  x[nzchar(x) & !startsWith(x, "#")]
+}
+
+#' Primary measured source of a site
+#'
+#' @param ms Output of [read_measured_sites()] (with `primary_source_id` and `method_class`).
+#' @param site_id Station code.
+#' @return `NULL` or a list: `source_id` (standard source id), `type` (`"turbulence"` or `"aerosol"`).
+measured_primary_source <- function(ms, site_id) {
+  if (!"primary_source_id" %in% names(ms)) return(NULL)
+  r <- ms[ms$icos_site == site_id & !is.na(ms$primary_source_id), ]
+  if (nrow(r) == 0) return(NULL)
+  if (nrow(r) > 1) cli::cli_abort("{site_id}: more than one primary measured source in {.file measured_sites.csv}.")
+  if (!r$method_class %in% c("turbulence", "aerosol")) {
+    cli::cli_abort("{site_id}: method_class {.val {r$method_class}} of {.val {r$primary_source_id}} not supported.")
+  }
+  list(source_id = r$primary_source_id, type = r$method_class)
 }
 
 #' ETC roughness-sublayer multiplier

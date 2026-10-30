@@ -13,7 +13,9 @@
 #'   `provider_lat` [decimal degrees N], `provider_lon` [decimal degrees E],
 #'   `distance_km` [km, tower to measurement site], `method_class`,
 #'   `instruments`, `licence`, `url`, `notes` [-]; optional `z_min_agl_m` [m above ground,
-#'   fixed lowest reliable gate of the MLH retrieval; `NA` = per-file default].
+#'   fixed lowest reliable gate of the MLH retrieval; `NA` = per-file default]; optional `primary_source_id`
+#'   [standard source id of the site's primary measured source, used for the footprint `measured` case (spec 09 A5);
+#'   `NA` on the other rows].
 read_measured_sites <- function(file) {
   ms <- readr::read_csv(
     file,

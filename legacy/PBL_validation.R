@@ -62,7 +62,7 @@ remove(kpacks, new.packs)
 
 
 # set data path
-data.path <- 'C:/WORK/DATA/PBL_height/'
+data.path <- '<local path>/'
 
 
 
@@ -99,13 +99,13 @@ t.end <- strptime('2016123123300','%Y%m%d%H%M%S', tz = 'GMT')
 
 # PBL height and Mixing layer references:
 # - small hint
-file.show("C:/WORK/DATA/PBL_height/FI-Hyy_LiDar/readme_tke_mlh.txt")
+file.show("<local path>/readme_tke_mlh.txt")
 # # reference paper
-# openPDF("C:/WORK/new_references/Hellén_2018_ACP_Long-term measurements of volatile organic compounds highlight.pdf")
+# openPDF("<local path>/Hellén_2018_ACP_Long-term measurements of volatile organic compounds highlight.pdf")
 # # other references in Mendeley
 
 # Data are daily files in Matlab *.MAT ﬁle structure 
-mat.path.name <- list.files('C:/WORK/DATA/PBL_height/FI-Hyy_LiDar/', ".mat", full.names = TRUE) 
+mat.path.name <- list.files('<local path>/', ".mat", full.names = TRUE) 
 MLH.ls <- list(NULL)
 TKE.ls <- list(NULL)
 TKE.elev <- c(NULL)
@@ -238,13 +238,13 @@ abline(h=0)
 
 # PBL height and cloud cover references:
 # # - small hint
-# file.show("C:/WORK/DATA/PBL_height/PBL-clouds_hint1.docx")
+# file.show("<local path>/PBL-clouds_hint1.docx")
 # # reference paper
-# openPDF("C:/WORK/new_references/Ungureanu_2010_RRP_Investigation of the cloud cover and planetary.pdf")
+# openPDF("<local path>/Ungureanu_2010_RRP_Investigation of the cloud cover and planetary.pdf")
 # other references in Mendeley
 
 # data
-CB.H <- fread("C:/WORK/DATA/PBL_height/FI-Hyy_smeardata_2014-2019_Cloud-base-height-layer.txt", header = TRUE, sep = ',', na.strings = 'NaN', data.table = FALSE)
+CB.H <- fread("<local path>/FI-Hyy_smeardata_2014-2019_Cloud-base-height-layer.txt", header = TRUE, sep = ',', na.strings = 'NaN', data.table = FALSE)
 
 # timestamp [%Y-%m-%d %H:%M:%S]
 # > use this timestamp as the master for all other variables !!
@@ -296,7 +296,7 @@ CB.H.2 <- CB.H$'HYY_META.Cloud_layer_2'
 # FLUXES and TURBULENCE data ---------------------------------------------------
 
 # # see variables list here:
-# file.show("C:/WORK/DATA/PBL_height/FI-Hyy_smeardata_2014-2019_fluxes-turbulence_variables-list.txt")
+# file.show("<local path>/FI-Hyy_smeardata_2014-2019_fluxes-turbulence_variables-list.txt")
 # # daata are split in different files
 
 
@@ -381,7 +381,7 @@ H.subm <- flux.turb$'HYY_EDDYSUB.H_subm'
 # METEOROLOGY data -------------------------------------------------------------
 
 # # see variables list here:
-# file.show("C:/WORK/DATA/PBL_height/FI-Hyy_smeardata_2014-2019_meteorology_variables-list.txt")
+# file.show("<local path>/FI-Hyy_smeardata_2014-2019_meteorology_variables-list.txt")
 
 # NOTE: PROFILE DATA ARE HERE!
 
@@ -464,7 +464,7 @@ precipitation.int <- meteo$'HYY_META.Precipint'
 # ANCILLARY data ---------------------------------------------------------------
 
 # # see variables list here:
-# file.show("C:/WORK/DATA/PBL_height/FI-Hyy_smeardata_2014-2019_ancillary_variables-list.txt")
+# file.show("<local path>/FI-Hyy_smeardata_2014-2019_ancillary_variables-list.txt")
 # daata are split in different files
 
 
