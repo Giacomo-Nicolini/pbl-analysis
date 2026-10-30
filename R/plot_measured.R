@@ -118,7 +118,7 @@ aerosol_palette <- function() {
 }
 aerosol_labels <- function() {
   c(sirta_mlh_chm15k = "SIRTA CHM15k (STRATfinder)", sirta_mlh_cl31 = "SIRTA CL31 (CABAM)",
-    pblhmod_default = "PBLHmod (default)", era5_blh_center = "ERA5 (tower cell)")
+    pblhmod_default = "PBLHmod", era5_blh_center = "ERA5 (tower cell)")
 }
 
 #' Diurnal cycle by season with an aerosol-based reference, window marked

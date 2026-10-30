@@ -89,8 +89,15 @@ test_that("gamma_climatology and gamma_for_rows: monthly medians, daily with fal
   gc <- gamma_for_rows(day, "era5_clim", daily, cl)
   expect_equal(gc$gamma, c(0.005, 0.005, 0.005, 0.003, 0.005))
   expect_true(all(gc$source_used == "era5_clim"))
+  # a month without a climatology value: constant gamma, flagged (G 2026-10-30)
   cl$median[1] <- NA
-  expect_error(gamma_for_rows(day, "era5_clim", daily, cl), "missing")
+  expect_warning(gf <- gamma_for_rows(day, "era5_clim", daily, cl, gamma_const = 0.01), "missing")
+  expect_equal(gf$gamma, c(0.005, 0.005, 0.005, 0.003, 0.01))
+  expect_equal(gf$source_used[5], "constant_fallback")
+  expect_warning(gd <- gamma_for_rows(day, "era5_daily", daily, cl, gamma_const = 0.02), "missing")
+  expect_equal(gd$gamma[5], 0.02)
+  expect_equal(gd$source_used, c("era5_daily", "era5_clim_fallback", "era5_clim_fallback", "era5_daily",
+                                 "constant_fallback"))
 })
 
 test_that("run_pblh_model gamma_source: constant unchanged, ERA5 tables per day, bg_only keeps N constant", {

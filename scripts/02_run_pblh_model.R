@@ -1,5 +1,7 @@
 # Spec 02: run PBLHmod v2 for the test site(s) and print a summary.
-# Runs: default (bg_only, neutral auto, gamma 0.01 K/m); gamma0025 (legacy gamma);
+# Runs: default (= PBLHmod, EC data only: bg_only, neutral auto, constant gamma 0.01 K/m); reference gamma values
+# (G 2026-10-30): gamma001 (0.01 K/m, Batchvarova & Gryning 1991 as cited by Kljun et al. 2015; equal to default
+# until the EC-only constant is revised) and gamma0025 (0.0025 K/m, legacy ETC code; no literature source found);
 # max_B2 (combine max, neutral B2: behaviour before amendment 11); max_auto;
 # u* filter sensitivity (spec 05, spec 02 amendment 12): ustar04 / ustar06 (u*/WS limit 0.4 / 0.6) and
 # nofilter (u* filter disabled); L consistency (spec 06, spec 02 amendment 13): l_L2 (no check = spec 05),
@@ -12,7 +14,8 @@
 # amendment 1) vs pre_spec06a2/, and every case vs pre_spec07/ (outputs before the reference-period rule,
 # spec 07 step 0), and every case vs pre_spec11/ (outputs before the gamma_source option, spec 11 B: the existing
 # cases must be unchanged); all must be identical (< 1e-9 m, same NA, regime, method).
-# Spec 11 B cases (ERA5 gamma from <derived_dir>/gamma/, script 11a): gamma_era5clim (site x month climatology),
+# Spec 11 B cases (ERA5 gamma from <derived_dir>/gamma/, script 11a): clim (= PBLHmod-clim, standard source
+# pblhmod_clim: site x month climatology; G 2026-10-30),
 # gamma_era5daily (morning gamma of the day, climatology fallback), gamma_era5clim_zmin1000 (fit layer from 1000 m),
 # gamma_era5clim_bgonly (ERA5 climatology in B&G only, N (Eq. B3) from the constant gamma; G 2026-10-30).
 #
@@ -51,7 +54,8 @@ runs <- list(
   lcons5 = pblh_options(l_consistency_factor = 5, label = "lcons5"),
   nofilter_l2 = pblh_options(ustar_ws_max = Inf, ustar_max = Inf, l_source = "L2", label = "nofilter_l2"),
   l_check_allday = pblh_options(l_check_daytime_only = FALSE, label = "l_check_allday"),
-  gamma_era5clim = pblh_options(gamma_source = "era5_clim", label = "gamma_era5clim"),
+  clim = pblh_options(gamma_source = "era5_clim", label = "clim"),
+  gamma001 = pblh_options(gamma = 0.01, label = "gamma001"),
   gamma_era5daily = pblh_options(gamma_source = "era5_daily", label = "gamma_era5daily"),
   gamma_era5clim_zmin1000 = pblh_options(gamma_source = "era5_clim", label = "gamma_era5clim_zmin1000"),
   gamma_era5clim_bgonly = pblh_options(gamma_source = "era5_clim", gamma_scope = "bg_only",
@@ -299,6 +303,9 @@ for (site_id in site_ids) {
     ref_k <- file.path(out_dir, "pre_spec11", paste0(site_id, "_pblhmod_", k, ".csv.gz"))
     if (file.exists(ref_k)) check_reference(outs[[k]], ref_k, paste0(k, " vs before gamma_source (pre_spec11)"))
   }
+  # gamma001 equals default while the default constant is 0.01 (G 2026-10-30).
+  check_reference(outs$gamma001, file.path(out_dir, paste0(site_id, "_pblhmod_default.csv.gz")),
+                  "gamma001 vs default (equal while the default gamma is 0.01)")
 
   cli::cli_h2("Side by side: quantiles per regime [m] (rows valid in all cases and in the operational PBLH)")
   reg <- outs[[1]]$regime # regimes do not depend on combine / neutral_method / gamma

@@ -21,7 +21,8 @@ plot_diurnal_by_season <- function(ds) {
     ggplot2::facet_wrap(~season, nrow = 2) +
     ggplot2::scale_colour_manual(values = pal, labels = lab, name = NULL) +
     ggplot2::scale_fill_manual(values = pal, guide = "none") +
-    ggplot2::scale_linetype_manual(values = c(pblhmod_default = "solid", pblhmod_gamma0025 = "solid",
+    ggplot2::scale_linetype_manual(values = c(pblhmod_default = "solid", pblhmod_clim = "solid",
+                                              pblhmod_gamma001 = "solid", pblhmod_gamma0025 = "solid",
                                               era5_blh_center = "solid", era5_blh_bilinear = "solid",
                                               icos_oper_qc0 = "solid", icos_oper_all = "dashed"),
                                    labels = lab, name = NULL) +

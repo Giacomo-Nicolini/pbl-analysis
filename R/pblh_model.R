@@ -16,7 +16,10 @@
 #'   - `gamma_source` [`"constant"` (default, uses `gamma`), `"era5_clim"`
 #'     (site x month climatology of the ERA5 morning gamma), `"era5_daily"`
 #'     (the day's ERA5 morning gamma, else the climatology)] (spec 11 B, spec 02
-#'     Amendment 14); the ERA5 tables are passed to [run_pblh_model()];
+#'     Amendment 14); the ERA5 tables are passed to [run_pblh_model()]; a month
+#'     without a climatology value uses the constant `gamma` (flagged in
+#'     `gamma_source_used`). The default stays `"constant"`: PBLHmod is computable
+#'     from EC data alone (G 2026-10-30); `"era5_clim"` is the variant PBLHmod-clim;
 #'   - `gamma_scope` [`"all"` (default: the ERA5 gamma in B&G and in N of the neutral
 #'     Eq. B3 and the B2/B3 switch) or `"bg_only"` (ERA5 gamma in B&G only, N from the constant `gamma`;
 #'     G 2026-10-30)] used only when `gamma_source` is not `"constant"`;
@@ -201,7 +204,7 @@ validate_pblh_options <- function(opts) {
 #'   `flag_bg_stopped_gap`, `flag_sign_inconsistent`, `flag_no_positive_h`,
 #'   `flag_polar_day`, `flag_below_zm` (`pblh_m < zm_m`), `excl_flag`; `gamma_used` [K m-1, in B&G],
 #'   `gamma_n_used` [K m-1, in N of the neutral Eq. B3 and the B2/B3 switch], `gamma_source_used` (`constant`, `era5_clim`, `era5_daily`,
-#'   `era5_clim_fallback`; spec 11 B).
+#'   `era5_clim_fallback`, `constant_fallback`; spec 11 B).
 #'   Attribute `pblh_options`: the options used.
 run_pblh_model <- function(data, site_meta, opts = pblh_options(), gamma_era5 = NULL) {
   validate_pblh_options(opts)
@@ -248,7 +251,7 @@ run_pblh_model <- function(data, site_meta, opts = pblh_options(), gamma_era5 = 
   gamma_bg <- gamma         # B&G (Eq. B5)
   gamma_src <- rep("constant", n)
   if (opts$gamma_source != "constant") {
-    gr <- gamma_for_rows(day_id, opts$gamma_source, gamma_era5$daily, gamma_era5$clim)
+    gr <- gamma_for_rows(day_id, opts$gamma_source, gamma_era5$daily, gamma_era5$clim, gamma_const = gamma)
     gamma_bg <- gr$gamma
     gamma_src <- gr$source_used
     if (opts$gamma_scope == "all") gamma <- gamma_bg # else N (Eq. B3, B2/B3 switch) keeps the constant gamma

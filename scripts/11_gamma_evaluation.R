@@ -2,17 +2,20 @@
 #   References: FR-Gri SIRTA CHM15k (aerosol, hourly; primary set = window convective), FI-Hyy Cloudnet epsilon MLH
 #   (turbulence, half-hourly, exact values + censored-tail test; sets convective and all regimes), CH-Dav MeteoSwiss
 #   STRATfinder (aerosol, half-hourly; primary set = window convective, G 2026-10-30), BE-Bra ERA5 only.
-#   Cases: default (gamma 0.01), gamma0025, gamma_era5clim, gamma_era5daily, gamma_era5clim_zmin1000,
+#   Cases: default (PBLHmod, gamma 0.01), clim (PBLHmod-clim, ERA5 climatology), the reference gamma values gamma001
+#   (0.01) and gamma0025, and gamma_era5daily, gamma_era5clim_zmin1000,
 #   gamma_era5clim_bgonly (derived PBLHmod outputs of script 02, standardized in memory).
 #   Per site x case: metrics vs the measurement (pblh_metrics(), median log ratio with day-block bootstrap interval,
 #   symmetric slope), the FI-Hyy censored-tail test, PBLHmod vs ERA5 tower cell (convective and all regimes);
-#   regime shares and stable / neutral heights (gamma_era5clim_bgonly vs gamma_era5clim: the effect of gamma in N of the
+#   regime shares and stable / neutral heights (gamma_era5clim_bgonly vs clim: the effect of gamma in N of the
 #   neutral Eq. B3); clear-day growth curves by apparent solar hour (kt >= 0.65, SW_IN on >= 90 % of the daylight
 #   half-hours; G 2026-10-30); gamma diagnostics (daily vs climatology).
 #
 # Output (<output_dir>): tables/11_gamma_cases_metrics.csv (long), 11_gamma_censored_null.csv,
 # 11_gamma_regime_heights.csv, 11_gamma_daily_vs_clim.csv, 11_growth_clearday_<site>.csv; figures/
-# 11_gamma_by_month_<sites>.png, 11_gamma_cases_<site>.png, 11_growth_clearday_<site>.png.
+# 11_gamma_by_month_<sites>.png, 11_gamma_cases_<site>.png, 11_growth_clearday_<site>.png (main: PBLHmod, PBLHmod-clim,
+# ERA5, measured) and 11s_ref_gamma_cases_<site>.png, 11s_ref_growth_clearday_<site>.png (supplement: reference gamma
+# values; G 2026-10-30).
 #
 # Usage: Rscript scripts/11_gamma_evaluation.R [SITE ...] [--n-boot=N]   (default: FR-Gri FI-Hyy CH-Dav BE-Bra)
 #   Profile: env var R_CONFIG_ACTIVE (default | cluster).
@@ -39,10 +42,14 @@ print_tbl <- function(x) print(as.data.frame(dplyr::mutate(x, dplyr::across(dply
                                row.names = FALSE)
 t0 <- Sys.time()
 
-cases <- c("default", "gamma0025", "gamma_era5clim", "gamma_era5daily", "gamma_era5clim_zmin1000",
+cases <- c("default", "clim", "gamma001", "gamma0025", "gamma_era5daily", "gamma_era5clim_zmin1000",
            "gamma_era5clim_bgonly")
-case_pal <- c(default = "#0072B2", gamma0025 = "#56B4E9", gamma_era5clim = "#009E73", gamma_era5daily = "#E69F00",
-              gamma_era5clim_zmin1000 = "#CC79A7", gamma_era5clim_bgonly = "#882255")
+# Figures (G 2026-10-30): main = PBLHmod (default) and PBLHmod-clim (clim) with ERA5 and the measurement;
+# supplementary = the reference gamma values (gamma001, gamma0025), same layout; the other cases in tables only.
+fig_sets <- list(main = list(cases = c("default", "clim"), prefix = "11_", title = NULL),
+                 ref = list(cases = c("gamma001", "gamma0025"), prefix = "11s_ref_", title = "reference γ values"))
+case_pal <- stats::setNames(source_palette()[paste0("pblhmod_", cases[1:4])], cases[1:4])
+case_lab <- stats::setNames(source_labels()[paste0("pblhmod_", cases[1:4])], cases[1:4])
 refs <- list(`FR-Gri` = list(src = "sirta_mlh_chm15k", type = "aerosol", label = "SIRTA CHM15k"),
              `FI-Hyy` = list(src = "cloudnet_eps_mlh", type = "turbulence", label = "Cloudnet epsilon MLH"),
              `CH-Dav` = list(src = "meteoswiss_stratfinder_mlh", type = "aerosol", label = "MeteoSwiss STRATfinder"))
@@ -78,7 +85,7 @@ for (site_id in site_ids) {
   era <- list(era5_blh_center = rd("era5_blh_center"), era5_blh_bilinear = rd("era5_blh_bilinear"))
 
   # --- regime shares and stable / neutral heights (bgonly vs clim vs default) ---
-  for (k in c("default", "gamma_era5clim", "gamma_era5clim_bgonly")) {
+  for (k in c("default", "clim", "gamma0025", "gamma_era5clim_bgonly")) {
     d <- raw[[k]]
     reg_h[[length(reg_h) + 1]] <- dplyr::bind_rows(lapply(c("stable", "unstable_diag", "convective"), function(r) {
       i <- d$regime %in% r & !is.na(d$pblh_m)
@@ -170,25 +177,30 @@ for (site_id in site_ids) {
   gp <- gc$summary[gc$summary$n >= 10, ]
   gp$x <- gp$ast_hour + 0.5
   gp$comparable <- if (rf$type == "aerosol") gp$x >= opts$aerosol_window[1] & gp$x < opts$aerosol_window[2] else TRUE
-  pal <- c(measured = "black", era5_blh_center = "#D55E00", case_pal)
-  labs_v <- c(measured = rf$label, era5_blh_center = "ERA5 (tower cell)", stats::setNames(cases, cases))
-  gp$variable <- factor(gp$variable, levels = names(pal))
   nd <- dplyr::distinct(gc$summary[c("season", "n_clear_days")])
   nd$label <- paste0(nd$n_clear_days, " clear days")
-  fig <- ggplot2::ggplot(gp) +
-    geom_line_comparable(gp, ggplot2::aes(x, median, colour = variable), c("season", "variable"), "x") +
-    ggplot2::geom_text(data = nd, ggplot2::aes(x = 5.2, y = Inf, label = label), hjust = 0, vjust = 1.3, size = 2.6) +
-    ggplot2::facet_wrap(~season, nrow = 2) +
-    ggplot2::scale_colour_manual(values = pal, labels = labs_v, name = NULL) +
-    ggplot2::scale_x_continuous(breaks = seq(4, 22, 2), limits = c(5, 21)) +
-    ggplot2::labs(x = "Apparent solar time [h, interval midpoint]", y = "Median PBLH / MLH [m]",
-                  subtitle = paste0(site_id, ": clear days (kt >= ", kt_clear, "); hours with every value valid",
-                                    if (rf$type == "turbulence") "; measured: exact values only (biased low by day)" else "",
-                                    "; PBLHmod any regime; n >= 10")) +
-    theme_pub() +
-    ggplot2::guides(colour = ggplot2::guide_legend(nrow = 3))
-  pth <- save_figure(fig, paste0("11_growth_clearday_", site_id), 19, 15)
-  cli::cli_alert_success("{.path {pth[['png']]}}")
+  for (fs in fig_sets) {
+    pal <- c(measured = "black", era5_blh_center = unname(source_palette()["era5_blh_center"]), case_pal[fs$cases])
+    labs_v <- c(measured = rf$label, era5_blh_center = "ERA5 (tower cell)", case_lab[fs$cases])
+    gs <- gp[gp$variable %in% names(pal), ]
+    gs$variable <- factor(gs$variable, levels = names(pal))
+    fig <- ggplot2::ggplot(gs) +
+      geom_line_comparable(gs, ggplot2::aes(x, median, colour = variable), c("season", "variable"), "x") +
+      ggplot2::geom_text(data = nd, ggplot2::aes(x = 5.2, y = Inf, label = label), hjust = 0, vjust = 1.3, size = 2.6) +
+      ggplot2::facet_wrap(~season, nrow = 2) +
+      ggplot2::scale_colour_manual(values = pal, labels = labs_v, name = NULL) +
+      ggplot2::scale_x_continuous(breaks = seq(4, 22, 2), limits = c(5, 21)) +
+      ggplot2::labs(x = "Apparent solar time [h, interval midpoint]", y = "Median PBLH / MLH [m]",
+                    title = fs$title,
+                    subtitle = paste0(site_id, ": clear days (kt >= ", kt_clear, "); hours with every value valid",
+                                      " (all cases)",
+                                      if (rf$type == "turbulence") "; measured: exact values only (biased low by day)" else "",
+                                      "; PBLHmod any regime; n >= 10")) +
+      theme_pub() +
+      ggplot2::guides(colour = ggplot2::guide_legend(nrow = 2))
+    pth <- save_figure(fig, paste0(fs$prefix, "growth_clearday_", site_id), 19, 15)
+    cli::cli_alert_success("{.path {pth[['png']]}}")
+  }
 }
 
 # --- tables ---
@@ -237,21 +249,24 @@ cli::cli_alert_success("{.path {pth[['png']]}}")
 
 # --- case figures: median log ratio with bootstrap interval ---
 for (s in site_ids) {
-  w <- wide[wide$site_id == s & !grepl(":", wide$stratum_set, fixed = TRUE), ]
-  w$panel <- paste0(ifelse(w$reference == "era5_blh_center", "vs ERA5 tower cell", paste("vs", w$reference)), ", ",
-                    w$stratum_set)
-  w$case <- factor(w$case, levels = cases)
-  fig_c <- ggplot2::ggplot(w, ggplot2::aes(case, median_log_ratio, colour = case)) +
-    ratio_lines() +
-    ggplot2::geom_errorbar(ggplot2::aes(ymin = mlr_lo, ymax = mlr_hi), width = 0.2, linewidth = 0.4) +
-    ggplot2::geom_point(size = 1.8) +
-    ggplot2::facet_wrap(~panel) +
-    ggplot2::scale_colour_manual(values = case_pal, guide = "none") +
-    ggplot2::labs(x = NULL, y = "Median ln(PBLHmod / reference) [-] (day-block bootstrap 95 %)", subtitle = s) +
-    theme_pub() +
-    ggplot2::theme(axis.text.x = ggplot2::element_text(angle = 35, hjust = 1))
-  pth <- save_figure(fig_c, paste0("11_gamma_cases_", s), 19, 13)
-  cli::cli_alert_success("{.path {pth[['png']]}}")
+  for (fs in fig_sets) {
+    w <- wide[wide$site_id == s & wide$case %in% fs$cases & !grepl(":", wide$stratum_set, fixed = TRUE), ]
+    w$panel <- paste0(ifelse(w$reference == "era5_blh_center", "vs ERA5 tower cell", paste("vs", w$reference)), ", ",
+                      w$stratum_set)
+    w$case <- factor(w$case, levels = fs$cases)
+    fig_c <- ggplot2::ggplot(w, ggplot2::aes(case, median_log_ratio, colour = case)) +
+      ratio_lines() +
+      ggplot2::geom_errorbar(ggplot2::aes(ymin = mlr_lo, ymax = mlr_hi), width = 0.2, linewidth = 0.4) +
+      ggplot2::geom_point(size = 1.8) +
+      ggplot2::facet_wrap(~panel) +
+      ggplot2::scale_x_discrete(labels = case_lab) +
+      ggplot2::scale_colour_manual(values = case_pal, guide = "none") +
+      ggplot2::labs(x = NULL, y = "Median ln(PBLHmod / reference) [-] (day-block bootstrap 95 %)", title = fs$title,
+                    subtitle = s) +
+      theme_pub()
+    pth <- save_figure(fig_c, paste0(fs$prefix, "gamma_cases_", s), 19, 13)
+    cli::cli_alert_success("{.path {pth[['png']]}}")
+  }
 }
 
 # --- report ---
@@ -261,7 +276,7 @@ prim <- wide[(wide$reference != "era5_blh_center" & wide$stratum_set %in% c("win
                (wide$reference == "era5_blh_center" & !grepl(":", wide$stratum_set, fixed = TRUE)), ]
 print_tbl(prim[c("site_id", "reference", "stratum_set", "case", "n", "median_log_ratio", "mlr_lo", "mlr_hi",
                  "frac_within_factor2", "fb", "nrmsd", "slope_sym")])
-cli::cli_h2("Regime shares and heights (default, ERA5 clim, ERA5 clim in B&G only)")
+cli::cli_h2("Regime shares and heights (default, clim, gamma0025, ERA5 clim in B&G only)")
 print_tbl(reg_h)
 if (is.data.frame(nulls)) {
   cli::cli_h2("FI-Hyy censored-tail test by case")

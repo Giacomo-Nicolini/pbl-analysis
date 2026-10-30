@@ -18,17 +18,22 @@ theme_pub <- function(base_size = 10) {
 #' Colours of the PBLH sources
 #'
 #' One colour-blind-safe palette (Okabe & Ito 2008, "Color Universal Design")
-#' for all figures.
+#' for all figures. Main figures show PBLHmod, PBLHmod-clim, ERA5 and the
+#' measurement; the reference gamma values (`pblhmod_gamma001`,
+#' `pblhmod_gamma0025`) only in supplementary figures (G 2026-10-30), so
+#' `pblhmod_gamma001` shares the colour of `pblhmod_default` (equal for now).
 #'
 #' @return Named character vector of hex colours, names = source ids.
 source_palette <- function() {
   c(
     pblhmod_default = "#0072B2",   # blue
+    pblhmod_clim = "#009E73",      # bluish green
+    pblhmod_gamma001 = "#0072B2",  # blue (supplementary figures only)
     pblhmod_gamma0025 = "#56B4E9", # sky blue
     era5_blh_center = "#D55E00",   # vermillion
     era5_blh_bilinear = "#E69F00", # orange
-    icos_oper_qc0 = "#009E73",     # bluish green
-    icos_oper_all = "#009E73"      # same source, dashed line
+    icos_oper_qc0 = "#CC79A7",     # reddish purple (internal, --with-oper)
+    icos_oper_all = "#CC79A7"      # same source, dashed line
   )
 }
 
@@ -37,8 +42,10 @@ source_palette <- function() {
 #' @return Named character vector, names = source ids.
 source_labels <- function() {
   c(
-    pblhmod_default = "PBLHmod (default)",
-    pblhmod_gamma0025 = "PBLHmod (gamma 0.0025)",
+    pblhmod_default = "PBLHmod",
+    pblhmod_clim = "PBLHmod-clim",
+    pblhmod_gamma001 = "PBLHmod (γ 0.01)",
+    pblhmod_gamma0025 = "PBLHmod (γ 0.0025)",
     era5_blh_center = "ERA5 (tower cell)",
     era5_blh_bilinear = "ERA5 (bilinear)",
     icos_oper_qc0 = "ICOS operational (qc 0)",

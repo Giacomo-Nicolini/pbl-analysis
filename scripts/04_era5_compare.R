@@ -4,7 +4,7 @@
 # static fields), PBLHmod outputs of scripts/02_run_pblh_model.R.
 # Outputs:
 #   <derived_dir>/era5/era5_cell_metadata.csv (one row per site)
-#   <standard_dir>/<site>/<site>__<source>.csv.gz + .yml (5 sources)
+#   <standard_dir>/<site>/<site>__<source>.csv.gz + .yml (7 sources: PBLHmod default, clim, gamma001, gamma0025; ERA5 centre, bilinear; ICOS operational)
 #   <output_dir>/tables/04_metrics_<site>.csv, 04_diurnal_<site>.csv,
 #     04_H_metrics_<site>.csv, 04_gamma_850_700_<site>.csv
 #   <output_dir>/figures/04_*_<site>.png / .pdf (7 figures)
@@ -37,8 +37,12 @@ tables_dir <- file.path(resolve_path(cfg$output_dir, must_exist = FALSE), "table
 dir.create(tables_dir, recursive = TRUE, showWarnings = FALSE)
 
 # PBLHmod runs compared here (same options as scripts/02_run_pblh_model.R).
+# Standard sources (G 2026-10-30): pblhmod_default (PBLHmod, EC data only), pblhmod_clim (PBLHmod-clim, ERA5 gamma
+# climatology) and the reference gamma values pblhmod_gamma001 / pblhmod_gamma0025 (supplement).
 runs <- list(
   default = pblh_options(),
+  clim = pblh_options(gamma_source = "era5_clim", label = "clim"),
+  gamma001 = pblh_options(gamma = 0.01, label = "gamma001"),
   gamma0025 = pblh_options(gamma = 0.0025, label = "gamma0025")
 )
 
@@ -100,6 +104,8 @@ for (site_id in site_ids) {
   hdr <- sl$header[[which(sl$variable == "boundary_layer_height" & sl$cell_row == 0 & sl$cell_col == 0)]]
   std <- list(
     pblhmod_default = standardize_pblhmod(mods$default, "default", runs$default),
+    pblhmod_clim = standardize_pblhmod(mods$clim, "clim", runs$clim),
+    pblhmod_gamma001 = standardize_pblhmod(mods$gamma001, "gamma001", runs$gamma001),
     pblhmod_gamma0025 = standardize_pblhmod(mods$gamma0025, "gamma0025", runs$gamma0025),
     era5_blh_center = standardize_era5_blh(center, bilin, spread, "center", exclusions, meta$utc_offset_h, hdr),
     era5_blh_bilinear = standardize_era5_blh(center, bilin, spread, "bilinear", exclusions, meta$utc_offset_h, hdr),
@@ -117,6 +123,7 @@ for (site_id in site_ids) {
   hours <- era_c$timestamp_utc
   h_def <- match_halfhours_to_hours(std$pblhmod_default$data, hours)
   h_g <- match_halfhours_to_hours(std$pblhmod_gamma0025$data, hours)
+  h_cl <- match_halfhours_to_hours(std$pblhmod_clim$data, hours)
   h_op <- match_halfhours_to_hours(std$icos_oper$data, hours)
   h_op_qc0 <- h_op[!is.na(h_op$qc_flag) & h_op$qc_flag == 0, ]
   op_qc0_hh <- std$icos_oper$data[!is.na(std$icos_oper$data$qc_flag) & std$icos_oper$data$qc_flag == 0, ]
@@ -130,7 +137,8 @@ for (site_id in site_ids) {
     if (with_oper) pair_table(h_op, era_c, "4b_icos_oper_all_vs_era5_center"),
     # pair 5: both half-hourly, compared on the half-hour (start time)
     if (with_oper) pair_table(def_hh, dplyr::rename(op_qc0_hh, timestamp_utc = timestamp_start_utc),
-                              "5_pblhmod_default_vs_icos_oper_qc0_halfhourly")
+                              "5_pblhmod_default_vs_icos_oper_qc0_halfhourly"),
+    pair_table(h_cl, era_c, "6_pblhmod_clim_vs_era5_center")
   )
   # PBLHmod regime as stratum for pairs 4a/4b (operational has no regime)
   reg_h <- stats::setNames(h_def$x_regime, as.character(as.numeric(h_def$timestamp_utc)))
@@ -146,6 +154,7 @@ for (site_id in site_ids) {
   ov_end <- min(as.POSIXct(per$last_utc[per$source %in% ov_src], tz = "UTC"))
   wide <- dplyr::tibble(timestamp_utc = hours, era5_blh_center = era_c$pblh_m[match(hours, era_c$timestamp_utc)])
   wide$pblhmod_default <- h_def$pblh_m[match(hours, h_def$timestamp_utc)]
+  wide$pblhmod_clim <- h_cl$pblh_m[match(hours, h_cl$timestamp_utc)]
   if (with_oper) {
     wide$icos_oper_all <- h_op$pblh_m[match(hours, h_op$timestamp_utc)]
     wide$icos_oper_qc0 <- ifelse(h_op$qc_flag[match(hours, h_op$timestamp_utc)] %in% 0L, wide$icos_oper_all, NA)
@@ -153,7 +162,7 @@ for (site_id in site_ids) {
   wide <- wide[wide$timestamp_utc >= ov_start & wide$timestamp_utc <= ov_end, ]
   wide$season <- season_of(wide$timestamp_utc)
   wide$hour_utc <- as.integer(format(wide$timestamp_utc, "%H", tz = "UTC"))
-  ds <- diurnal_summary(wide, c("pblhmod_default", "era5_blh_center",
+  ds <- diurnal_summary(wide, c("pblhmod_default", "pblhmod_clim", "era5_blh_center",
                                 if (with_oper) c("icos_oper_qc0", "icos_oper_all")))
   readr::write_csv(ds, file.path(tables_dir, paste0("04_diurnal_", site_id, ".csv")))
 
@@ -219,7 +228,8 @@ for (site_id in site_ids) {
   mt <- dplyr::summarise(pairs, .by = pair, n_matched = dplyr::n())
   lost_by_pair <- c(`1_pblhmod_default_vs_era5_center` = lost(h_def), `2_pblhmod_default_vs_era5_bilinear` = lost(h_def),
                     `3_pblhmod_gamma0025_vs_era5_center` = lost(h_g), `4a_icos_oper_qc0_vs_era5_center` = NA,
-                    `4b_icos_oper_all_vs_era5_center` = lost(h_op), `5_pblhmod_default_vs_icos_oper_qc0_halfhourly` = NA)
+                    `4b_icos_oper_all_vs_era5_center` = lost(h_op), `5_pblhmod_default_vs_icos_oper_qc0_halfhourly` = NA,
+                    `6_pblhmod_clim_vs_era5_center` = lost(h_cl))
   mt$lost_require_both <- unname(lost_by_pair[mt$pair])
   print_tbl(mt)
   cli::cli_inform("lost_require_both: ERA5 hours with only one valid half-hour (NA for pairs 4a and 5: qc subset / half-hourly).")
