@@ -296,7 +296,7 @@ collected for the ETC QC report in `docs/local/etc_qc_report.md` (local working 
 
 ## Local setup notes
 
-- PC rebuild procedure: `docs/setup/pc_rebuild_checklist.md` (+ `backup_before_format.ps1`).
+- PC rebuild procedure: `docs/local/setup/pc_rebuild_checklist.md` (+ `backup_before_format.ps1`; local only).
 - Gitignored but needed: `data/raw/` (ICOS L2 zips for BE-Bra, ERA5 CSVs in `era5/`, `era5_pressure_levels/`,
   `era5_single_levels/`, `target_areas/*.kml`), the local secrets folder, `docs/local/` (local working notes).
 - Reference PDFs live in a local bibliography folder outside the repo (not in git; the `file` fields were removed
