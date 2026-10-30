@@ -9,9 +9,8 @@
 #'   the names of [source_palette()]).
 #' @return ggplot object.
 plot_measured_diurnal <- function(dm, ds) {
-  pal <- c(source_palette(), cloudnet_censored = "black", cloudnet_exact = "grey50")
-  lab <- c(source_labels(), cloudnet_censored = "Measured MLH (censored median)",
-           cloudnet_exact = "Measured MLH (qc 0/2 median)")
+  pal <- source_palette()
+  lab <- source_labels()
   meas <- dplyr::bind_rows(
     dplyr::transmute(dm, season, hour_utc, variable = "cloudnet_censored", median = median_censored),
     dplyr::transmute(dm, season, hour_utc, variable = "cloudnet_exact", median = median_exact)
@@ -19,8 +18,7 @@ plot_measured_diurnal <- function(dm, ds) {
   d <- dplyr::bind_rows(meas, ds[ds$variable %in% names(pal), c("season", "hour_utc", "variable", "median")])
   d$variable <- factor(d$variable, levels = intersect(c("cloudnet_censored", "cloudnet_exact", names(pal)),
                                                       unique(d$variable)))
-  lt <- stats::setNames(rep("solid", length(pal)), names(pal))
-  lt["cloudnet_exact"] <- "dashed"
+  lt <- style_of(names(pal), "linetype")
   ggplot2::ggplot(d, ggplot2::aes(hour_utc, median, colour = variable, linetype = variable)) +
     ggplot2::geom_line(linewidth = 0.6, na.rm = TRUE) +
     ggplot2::facet_wrap(~season, nrow = 2) +
@@ -28,7 +26,7 @@ plot_measured_diurnal <- function(dm, ds) {
     ggplot2::scale_linetype_manual(values = lt, labels = lab, name = NULL) +
     ggplot2::scale_x_continuous(breaks = seq(0, 24, 6)) +
     ggplot2::labs(x = "Hour [UTC, bin centred on the hour]", y = "Median PBLH / MLH [m]") +
-    theme_pub() +
+    theme_pblh() +
     ggplot2::guides(colour = ggplot2::guide_legend(nrow = 2), linetype = ggplot2::guide_legend(nrow = 2))
 }
 
@@ -52,7 +50,7 @@ plot_measured_scatter <- function(pt) {
     ggplot2::scale_fill_viridis_c(trans = "log10", name = "Count") +
     ggplot2::facet_grid(source ~ regime, labeller = ggplot2::labeller(regime = regime_labels())) +
     ggplot2::labs(x = "Measured MLH, qc 0/2 [m]", y = "Source [m]") +
-    theme_pub() +
+    theme_pblh() +
     ggplot2::theme(legend.position = "right", aspect.ratio = 1)
 }
 
@@ -62,20 +60,18 @@ plot_measured_scatter <- function(pt) {
 #' @param hq Standard table `cloudnet_eps_mlh` (`timestamp_start_utc`, `qc_flag`).
 #' @return ggplot object.
 plot_measured_qc <- function(hq) {
-  qlab <- c(`0` = "0 measured", `2` = "2 partly censored", `3` = "3 signal-limited (lower bound)",
-            `1` = "1 censored below z_min", `NA` = "NA coverage < min")
+  qlab <- style_of(style_ids("qc"), "label", "qc")
   d <- dplyr::tibble(season = season_of(hq$timestamp_start_utc),
                      hour_utc = hour_bin_centred(hq$timestamp_start_utc + 900), # midpoint, centred bins
                      qc = factor(ifelse(is.na(hq$qc_flag), "NA", hq$qc_flag), levels = names(qlab)))
   ggplot2::ggplot(d, ggplot2::aes(hour_utc, fill = qc)) +
     ggplot2::geom_bar(position = "fill", width = 0.9) +
     ggplot2::facet_wrap(~season, nrow = 2) +
-    ggplot2::scale_fill_manual(values = c(`0` = "#0072B2", `2` = "#56B4E9", `3` = "#E69F00", `1` = "#999999",
-                                          `NA` = "#DDDDDD"), labels = qlab, name = NULL) +
+    ggplot2::scale_fill_manual(values = style_of(names(qlab), "colour", "qc"), labels = qlab, name = NULL) +
     ggplot2::scale_x_continuous(breaks = seq(0, 24, 6)) +
     ggplot2::scale_y_continuous(labels = function(x) paste0(100 * x, " %")) +
     ggplot2::labs(x = "Hour [UTC, bin centred on the hour]", y = "Share of half-hours") +
-    theme_pub() +
+    theme_pblh() +
     ggplot2::guides(fill = ggplot2::guide_legend(nrow = 2))
 }
 
@@ -105,21 +101,14 @@ plot_measured_logratio <- function(pt) {
     ggplot2::facet_wrap(~season, nrow = 2) +
     ggplot2::scale_x_discrete(breaks = as.character(seq(0, 21, 3))) +
     ggplot2::labs(x = "Hour [UTC, bin centred on the hour]", y = "log(source / measured MLH) [-]", fill = NULL) +
-    theme_pub()
+    theme_pblh()
 }
 
 # --- Spec 10: aerosol-based references (hourly interval means) ---
 
-# Colours and labels of the spec-10 figures (Okabe & Ito 2008, as source_palette(); kept separate so that the
-# spec-07 figures are unchanged).
-aerosol_palette <- function() {
-  c(sirta_mlh_chm15k = "black", sirta_mlh_cl31 = "#CC79A7", pblhmod_default = "#0072B2",
-    era5_blh_center = "#D55E00")
-}
-aerosol_labels <- function() {
-  c(sirta_mlh_chm15k = "SIRTA CHM15k (STRATfinder)", sirta_mlh_cl31 = "SIRTA CL31 (CABAM)",
-    pblhmod_default = "PBLHmod", era5_blh_center = "ERA5 (tower cell)")
-}
+# Colours and labels of the spec-10 figures: the sources plotted there (pblh_sources_style).
+aerosol_palette <- function() style_of(c("sirta_mlh_chm15k", "sirta_mlh_cl31", "pblhmod_default", "era5_blh_center"))
+aerosol_labels <- function() style_of(names(aerosol_palette()), "label")
 
 #' Diurnal cycle by season with an aerosol-based reference, window marked
 #'
@@ -136,14 +125,14 @@ plot_aerosol_diurnal <- function(ds, bands) {
   ds$comparable <- ds$x_utc >= b$win_start & ds$x_utc < b$win_end
   ggplot2::ggplot(ds) +
     ggplot2::geom_rect(data = bands, ggplot2::aes(xmin = win_start, xmax = win_end, ymin = -Inf, ymax = Inf),
-                       fill = "#F0E442", alpha = 0.25, inherit.aes = FALSE) +
+                       fill = style_of("aerosol_window", "colour", "element"), alpha = 0.25, inherit.aes = FALSE) +
     geom_line_comparable(ds, ggplot2::aes(x_utc, median, colour = variable), c("season", "variable"), "x_utc") +
     ggplot2::facet_wrap(~season, nrow = 2) +
     ggplot2::scale_colour_manual(values = pal, labels = aerosol_labels(), name = NULL) +
     ggplot2::scale_x_continuous(breaks = seq(0, 24, 6), limits = c(0, 24), expand = c(0, 0)) +
     ggplot2::labs(x = "Hour [UTC, hourly interval means at the midpoint; ERA5 = mean of t and t + 1 h]",
                   y = "Median PBLH / MLH [m]") +
-    theme_pub() +
+    theme_pblh() +
     ggplot2::guides(colour = ggplot2::guide_legend(nrow = 2))
 }
 
@@ -171,7 +160,7 @@ plot_compression_scatter <- function(pt, cs) {
     ggplot2::geom_bin2d(bins = 40) +
     ggplot2::geom_abline(slope = 1, intercept = 0, linewidth = 0.4) +
     ggplot2::geom_abline(slope = 1, intercept = c(-1, 1) * log10(2), linetype = "dashed", linewidth = 0.3) +
-    ggplot2::geom_line(data = ln, ggplot2::aes(x, y), colour = "#D55E00", linewidth = 0.7) +
+    ggplot2::geom_line(data = ln, ggplot2::aes(x, y), colour = style_of("trend", "colour", "element"), linewidth = 0.7) +
     ggplot2::geom_text(data = cs, ggplot2::aes(x = rng[1], y = rng[2], label = label), hjust = 0, vjust = 1,
                        size = 2.6) +
     ggplot2::scale_x_log10(limits = rng) +
@@ -179,7 +168,7 @@ plot_compression_scatter <- function(pt, cs) {
     ggplot2::scale_fill_viridis_c(trans = "log10", name = "Count") +
     ggplot2::facet_wrap(~panel, nrow = 2) +
     ggplot2::labs(x = "Reference MLH [m]", y = "Source [m]") +
-    theme_pub() +
+    theme_pblh() +
     ggplot2::theme(legend.position = "right", aspect.ratio = 1)
 }
 
@@ -214,11 +203,11 @@ plot_bland_altman <- function(pt, bins, band, cs, subtitle = NULL) {
     ggplot2::geom_bin2d(bins = 40) +
     ratio_lines() +
     ggplot2::geom_ribbon(data = band, ggplot2::aes(x = gm, ymin = lo, ymax = hi), inherit.aes = FALSE,
-                         fill = "#D55E00", alpha = 0.3) +
-    ggplot2::geom_line(data = band, ggplot2::aes(gm, fit), colour = "#D55E00", linewidth = 0.7) +
+                         fill = style_of("trend", "colour", "element"), alpha = 0.3) +
+    ggplot2::geom_line(data = band, ggplot2::aes(gm, fit), colour = style_of("trend", "colour", "element"), linewidth = 0.7) +
     ggplot2::geom_errorbar(data = bins, ggplot2::aes(x = gm_m, ymin = q25_d, ymax = q75_d), inherit.aes = FALSE,
                            width = 0, linewidth = 0.4) +
-    ggplot2::geom_point(data = bins, ggplot2::aes(gm_m, median_d), size = 1.6, shape = 21, fill = "white") +
+    ggplot2::geom_point(data = bins, ggplot2::aes(gm_m, median_d), size = 1.6, shape = 21, fill = style_of("point_fill", "colour", "element")) +
     ggplot2::geom_text(data = cs, ggplot2::aes(x = xr[1], y = Inf, label = label), hjust = 0, vjust = 1.2,
                        size = 2.4) +
     ggplot2::scale_x_log10() +
@@ -226,6 +215,6 @@ plot_bland_altman <- function(pt, bins, band, cs, subtitle = NULL) {
     ggplot2::facet_wrap(~panel, nrow = 2) +
     ggplot2::labs(x = "Geometric mean of source and reference [m]", y = "ln(source / reference) [-]",
                   subtitle = subtitle) +
-    theme_pub() +
+    theme_pblh() +
     ggplot2::theme(legend.position = "right")
 }

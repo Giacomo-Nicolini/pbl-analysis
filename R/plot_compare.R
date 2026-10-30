@@ -21,14 +21,10 @@ plot_diurnal_by_season <- function(ds) {
     ggplot2::facet_wrap(~season, nrow = 2) +
     ggplot2::scale_colour_manual(values = pal, labels = lab, name = NULL) +
     ggplot2::scale_fill_manual(values = pal, guide = "none") +
-    ggplot2::scale_linetype_manual(values = c(pblhmod_default = "solid", pblhmod_clim = "solid",
-                                              pblhmod_gamma001 = "solid", pblhmod_gamma0025 = "solid",
-                                              era5_blh_center = "solid", era5_blh_bilinear = "solid",
-                                              icos_oper_qc0 = "solid", icos_oper_all = "dashed"),
-                                   labels = lab, name = NULL) +
+    ggplot2::scale_linetype_manual(values = style_of(names(pal), "linetype"), labels = lab, name = NULL) +
     ggplot2::scale_x_continuous(breaks = seq(0, 24, 6)) +
     ggplot2::labs(x = "Hour [UTC]", y = "PBLH [m]") +
-    theme_pub() +
+    theme_pblh() +
     ggplot2::guides(colour = ggplot2::guide_legend(nrow = 2), linetype = ggplot2::guide_legend(nrow = 2))
 }
 
@@ -50,7 +46,7 @@ plot_scatter_pair <- function(pt, xlab = "ERA5 BLH [m]", ylab = "PBLHmod [m]") {
     ggplot2::scale_fill_viridis_c(trans = "log10", name = "Hours") +
     ggplot2::facet_wrap(~regime, nrow = 1, labeller = ggplot2::as_labeller(regime_labels())) +
     ggplot2::labs(x = xlab, y = ylab) +
-    theme_pub() +
+    theme_pblh() +
     ggplot2::theme(legend.position = "right", aspect.ratio = 1)
 }
 
@@ -64,12 +60,12 @@ plot_logratio_by_hour <- function(pt, ylab = "log(PBLHmod / ERA5) [-]") {
   pt$lr <- log(pt$mod / pt$ref)
   ggplot2::ggplot(pt, ggplot2::aes(factor(hour_utc), lr)) +
     ratio_lines() +
-    ggplot2::geom_boxplot(outlier.shape = NA, fill = "grey85", linewidth = 0.3) +
+    ggplot2::geom_boxplot(outlier.shape = NA, fill = style_of("box_fill", "colour", "element"), linewidth = 0.3) +
     ggplot2::coord_cartesian(ylim = c(-3, 3)) +
     ggplot2::facet_wrap(~season, nrow = 2) +
     ggplot2::scale_x_discrete(breaks = as.character(seq(0, 21, 3))) +
     ggplot2::labs(x = "Hour [UTC]", y = ylab) +
-    theme_pub()
+    theme_pblh()
 }
 
 #' ERA5 3x3 spread and cell sensitivity (figure 4)
@@ -82,11 +78,11 @@ plot_era5_spread <- function(era_c, era_b) {
   a <- dplyr::tibble(hour_utc = as.integer(format(era_c$timestamp_start_utc, "%H", tz = "UTC")),
                      cv9 = era_c$x_blh_cv9)
   p1 <- ggplot2::ggplot(a[!is.na(a$cv9), ], ggplot2::aes(factor(hour_utc), cv9)) +
-    ggplot2::geom_boxplot(outlier.shape = NA, fill = "grey85", linewidth = 0.3) +
+    ggplot2::geom_boxplot(outlier.shape = NA, fill = style_of("box_fill", "colour", "element"), linewidth = 0.3) +
     ggplot2::coord_cartesian(ylim = c(0, 0.6)) +
     ggplot2::scale_x_discrete(breaks = as.character(seq(0, 21, 3))) +
     ggplot2::labs(x = "Hour [UTC]", y = "CV of ERA5 BLH over 3x3 cells [-]", title = "a") +
-    theme_pub()
+    theme_pblh()
   b <- dplyr::inner_join(
     dplyr::tibble(t = era_c$timestamp_start_utc, center = era_c$pblh_m),
     dplyr::tibble(t = era_b$timestamp_start_utc, bilin = era_b$pblh_m),
@@ -101,7 +97,7 @@ plot_era5_spread <- function(era_c, era_b) {
     ggplot2::scale_fill_viridis_c(trans = "log10", name = "Hours") +
     ggplot2::coord_equal() +
     ggplot2::labs(x = "ERA5 BLH, tower cell [m]", y = "ERA5 BLH, bilinear [m]", title = "b") +
-    theme_pub() +
+    theme_pblh() +
     ggplot2::theme(legend.position = "right")
   list(p1, p2)
 }
@@ -120,7 +116,7 @@ plot_h_ec_vs_era5 <- function(hd) {
     ggplot2::scale_fill_viridis_c(trans = "log10", name = "Hours") +
     ggplot2::coord_equal(xlim = lim, ylim = lim) +
     ggplot2::labs(x = "ERA5 H, tower cell [W m-2]", y = "EC H (PBLHmod forcing) [W m-2]", title = "a") +
-    theme_pub() +
+    theme_pblh() +
     ggplot2::theme(legend.position = "right")
   hd$hour_mid <- (as.integer(format(hd$timestamp_utc, "%H", tz = "UTC")) - 0.5) %% 24
   cyc <- dplyr::summarise(hd, .by = c(season, hour_mid), EC = mean(H_ec_Wm2), ERA5 = mean(H_era5_Wm2))
@@ -132,11 +128,11 @@ plot_h_ec_vs_era5 <- function(hd) {
     ggplot2::geom_hline(yintercept = 0, linewidth = 0.3) +
     ggplot2::geom_line(linewidth = 0.6) +
     ggplot2::facet_wrap(~season, nrow = 2) +
-    ggplot2::scale_colour_manual(values = c(EC = unname(source_palette()["pblhmod_default"]),
-                                            ERA5 = unname(source_palette()["era5_blh_center"])), name = NULL) +
+    ggplot2::scale_colour_manual(values = c(EC = unname(style_of("pblhmod_default")),
+                                            ERA5 = unname(style_of("era5_blh_center"))), name = NULL) +
     ggplot2::scale_x_continuous(breaks = seq(0, 24, 6)) +
     ggplot2::labs(x = "Hour [UTC, interval midpoint]", y = "Mean H [W m-2]", title = "b") +
-    theme_pub()
+    theme_pblh()
   list(p1, p2)
 }
 
@@ -150,13 +146,13 @@ plot_logratio_by_cloud <- function(pc) {
   pc$lr <- log(pc$mod / pc$ref)
   ggplot2::ggplot(pc, ggplot2::aes(cloud, lr)) +
     ratio_lines() +
-    ggplot2::geom_boxplot(outlier.shape = NA, fill = "grey85", linewidth = 0.3, varwidth = TRUE) +
+    ggplot2::geom_boxplot(outlier.shape = NA, fill = style_of("box_fill", "colour", "element"), linewidth = 0.3, varwidth = TRUE) +
     ggplot2::coord_cartesian(ylim = c(-3, 3)) +
     ggplot2::facet_wrap(~regime, labeller = ggplot2::as_labeller(regime_labels())) +
     ggplot2::scale_x_discrete(labels = c(no_cloud = "no cloud", cbh_le_2000 = "base <= 2 km",
                                          cbh_gt_2000 = "base > 2 km")) +
     ggplot2::labs(x = "ERA5 cloud-base class", y = "log(PBLHmod / ERA5) [-]") +
-    theme_pub()
+    theme_pblh()
 }
 
 #' Monthly climatology of gamma_850_700 (figure 7)
@@ -176,10 +172,10 @@ plot_gamma_monthly <- function(gm) {
     ggplot2::geom_line(linewidth = 0.6) +
     ggplot2::geom_point(size = 1.2) +
     ggplot2::scale_x_continuous(breaks = 1:12, labels = month.abb, limits = c(1, 12.9)) +
-    ggplot2::scale_colour_manual(values = c("#0072B2", "#D55E00"), name = NULL) +
-    ggplot2::scale_fill_manual(values = c("#0072B2", "#D55E00"), name = NULL) +
+    ggplot2::scale_colour_manual(values = unname(style_of(c("hour_00", "hour_12"), "colour", "element")), name = NULL) +
+    ggplot2::scale_fill_manual(values = unname(style_of(c("hour_00", "hour_12"), "colour", "element")), name = NULL) +
     ggplot2::labs(x = NULL, y = expression(gamma[850-700] ~ "[K m"^-1 * "]")) +
-    theme_pub()
+    theme_pblh()
 }
 
 # Reference lines for log ratios: 0 (solid) and +-log(2) (factor 2, dashed).
@@ -190,8 +186,5 @@ ratio_lines <- function() {
   )
 }
 
-# Readable PBLHmod regime names for facet strips.
-regime_labels <- function() {
-  c(stable = "stable", unstable_diag = "unstable (diagnostic)", convective = "convective (B&G)",
-    mixed = "mixed (transition hour)")
-}
+# Readable PBLHmod regime names for facet strips (pblh_sources_style, group regime).
+regime_labels <- function() style_of(c("stable", "unstable_diag", "convective", "mixed"), "label", "regime")

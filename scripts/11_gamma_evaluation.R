@@ -48,8 +48,8 @@ cases <- c("default", "clim", "gamma001", "gamma0025", "gamma_era5daily", "gamma
 # supplementary = the reference gamma values (gamma001, gamma0025), same layout; the other cases in tables only.
 fig_sets <- list(main = list(cases = c("default", "clim"), prefix = "11_", title = NULL),
                  ref = list(cases = c("gamma001", "gamma0025"), prefix = "11s_ref_", title = "reference γ values"))
-case_pal <- stats::setNames(source_palette()[paste0("pblhmod_", cases[1:4])], cases[1:4])
-case_lab <- stats::setNames(source_labels()[paste0("pblhmod_", cases[1:4])], cases[1:4])
+case_pal <- stats::setNames(style_of(paste0("pblhmod_", cases[1:4])), cases[1:4])
+case_lab <- stats::setNames(style_of(paste0("pblhmod_", cases[1:4]), "label"), cases[1:4])
 refs <- list(`FR-Gri` = list(src = "sirta_mlh_chm15k", type = "aerosol", label = "SIRTA CHM15k"),
              `FI-Hyy` = list(src = "cloudnet_eps_mlh", type = "turbulence", label = "Cloudnet epsilon MLH"),
              `CH-Dav` = list(src = "meteoswiss_stratfinder_mlh", type = "aerosol", label = "MeteoSwiss STRATfinder"))
@@ -180,8 +180,9 @@ for (site_id in site_ids) {
   nd <- dplyr::distinct(gc$summary[c("season", "n_clear_days")])
   nd$label <- paste0(nd$n_clear_days, " clear days")
   for (fs in fig_sets) {
-    pal <- c(measured = "black", era5_blh_center = unname(source_palette()["era5_blh_center"]), case_pal[fs$cases])
-    labs_v <- c(measured = rf$label, era5_blh_center = "ERA5 (tower cell)", case_lab[fs$cases])
+    pal <- c(measured = unname(style_of(rf$src)), era5_blh_center = unname(style_of("era5_blh_center")), case_pal[fs$cases])
+    labs_v <- c(measured = unname(style_of(rf$src, "label")), era5_blh_center = unname(style_of("era5_blh_center", "label")),
+                case_lab[fs$cases])
     gs <- gp[gp$variable %in% names(pal), ]
     gs$variable <- factor(gs$variable, levels = names(pal))
     fig <- ggplot2::ggplot(gs) +
@@ -196,7 +197,7 @@ for (site_id in site_ids) {
                                       " (all cases)",
                                       if (rf$type == "turbulence") "; measured: exact values only (biased low by day)" else "",
                                       "; PBLHmod any regime; n >= 10")) +
-      theme_pub() +
+      theme_pblh() +
       ggplot2::guides(colour = ggplot2::guide_legend(nrow = 2))
     pth <- save_figure(fig, paste0(fs$prefix, "growth_clearday_", site_id), 19, 15)
     cli::cli_alert_success("{.path {pth[['png']]}}")
@@ -239,11 +240,11 @@ gm$site_id <- factor(gm$site_id, levels = site_ids)
 fig_g <- ggplot2::ggplot(gm, ggplot2::aes(factor(month), gamma)) +
   ggplot2::geom_hline(yintercept = 0.01, linewidth = 0.3) +
   ggplot2::geom_hline(yintercept = 0.0025, linetype = "dashed", linewidth = 0.3) +
-  ggplot2::geom_boxplot(outlier.size = 0.3, outlier.alpha = 0.3, linewidth = 0.3, fill = "#009E73", alpha = 0.4) +
+  ggplot2::geom_boxplot(outlier.size = 0.3, outlier.alpha = 0.3, linewidth = 0.3, fill = style_of("gamma_era5", "colour", "element"), alpha = 0.4) +
   ggplot2::facet_wrap(~site_id, nrow = 2) +
   ggplot2::labs(x = "Month", y = "Daily morning gamma [K m-1] (ERA5, 500-3500 m above the site)",
                 subtitle = "Lines: 0.01 (PBLHmod default, solid) and 0.0025 K m-1 (dashed)") +
-  theme_pub()
+  theme_pblh()
 pth <- save_figure(fig_g, paste0("11_gamma_by_month_", paste(site_ids, collapse = "_")), 19, 13)
 cli::cli_alert_success("{.path {pth[['png']]}}")
 
@@ -263,7 +264,7 @@ for (s in site_ids) {
       ggplot2::scale_colour_manual(values = case_pal, guide = "none") +
       ggplot2::labs(x = NULL, y = "Median ln(PBLHmod / reference) [-] (day-block bootstrap 95 %)", title = fs$title,
                     subtitle = s) +
-      theme_pub()
+      theme_pblh()
     pth <- save_figure(fig_c, paste0(fs$prefix, "gamma_cases_", s), 19, 13)
     cli::cli_alert_success("{.path {pth[['png']]}}")
   }

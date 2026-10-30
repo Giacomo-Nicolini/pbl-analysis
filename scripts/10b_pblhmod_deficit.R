@@ -185,7 +185,7 @@ gp$variable <- factor(gp$variable, levels = intersect(names(pal), unique(gp$vari
 nd$label <- paste0(nd$n_clear_days, " clear days")
 fig <- ggplot2::ggplot(gp, ggplot2::aes(x, median, colour = variable, fill = variable)) +
   ggplot2::annotate("rect", xmin = opts$aerosol_window[1], xmax = opts$aerosol_window[2], ymin = -Inf, ymax = Inf,
-                    fill = "#F0E442", alpha = 0.25) +
+                    fill = style_of("aerosol_window", "colour", "element"), alpha = 0.25) +
   ggplot2::geom_ribbon(ggplot2::aes(ymin = q25, ymax = q75), alpha = 0.15, colour = NA) +
   ggplot2::geom_line(linewidth = 0.6) +
   ggplot2::geom_text(data = nd, ggplot2::aes(x = 5.2, y = Inf, label = label), inherit.aes = FALSE, hjust = 0,
@@ -197,7 +197,7 @@ fig <- ggplot2::ggplot(gp, ggplot2::aes(x, median, colour = variable, fill = var
   ggplot2::labs(x = "Apparent solar time [h, interval midpoint]", y = "Median PBLH / MLH [m] (band: IQR)",
                 subtitle = sprintf("Clear days (kt >= %.2f); hours with all three valid; PBLHmod any regime; n >= 10 per hour",
                                    kt_clear)) +
-  theme_pub()
+  theme_pblh()
 pth <- save_figure(fig, paste0("10b_growth_clear_days_", site_id), 17, 13)
 cli::cli_alert_success("{.path {pth[['png']]}}")
 for (s in c("MAM", "JJA")) {
