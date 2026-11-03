@@ -343,11 +343,12 @@ read_icos_fluxes <- function(path, utc_offset_h) {
 #'   [-]; `fn_H_CORR` energy-balance corrected H [W m-2]; `fn_NIGHT` night flag
 #'   [-, 1 = night]; `fn_SW_IN_POT` potential shortwave radiation [W m-2];
 #'   `fn_WS_F` wind speed, gap-filled [m s-1]; `fn_P_F` precipitation, gap-filled
-#'   [mm]; `fn_NEE_VUT_REF_QC` [-, 0 measured, 1-3 gap-filled] (if present; spec 08); plus
+#'   [mm]; `fn_NEE_VUT_REF_QC`, `fn_NEE_CUT_REF_QC` [-, 0 measured, 1-3 gap-filled] (if present; spec 08;
+#'   CUT for the fallback of [nee_ref_qc()], spec 09 amendment 2); plus
 #'   the time columns and `src_fluxnet` [logical].
 read_icos_fluxnet <- function(path, utc_offset_h) {
   d <- read_icos_csv(path, icos_cols$fluxnet, utc_offset_h, label = "FLUXNET",
-                     optional_pattern = "^NEE_VUT_REF_QC$")
+                     optional_pattern = "^NEE_(VUT|CUT)_REF_QC$")
   info <- attr(d, "read_info")
   d <- prefix_cols(d, "fn_")
   names(d)[names(d) == ".in_file"] <- "src_fluxnet"

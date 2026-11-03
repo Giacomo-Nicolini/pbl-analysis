@@ -117,3 +117,47 @@ test_that("run_site_exit_status: non-zero when a step failed, propagated as the 
     expect_true(any(grepl("step +action +exit_code", readLines(out))))
   }
 })
+
+test_that("measured steps (spec 09 amendment 2): registered, scripts by provider, sub-scripts and raw files hashed", {
+  reg <- pipeline_steps()
+  expect_true(all(c("meas_std", "meas_cmp") %in% names(reg)))
+  expect_equal(reg$meas_cmp$upstream, c("04", "meas_std"))
+  for (s in c(reg$meas_std$script, reg$meas_std$extra_scripts, reg$meas_cmp$extra_scripts)) {
+    expect_true(file.exists(here::here(s)), label = s)
+  }
+  expect_equal(measured_site_scripts("cloudnet")$standard, "scripts/07c_cloudnet_mlh.R")
+  expect_equal(measured_site_scripts("SIRTA-ReOBS")$compare, "scripts/10_measured_compare.R")
+  expect_length(measured_site_scripts("MeteoSwiss")$compare, 0)
+  expect_error(measured_site_scripts("none"), "provider")
+  # primary providers of the committed pairings
+  ms <- read_measured_sites(here::here("config", "measured_sites.csv"))
+  expect_equal(vapply(c("FI-Hyy", "FR-Gri", "CH-Dav"), function(s) measured_primary_provider(ms, s), ""),
+               c(`FI-Hyy` = "cloudnet", `FR-Gri` = "SIRTA-ReOBS", `CH-Dav` = "MeteoSwiss"))
+  expect_error(measured_primary_provider(ms, "BE-Bra"), "0 primary")
+  # config/measured_run_sites.txt: stations with a primary measured source (FI-Lom, DE-RuS later: Cloudnet not yet downloaded)
+  ids <- trimws(readLines(here::here("config", "measured_run_sites.txt"), warn = FALSE))
+  ids <- ids[nzchar(ids) & !startsWith(ids, "#")]
+  expect_equal(ids, c("FI-Hyy", "FR-Gri", "CH-Dav"))
+  expect_true(all(ids %in% ms$icos_site[!is.na(ms$primary_source_id)]))
+
+  cfg <- local_pipeline_cfg()
+  cfg$measured_dir <- file.path(dirname(cfg$derived_dir), "measured", "{site}")
+  cfg$cloudnet_dir <- file.path(dirname(cfg$derived_dir), "cloudnet", "{site}")
+  md <- file.path(dirname(cfg$derived_dir), "measured", "XX-Tst", "sub")
+  dir.create(md, recursive = TRUE)
+  writeLines("nc", file.path(md, "MeteoSwiss_STRATfinder_x.nc"))
+  inp <- site_input_files("XX-Tst", cfg, "measured_raw")
+  expect_equal(basename(inp$path), "MeteoSwiss_STRATfinder_x.nc") # recursive; missing Cloudnet folder: no rows
+  # the fake runner sees the dispatcher with --part; a changed sub-script changes the hash
+  r <- fake_runner()
+  res <- suppressMessages(run_site_steps("XX-Tst", c("meas_std"), cfg, runner = r$run))
+  expect_equal(res$action, "ok")
+  expect_equal(r$calls(), "09m_measured.R XX-Tst --part=standard")
+  root <- withr::local_tempdir()
+  dir.create(file.path(root, "R"))
+  dir.create(file.path(root, "scripts"))
+  for (s in c(reg$meas_std$script, reg$meas_std$extra_scripts)) writeLines("x", file.path(root, s))
+  h1 <- step_inputs_hash("meas_std", "XX-Tst", cfg, root = root, input_files = inp)
+  writeLines("y", file.path(root, "scripts/11b_meteoswiss_mlh.R"))
+  expect_false(identical(h1, step_inputs_hash("meas_std", "XX-Tst", cfg, root = root, input_files = inp)))
+})

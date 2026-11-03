@@ -65,13 +65,13 @@ test_that("footprint_validity: conditions at the boundaries", {
 
 test_that("footprint_subsets are nested", {
   s <- footprint_subsets(c(TRUE, TRUE, TRUE, TRUE, FALSE), nee = c(1, 1, NA, 1, 1), nee_data_flag = c(0, 0, 0, 2, 0),
-                         nee_vut_ref_qc = c(0, 1, 0, 0, 0))
+                         nee_ref_qc = c(0, 1, 0, 0, 0))
   expect_equal(s$valid, c(TRUE, TRUE, TRUE, TRUE, FALSE))
   expect_equal(s$valid_qc, c(TRUE, TRUE, FALSE, FALSE, FALSE))
   expect_equal(s$valid_qc_used, c(TRUE, FALSE, FALSE, FALSE, FALSE))
   expect_true(all(s$valid >= s$valid_qc & s$valid_qc >= s$valid_qc_used))
   # valid_qc_h: H_F_MDS_QC == 0 where FLUXNET has a QC value, otherwise L2 H present; nested in valid only
-  s2 <- footprint_subsets(c(TRUE, TRUE, TRUE, TRUE, FALSE), nee = NA, nee_data_flag = NA, nee_vut_ref_qc = NA,
+  s2 <- footprint_subsets(c(TRUE, TRUE, TRUE, TRUE, FALSE), nee = NA, nee_data_flag = NA, nee_ref_qc = NA,
                           h_l2 = c(50, 50, NA, 10, 10), h_f_mds_qc = c(0, 1, NA, NA, 0))
   expect_equal(s2$valid_qc_h, c(TRUE, FALSE, FALSE, TRUE, FALSE))
   expect_true(all(s2$valid >= s2$valid_qc_h))
@@ -233,4 +233,80 @@ test_that("region_share_inside, rebmann_criteria and fp_peak_change", {
   pc <- fp_peak_change(110, 100)
   expect_equal(c(pc$dxmax_pct, pc$dfymax_pct), c(10, 100 * (100 / 110 - 1)))
   expect_equal(nrow(kljun2015_table5_h20()), 3)
+})
+
+test_that("FLUXNET NEE QC (spec 09 amendment 2): reader keeps VUT and CUT QC, CUT fallback where VUT is entirely missing", {
+  # GL-ZaF-like: FLUXNET from 2023 only, FLUXES from 2022, utc offset 0; synthetic values
+  ts <- as.POSIXct("2023-01-01 00:00", tz = "UTC") + 1800 * (0:5)
+  fn_csv <- function(extra) {
+    p <- withr::local_tempfile(fileext = ".csv", .local_envir = parent.frame())
+    x <- data.frame(TIMESTAMP_START = format(ts, "%Y%m%d%H%M"), TIMESTAMP_END = format(ts + 1800, "%Y%m%d%H%M"),
+                    TA_F = -10, TA_F_QC = 0, PA_F = 101, PA_F_QC = 0, H_F_MDS = 5, H_F_MDS_QC = 0, H_CORR = 5,
+                    NIGHT = 1, SW_IN_POT = 0, WS_F = 3, P_F = 0, extra, check.names = FALSE)
+    utils::write.csv(x, p, row.names = FALSE, quote = FALSE)
+    p
+  }
+  site_tab <- function(fn) {
+    # the FLUXES side: one 2022 row (no FLUXNET) + the six FLUXNET rows, NEE QC good on the 2022 row and rows 1-4;
+    # footprint inputs that pass every validity set
+    t_all <- c(as.POSIXct("2022-06-01", tz = "UTC"), ts)
+    qc_cols <- intersect(c("timestamp_start_utc", "fn_NEE_VUT_REF_QC", "fn_NEE_CUT_REF_QC"), names(fn))
+    dplyr::tibble(timestamp_start_utc = t_all, NEE = c(1, 1, 1, 1, 1, NA, NA), NEE_DATA_FLAG = c(0, 0, 0, 0, 0, 2, 0),
+                  src_fluxnet = c(FALSE, rep(TRUE, 6)), WS = 3, MO_LENGTH = 100, V_SIGMA = 0.5, USTAR = 0.3, WD = 180,
+                  zm_m = 30, canopy_height_m = 10, excl_flag = FALSE) |>
+      dplyr::left_join(fn[qc_cols], by = "timestamp_start_utc")
+  }
+  subsets_of <- function(d) {
+    pm <- dplyr::tibble(timestamp_start_utc = d$timestamp_start_utc, regime = "stable", flag_ustar_implausible = FALSE)
+    tab <- footprint_input_table(d, pm, list(pblhmod = rep(1000, nrow(d))))
+    list(tab = tab, sub = footprint_flags_all(tab, 5)$subsets)
+  }
+  rd <- function(extra) suppressWarnings(read_icos_fluxnet(fn_csv(extra), 0))
+
+  # VUT available (with a -9999 row), CUT different: everything from VUT, identical to the subset before the rule
+  vut <- rd(data.frame(NEE_VUT_REF_QC = c(0, -9999, 1, 0, 0, 0), NEE_CUT_REF_QC = c(1, 0, 0, 0, 0, 0)))
+  expect_equal(vut$fn_NEE_VUT_REF_QC, c(0, NA, 1, 0, 0, 0))
+  expect_equal(vut$fn_NEE_CUT_REF_QC, c(1, 0, 0, 0, 0, 0))
+  d <- site_tab(vut)
+  expect_equal(nee_ref_qc(d)$source, "VUT")
+  x <- subsets_of(d)
+  expect_identical(x$tab$nee_ref_qc, d$fn_NEE_VUT_REF_QC)
+  expect_true(all(x$tab$nee_qc_source == "VUT"))
+  before <- footprint_subsets(TRUE, d$NEE, d$NEE_DATA_FLAG, d$fn_NEE_VUT_REF_QC)$valid_qc_used
+  expect_true(all(x$sub$valid__none__pblhmod))
+  for (s in c("kljun_norsl", "etc", "none")) expect_identical(x$sub[[paste0("valid_qc_used__", s, "__pblhmod")]], before)
+  expect_equal(sum(before), 2L) # rows 1 and 4 of FLUXNET
+  s <- nee_qc_status(d)
+  expect_equal(s$year, c(NA, 2022L, 2023L))
+  expect_equal(s$nee_qc_source, rep("VUT", 3))
+  expect_equal(s$status, c("ok", "no_fluxnet", "ok"))
+  w <- s[is.na(s$year), ]
+  expect_equal(c(w$n_fluxnet, w$n_vut_qc, w$n_qc, w$n_qc0, w$n_qc_gapfilled, w$n_nee_good, w$n_used),
+               c(6L, 5L, 5L, 4L, 1L, 4L, 2L))
+
+  # GL-ZaF: VUT -9999 on every row, CUT filled -> CUT; 2022 keeps "no_fluxnet"
+  zaf <- rd(data.frame(NEE_VUT_REF_QC = -9999, NEE_CUT_REF_QC = c(0, 1, 0, 2, 0, -9999)))
+  d <- site_tab(zaf)
+  expect_equal(nee_ref_qc(d)$source, "CUT")
+  x <- subsets_of(d)
+  expect_identical(x$tab$nee_ref_qc, d$fn_NEE_CUT_REF_QC)
+  expect_equal(x$sub$valid_qc_used__etc__pblhmod, c(FALSE, TRUE, FALSE, TRUE, FALSE, FALSE, FALSE))
+  s <- nee_qc_status(d)
+  expect_equal(s$nee_qc_source, rep("CUT", 3))
+  expect_equal(s$status, c("ok", "no_fluxnet", "ok"))
+  w <- s[is.na(s$year), ]
+  expect_equal(c(w$n_vut_qc, w$n_qc, w$n_qc0, w$n_used), c(0L, 5L, 3L, 2L))
+
+  # neither: status names the cause
+  absent <- rd(data.frame(NEE_VUT_REF = 1)) # NEE_VUT_REF present, no QC column
+  expect_false(any(c("fn_NEE_VUT_REF_QC", "fn_NEE_CUT_REF_QC") %in% names(absent)))
+  st <- function(extra) nee_qc_status(site_tab(rd(extra)))
+  expect_equal(st(data.frame(NEE_VUT_REF = 1))$status[1], "column_absent")
+  expect_equal(st(data.frame(NEE_VUT_REF = 1))$nee_qc_source[1], "none")
+  expect_equal(st(data.frame(NEE_VUT_REF_QC = -9999, NEE_CUT_REF_QC = -9999))$status[1], "all_missing")
+  expect_equal(st(data.frame(NEE_VUT_REF_QC = -9999))$status[1], "all_missing")
+  expect_equal(st(data.frame(NEE_VUT_REF_QC = 2))$status[1], "none_measured")
+  expect_equal(st(data.frame(NEE_VUT_REF_QC = c(1, 1, 1, 1, 1, 0)))$status[1], "no_overlap")
+  nf <- nee_qc_status(dplyr::tibble(timestamp_start_utc = ts[1:2], src_fluxnet = FALSE, NEE = 1, NEE_DATA_FLAG = 0))
+  expect_equal(nf$status, c("no_fluxnet", "no_fluxnet"))
 })

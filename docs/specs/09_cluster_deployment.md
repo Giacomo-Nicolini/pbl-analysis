@@ -170,6 +170,42 @@ execution on the cluster, cases and extra-site list. The runbook stays in `docs/
    key `sites_not_run_file`). `slurm_submit.R` refuses a listed station; `09_collect.R` lists it in
    `09_network_flags.csv` as `not_run`, "not run (no L2 data)", never as a missing step.
 
+## Amendment 2 (2026-11-03): after the first network collection (job 11546)
+
+A. **Network figure** `09_network_logratio_*` (G 2026-11-03): PBLHmod as filled dots with a bar from p25 to p75 of
+   the half-hourly ln(PBLHmod / ERA5 tower cell) behind each median (site × regime); PBLHmod-clim as open circles, no
+   bar, drawn on top. Caption: stable values do not depend on γ (PBLHmod-clim = PBLHmod; max difference 0 at all 39
+   sites in job 11546). `pblh_metrics()` gains `p25_log_ratio`, `p75_log_ratio` (type-7 quantiles, appended columns),
+   so step 04 must rerun (it does anyway: `R/` changed). Functions `network_logratio_table()`,
+   `plot_network_logratio()`; old metrics without the quartiles give a figure without bars and a warning.
+B. **GL-ZaF** (0 `valid_qc_used` of 12,363 `valid_qc` half-hours). Cause (G, 2026-11-03, from the cluster file):
+   `NEE_VUT_REF_QC` = −9999 on all 64,272 rows of the FLUXNET file (ONEFlux could not compute the VUT NEE: missing
+   critical data), while `NEE_CUT_REF_QC` is filled (QC 0: 11,524; 1: 28,376; 2: 5,683; 3: 4,614; −9999: 14,075).
+   **Rule for `valid_qc_used`** (G 2026-11-03; general, not site-specific): if `NEE_VUT_REF_QC` is entirely missing at
+   a site (column absent, or −9999 on every FLUXNET row read), use `NEE_CUT_REF_QC == 0` instead (`nee_ref_qc()`; the
+   reader now also keeps `NEE_CUT_REF_QC`). A site with any VUT QC value is unchanged (test: identical
+   `valid_qc_used` on a VUT fixture whose CUT column differs). Step 08a writes `08_nee_qc_<site>.csv`
+   (`nee_qc_status()`, one row for the whole period, `year` NA, and one per UTC year): `nee_qc_source` (`VUT` / `CUT` /
+   `none`), VUT and CUT columns present, number of VUT QC values, and for the source the QC values, QC 0, overlap with
+   FLUXES NEE QC good, `status` `ok` / `column_absent` / `all_missing` / `none_measured` / `no_overlap` /
+   `no_fluxnet`. GL-ZaF FLUXNET covers 2023–2026 only, so its 2022 row keeps `no_fluxnet` (no `valid_qc_used` in
+   2022). `09_collect.R` collects these as `09_network_nee_qc.csv`; `09_network_flags.csv` flags `nee_qc_cut` (CUT
+   source) and `nee_qc` (whole-period status not `ok`). The u* check of 08a (`08_ustar_check`) still compares the VUT
+   thresholds with `NEE_VUT_REF_QC`, so it has no rows at a CUT site. A reader test covers a GL-ZaF-like FLUXNET
+   file (from 2023, offset 0) for the CUT fallback and each status.
+   **Reference year** (G): GL-ZaF stays in the footprint run. `config/reference_year_exceptions.csv` (config key
+   `reference_year_exceptions_file`) lists `site_id, rule, reason, decided`. Rule `coverage` applies only when the
+   standard rule finds no year: the year with the most `valid_qc` half-hours (both main cases, set `etc`, any number
+   of months; ties go to the most recent year), with the reason written in the proposal (`rule` column).
+   `footprint_year_counts()` gains `n_valid_qc` and `n_months_valid_qc` (needs 08a).
+C. **Measured data on the cluster.** New `run_site.R` steps `meas_std` (standard files of the primary measured
+   source) and `meas_cmp` (per-site comparison, upstream 04 and `meas_std`), both `scripts/09m_measured.R`. The
+   scripts depend on the provider (`measured_site_scripts()`): Cloudnet 07c, then 07 + 10; SIRTA 10a, then 10;
+   MeteoSwiss 11b, with no per-site comparison (CH-Dav is in `11_gamma_evaluation.R`). The sub-scripts are part of the
+   inputs hash (`extra_scripts`), and the raw measured files form a new input group `measured_raw`. The site list is
+   `config/measured_run_sites.txt`. Order: Cloudnet download (07b: size, `--confirm`, re-check of the checksums),
+   then `--steps=meas_std,meas_cmp,08a`, then `11_gamma_evaluation.R` and `09_collect.R`.
+
 ## Acceptance criteria
 
 - Part A: tests pass on the PC; `--dry-run` renders valid sbatch scripts; `git grep` for `/bigdata`, `/home/`,

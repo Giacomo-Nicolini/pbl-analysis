@@ -207,22 +207,24 @@ footprint_validity <- function(zm, z0, ec_height, h, umean, L, sigmav, ustar, wi
 #'
 #' @param d Output of [read_icos_site()] (needs `WS`, `MO_LENGTH`, `V_SIGMA`, `USTAR`,
 #'   `WD`, `zm_m` = EC height, `canopy_height_m`, `excl_flag`; optional `NEE`,
-#'   `NEE_DATA_FLAG`, `fn_NEE_VUT_REF_QC`, `fn_SW_IN_POT`, `H`, `fn_H_F_MDS_QC`).
+#'   `NEE_DATA_FLAG`, `fn_NEE_VUT_REF_QC`, `fn_NEE_CUT_REF_QC`, `fn_SW_IN_POT`, `H`, `fn_H_F_MDS_QC`).
 #' @param pblhmod_out PBLHmod output (`timestamp_start_utc`, `regime`, `flag_ustar_implausible`).
 #' @param cases Output of [footprint_h_cases()] (same rows as `d`).
 #' @return Tibble: `timestamp_start_utc`, `ec_height_m`, `canopy_height_m`, `d_m`, `z0_m`,
 #'   `zm_m` [m], `umean` [m s-1], `L` [m], `sigmav`, `ustar` [m s-1], `wind_dir` [deg], `nee`,
-#'   `nee_data_flag`, `nee_vut_ref_qc`, `H_l2` [W m-2, L2 FLUXES H], `H_F_MDS_QC` [-, FLUXNET],
+#'   `nee_data_flag`, `nee_ref_qc` [-, FLUXNET NEE QC of the site's source, [nee_ref_qc()]], `nee_qc_source`
+#'   (`"VUT"`, `"CUT"`, `"none"`), `H_l2` [W m-2, L2 FLUXES H], `H_F_MDS_QC` [-, FLUXNET],
 #'   `day` [logical, SW_IN_POT > 0], `regime`, `ustar_implausible`, `excluded`, and `h_<case>` [m].
 footprint_input_table <- function(d, pblhmod_out, cases) {
   col <- function(k) if (k %in% names(d)) d[[k]] else rep(NA_real_, nrow(d))
   i <- match(as.numeric(d$timestamp_start_utc), as.numeric(pblhmod_out$timestamp_start_utc))
   hz <- footprint_heights(d$zm_m, d$canopy_height_m)
+  nq <- nee_ref_qc(d)
   out <- dplyr::tibble(
     timestamp_start_utc = d$timestamp_start_utc, ec_height_m = d$zm_m, canopy_height_m = d$canopy_height_m,
     d_m = hz$d_m, z0_m = hz$z0_m, zm_m = hz$zm_m, umean = d$WS, L = d$MO_LENGTH, sigmav = d$V_SIGMA,
     ustar = d$USTAR, wind_dir = d$WD, nee = col("NEE"), nee_data_flag = col("NEE_DATA_FLAG"),
-    nee_vut_ref_qc = col("fn_NEE_VUT_REF_QC"), H_l2 = col("H"), H_F_MDS_QC = col("fn_H_F_MDS_QC"),
+    nee_ref_qc = nq$qc, nee_qc_source = nq$source, H_l2 = col("H"), H_F_MDS_QC = col("fn_H_F_MDS_QC"),
     day = col("fn_SW_IN_POT") > 0,
     regime = pblhmod_out$regime[i], ustar_implausible = pblhmod_out$flag_ustar_implausible[i] %in% TRUE,
     excluded = d$excl_flag %in% TRUE
@@ -248,7 +250,7 @@ footprint_flags_all <- function(tab, m_etc, sets = c("kljun", "kljun_norsl", "et
                             tab$sigmav, tab$ustar, tab$wind_dir, m_etc, tab$ustar_implausible, tab$excluded)
     flags[[k]] <- v
     for (s in sets) {
-      ss <- footprint_subsets(v[[paste0("valid_", s)]], tab$nee, tab$nee_data_flag, tab$nee_vut_ref_qc,
+      ss <- footprint_subsets(v[[paste0("valid_", s)]], tab$nee, tab$nee_data_flag, tab$nee_ref_qc,
                               tab$H_l2, tab$H_F_MDS_QC)
       for (u in names(ss)) sub[[paste(u, s, k, sep = "__")]] <- ss[[u]]
     }
@@ -304,7 +306,9 @@ footprint_coverage <- function(tab, fl, sets = c("kljun", "kljun_norsl", "etc", 
 #' `valid`; `valid_qc`: and NEE QC good in L2 FLUXES (`NEE_DATA_FLAG == 0`, as ETC);
 #' `valid_qc_used`: and NEE not gap-filled in FLUXNET (`NEE_VUT_REF_QC == 0`), i.e. the
 #' data actually used for fluxes and budgets. The last step removes the u*-filtered rows
-#' (ONEFlux VUT thresholds) and the other FLUXNET removals (G 2026-10-26).
+#' (ONEFlux VUT thresholds) and the other FLUXNET removals (G 2026-10-26). At a site where
+#' `NEE_VUT_REF_QC` is entirely missing, `NEE_CUT_REF_QC` (CUT thresholds) instead ([nee_ref_qc()];
+#' spec 09 amendment 2, G 2026-11-03).
 #' `valid_qc_h`: `valid` and the sensible heat flux measured and QC-good ([h_qc_good()]).
 #' The u* filtering applies to NEE only, so this subset keeps the stable nights retained
 #' for H, LE and other gases (G 2026-10-27). Nested in `valid`, not in `valid_qc`.
@@ -312,14 +316,15 @@ footprint_coverage <- function(tab, fl, sets = c("kljun", "kljun_norsl", "etc", 
 #' @param valid Valid footprint [logical].
 #' @param nee FLUXES NEE [umol m-2 s-1].
 #' @param nee_data_flag FLUXES `NEE_DATA_FLAG` [-].
-#' @param nee_vut_ref_qc FLUXNET `NEE_VUT_REF_QC` [-].
+#' @param nee_ref_qc FLUXNET NEE QC of the site's source ([nee_ref_qc()]: `NEE_VUT_REF_QC`, or
+#'   `NEE_CUT_REF_QC` where VUT is entirely missing) [-].
 #' @param h_l2 L2 FLUXES H [W m-2] (NA where QC-rejected).
 #' @param h_f_mds_qc FLUXNET `H_F_MDS_QC` [-].
 #' @return Tibble: `valid`, `valid_qc`, `valid_qc_used` (nested), `valid_qc_h` [logical].
-footprint_subsets <- function(valid, nee, nee_data_flag, nee_vut_ref_qc, h_l2 = NA, h_f_mds_qc = NA) {
+footprint_subsets <- function(valid, nee, nee_data_flag, nee_ref_qc, h_l2 = NA, h_f_mds_qc = NA) {
   v <- valid %in% TRUE
   q <- v & !is.na(nee) & nee_data_flag %in% 0
-  dplyr::tibble(valid = v, valid_qc = q, valid_qc_used = q & nee_vut_ref_qc %in% 0,
+  dplyr::tibble(valid = v, valid_qc = q, valid_qc_used = q & nee_ref_qc %in% 0,
                 valid_qc_h = v & h_qc_good(rep_len(h_l2, length(v)), rep_len(h_f_mds_qc, length(v))))
 }
 
@@ -334,4 +339,59 @@ footprint_subsets <- function(valid, nee, nee_data_flag, nee_vut_ref_qc, h_l2 = 
 #' @return Logical.
 h_qc_good <- function(h_l2, h_f_mds_qc) {
   ifelse(!is.na(h_f_mds_qc), h_f_mds_qc == 0, !is.na(h_l2))
+}
+
+#' FLUXNET NEE QC used for `valid_qc_used`, with its source
+#'
+#' Rule (spec 09 amendment 2, G 2026-11-03; general, not site-specific): `NEE_VUT_REF_QC`; if it is entirely missing
+#' at the site (column absent, or -9999 on every row of the FLUXNET file as read: ONEFlux could not compute the VUT
+#' NEE, e.g. GL-ZaF), `NEE_CUT_REF_QC` instead (ONEFlux CUT u* thresholds). Sites with any VUT QC value are unchanged.
+#'
+#' @param d Output of [read_icos_site()] (`src_fluxnet`; optional `fn_NEE_VUT_REF_QC`, `fn_NEE_CUT_REF_QC`).
+#' @return List: `qc` (QC of the source on every row of `d`, `NA` without source) [-, 0 measured, 1-3 gap-filled],
+#'   `source` (`"VUT"`, `"CUT"` or `"none"`).
+nee_ref_qc <- function(d) {
+  fn <- d$src_fluxnet %in% TRUE
+  any_qc <- function(k) k %in% names(d) && any(!is.na(d[[k]][fn]))
+  source <- if (any_qc("fn_NEE_VUT_REF_QC")) "VUT" else if (any_qc("fn_NEE_CUT_REF_QC")) "CUT" else "none"
+  qc <- switch(source, VUT = d$fn_NEE_VUT_REF_QC, CUT = d$fn_NEE_CUT_REF_QC, rep(NA_real_, nrow(d)))
+  list(qc = as.numeric(qc), source = source)
+}
+
+#' Diagnosis of the FLUXNET NEE QC behind `valid_qc_used`
+#'
+#' Spec 09 amendment 2 (GL-ZaF: 0 `valid_qc_used` half-hours out of 12,363 `valid_qc`, cluster job 11546). Source of
+#' the QC ([nee_ref_qc()]: VUT, CUT fallback, or none), and on the rows of the FLUXNET file the QC values of that
+#' source and the FLUXES NEE rows with QC good; names the cause when `valid_qc_used` is empty. One row for the whole
+#' period and one per calendar year (UTC, as [footprint_year_counts()]); the source is chosen on the whole period.
+#'
+#' @param d Output of [read_icos_site()] (`timestamp_start_utc`, `src_fluxnet`, `NEE`, `NEE_DATA_FLAG`, optional
+#'   `fn_NEE_VUT_REF_QC`, `fn_NEE_CUT_REF_QC`).
+#' @return Tibble: `year` (`NA` = whole period), `nee_qc_source` (`"VUT"`, `"CUT"`, `"none"`), `has_vut`, `has_cut`
+#'   [logical, column in the header], `n_vut_qc` (non-missing `NEE_VUT_REF_QC`), `n_fluxnet` (rows in the FLUXNET
+#'   file), then for the source: `n_qc` (non-missing QC), `n_qc0` (QC 0, measured), `n_qc_gapfilled` (QC 1-3),
+#'   `n_nee_good` (FLUXES NEE QC good on the FLUXNET rows), `n_used` (both), `status`: `ok`, `no_fluxnet` (no FLUXNET
+#'   rows), `column_absent` (neither QC column in the header), `all_missing` (all -9999), `none_measured` (no QC 0),
+#'   `no_overlap` (QC 0 rows exist but none with FLUXES NEE QC good).
+nee_qc_status <- function(d) {
+  src <- nee_ref_qc(d)
+  has_vut <- "fn_NEE_VUT_REF_QC" %in% names(d)
+  has_cut <- "fn_NEE_CUT_REF_QC" %in% names(d)
+  col <- function(k) if (k %in% names(d)) d[[k]] else rep(NA_real_, nrow(d))
+  vut <- col("fn_NEE_VUT_REF_QC")
+  good_all <- !is.na(col("NEE")) & col("NEE_DATA_FLAG") %in% 0
+  one <- function(w, year) {
+    fn <- w & d$src_fluxnet %in% TRUE
+    qc <- src$qc[fn]
+    good <- good_all[fn]
+    n_used <- sum(good & qc %in% 0)
+    status <- if (!any(fn)) "no_fluxnet" else if (src$source == "none" && !has_vut && !has_cut) "column_absent" else
+      if (all(is.na(qc))) "all_missing" else if (!any(qc %in% 0)) "none_measured" else if (n_used == 0) "no_overlap" else "ok"
+    dplyr::tibble(year = year, nee_qc_source = src$source, has_vut = has_vut, has_cut = has_cut,
+                  n_vut_qc = sum(!is.na(vut[fn])), n_fluxnet = sum(fn), n_qc = sum(!is.na(qc)), n_qc0 = sum(qc %in% 0),
+                  n_qc_gapfilled = sum(qc %in% 1:3), n_nee_good = sum(good), n_used = n_used, status = status)
+  }
+  yr <- as.integer(format(d$timestamp_start_utc, "%Y"))
+  dplyr::bind_rows(one(rep(TRUE, nrow(d)), NA_integer_),
+                   lapply(sort(unique(stats::na.omit(yr))), function(y) one(yr %in% y, y)))
 }

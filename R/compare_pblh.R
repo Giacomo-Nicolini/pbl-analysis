@@ -160,7 +160,9 @@ pair_table <- function(mod, ref, pair) {
 #'   `r_spearman` [-], `n_log` [-], `n_log_excluded` [-],
 #'   `median_log_ratio`, `mad_log_ratio` [-, natural log],
 #'   `frac_within_factor2` [-], `fb` [-, in (-2, 2) for positive values],
-#'   `nrmsd` [-].
+#'   `nrmsd` [-], `p25_log_ratio`, `p75_log_ratio` [-, natural log; 25th and
+#'   75th percentiles of `log(mod / ref)`, `stats::quantile()` type 7: the
+#'   variability bar of the network figure, spec 09 amendment 2].
 pblh_metrics <- function(mod, ref) {
   ok <- is.finite(mod) & is.finite(ref)
   m <- mod[ok]
@@ -187,7 +189,9 @@ pblh_metrics <- function(mod, ref) {
     frac_within_factor2 = if (nl > 0) mean(abs(lr) <= log(2)) else NA_real_,
     # Chang2004 (FB, NMSE); Sinclair2022 Eqs. 6-7 (FB, nRMSD = sqrt(NMSE))
     fb = if (n > 0 && mo + mp != 0) (mo - mp) / (0.5 * (mo + mp)) else NA_real_,
-    nrmsd = if (n > 0 && mo * mp > 0) sqrt(mean(e^2) / (mo * mp)) else NA_real_
+    nrmsd = if (n > 0 && mo * mp > 0) sqrt(mean(e^2) / (mo * mp)) else NA_real_,
+    p25_log_ratio = if (nl > 0) stats::quantile(lr, 0.25, names = FALSE) else NA_real_,
+    p75_log_ratio = if (nl > 0) stats::quantile(lr, 0.75, names = FALSE) else NA_real_
   )
 }
 

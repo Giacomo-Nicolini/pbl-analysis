@@ -10,6 +10,7 @@
 #' @return Named list per step: `script` (path relative to the project root), `upstream` (steps whose outputs it
 #'   reads), `inputs` (raw input groups hashed, see [site_input_files()]), `oper` (logical: accepts `--with-oper`),
 #'   optional `args` (function `(site_id, cfg)` returning extra arguments, e.g. the reference year).
+#'   optional `extra_scripts` (scripts run by the step script, included in the inputs hash; the measured steps).
 pipeline_steps <- function() {
   list(
     `01` = list(script = "scripts/01_check_inputs.R", upstream = character(), inputs = c("l2", "era5_sl"), oper = FALSE),
@@ -18,12 +19,49 @@ pipeline_steps <- function() {
     `02` = list(script = "scripts/02_run_pblh_model.R", upstream = "11a", inputs = "l2", oper = FALSE),
     `04` = list(script = "scripts/04_era5_compare.R", upstream = "02", inputs = c("l2", "era5_sl", "era5_pl", "era5_static"),
                 oper = TRUE),
+    # measured sites only (config/measured_sites.csv, primary source; spec 09 amendment 2): standard files of the
+    # primary measured source, then the per-site comparison; scripts chosen by measured_site_scripts()
+    meas_std = list(script = "scripts/09m_measured.R", upstream = character(), inputs = "measured_raw", oper = FALSE,
+                    args = function(site_id, cfg) "--part=standard", extra_scripts = measured_site_scripts()$standard),
+    meas_cmp = list(script = "scripts/09m_measured.R", upstream = c("04", "meas_std"), inputs = "measured_std",
+                    oper = FALSE, args = function(site_id, cfg) "--part=compare",
+                    extra_scripts = unlist(measured_site_scripts()$compare)),
     `08a` = list(script = "scripts/08a_footprint_flags.R", upstream = "04", inputs = c("l2", "bif", "measured_std"),
                  oper = TRUE),
     # after the footprint chunks of the site (array of scripts/08c_make_chunks.R): reference-year analysis
     `08` = list(script = "scripts/08_footprint_compare.R", upstream = "08a", inputs = "chunks", oper = FALSE,
                 args = function(site_id, cfg) paste0("--year=", reference_year_of(site_id, cfg)))
   )
+}
+
+#' Scripts of the measured steps per provider
+#'
+#' Spec 09 amendment 2: provider of the site's primary measured source (`config/measured_sites.csv`) -> script that
+#' writes its standard files (`meas_std`) and per-site comparison scripts (`meas_cmp`). MeteoSwiss (CH-Dav) has no
+#' per-site comparison script: it is compared in the multi-site `scripts/11_gamma_evaluation.R` (spec 11 D).
+#'
+#' @param provider Provider (`cloudnet`, `SIRTA-ReOBS`, `MeteoSwiss`); `NULL` = the whole table.
+#' @return List `standard` (named character, one script per provider) and `compare` (named list of character
+#'   vectors); with `provider`, list `standard` (one script) and `compare` (character, possibly empty).
+measured_site_scripts <- function(provider = NULL) {
+  standard <- c(cloudnet = "scripts/07c_cloudnet_mlh.R", `SIRTA-ReOBS` = "scripts/10a_sirta_reobs.R",
+                MeteoSwiss = "scripts/11b_meteoswiss_mlh.R")
+  compare <- list(cloudnet = c("scripts/07_measured_compare.R", "scripts/10_measured_compare.R"),
+                  `SIRTA-ReOBS` = "scripts/10_measured_compare.R", MeteoSwiss = character())
+  if (is.null(provider)) return(list(standard = standard, compare = compare))
+  if (!provider %in% names(standard)) cli::cli_abort("No measured scripts for provider {.val {provider}}.")
+  list(standard = unname(standard[provider]), compare = compare[[provider]])
+}
+
+#' Provider of a site's primary measured source
+#'
+#' @param ms Output of [read_measured_sites()].
+#' @param site_id Station code.
+#' @return Provider [character]; aborts when the site has no (or more than one) primary measured source.
+measured_primary_provider <- function(ms, site_id) {
+  r <- ms[ms$icos_site == site_id & !is.na(ms$primary_source_id), ]
+  if (nrow(r) != 1) cli::cli_abort("{site_id}: {nrow(r)} primary measured source{?s} in {.file measured_sites.csv} (need 1).")
+  r$provider
 }
 
 # Approved reference year of a site (config/reference_years.csv); aborts without one.
@@ -40,7 +78,8 @@ reference_year_of <- function(site_id, cfg) {
 #' @param site_id Station code [character].
 #' @param cfg Configuration list ([get_cfg()]).
 #' @param groups Input groups: `l2` (ICOS L2 folder), `bif` (ONEFlux BIF), `era5_sl`, `era5_pl` (ERA5 folders),
-#'   `era5_static` (static files of the site), `measured_std` (standard files of measured sources), `chunks`
+#'   `era5_static` (static files of the site), `measured_raw` (Cloudnet files and
+#'   PI / provider files of the site, `cloudnet_dir`, `measured_dir`), `measured_std` (standard files of measured sources), `chunks`
 #'   (footprint chunk meta files of the site).
 #' @return Tibble: `group`, `path`, `size` [bytes], `mtime` [character, UTC]; a group whose folder is not configured
 #'   or missing gives no rows (the step itself reports missing inputs).
@@ -65,6 +104,9 @@ site_input_files <- function(site_id, cfg, groups) {
              list.files(d, pattern = paste0("^", site_re, "__.*__", v, "__"), full.names = TRUE)
            }))),
            measured_std = in_dir("standard_dir", paste0("^", site_re, "__(cloudnet|sirta|meteoswiss).*\\.csv\\.gz$")),
+           measured_raw = c(in_dir("cloudnet_dir"),
+                            safe(list.files(resolve_path(cfg$measured_dir, site = site_id, must_exist = FALSE),
+                                            recursive = TRUE, full.names = TRUE))),
            chunks = safe(list.files(file.path(resolve_path(cfg$derived_dir, must_exist = FALSE), "footprint", site_id,
                                               "chunks"), pattern = "_meta\\.rds$", full.names = TRUE)),
            cli::cli_abort("Unknown input group {.val {g}}."))
@@ -94,7 +136,7 @@ step_inputs_hash <- function(step, site_id, cfg, upstream_hash = character(), ar
   st <- pipeline_steps()[[step]]
   if (is.null(st)) cli::cli_abort("Unknown step {.val {step}}.")
   if (is.null(input_files)) input_files <- site_input_files(site_id, cfg, st$inputs)
-  code <- c(file.path(root, st$script), sort(list.files(file.path(root, "R"), pattern = "\\.R$", full.names = TRUE)))
+  code <- c(file.path(root, c(st$script, st$extra_scripts)), sort(list.files(file.path(root, "R"), pattern = "\\.R$", full.names = TRUE)))
   digest::digest(list(
     step = step, site = site_id, code = unname(tools::md5sum(code)),
     cfg = cfg[sort(names(cfg))], inputs = as.data.frame(input_files[c("path", "size", "mtime")]),
