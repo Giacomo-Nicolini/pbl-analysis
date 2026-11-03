@@ -53,7 +53,9 @@ so code must be reproducible, documented and traceable to references.
 - Other config keys (spec 09): `oneflux_bif_dir` (`{icos_l2_dir}` placeholder, glob allowed), `pblh_gamma_default`
   (EC-only constant γ), `chunk_target_min`, `sec_per_ffp_halfhour`, `footprint_extra_sites_file`,
   `reference_years_file`, `sites_not_run_file` (stations kept in `sites.csv` but not run, with the reason; spec 09
-  amendment 1: IT-SR2, no L2 data; `09_collect.R` lists them as "not run").
+  amendment 1: IT-SR2, no L2 data; `09_collect.R` lists them as "not run"), `reference_year_exceptions_file`
+  (spec 09 amendment 2: stations whose reference year may follow the `coverage` rule when the standard rule finds no
+  year; GL-ZaF, G 2026-11-03).
 
 ## Input data (facts; do not guess beyond these)
 
@@ -225,8 +227,11 @@ so code must be reproducible, documented and traceable to references.
   FFP code's own checks and zm < h. `kljun` keeps no row at forest sites (BE-Bra, FI-Hyy): a result, not a bug.
 - **Subsets** (`footprint_subsets()`): `valid`; `valid_qc` (FLUXES `NEE_DATA_FLAG == 0`); `valid_qc_used` (and FLUXNET
   `NEE_VUT_REF_QC == 0`: removes the u*-filtered rows, ONEFlux VUT thresholds from the BIF file, and the other FLUXNET
-  NEE removals); `valid_qc_h` (valid and H measured and QC-good: `H_F_MDS_QC == 0`, or L2 `H` present where FLUXNET has
-  no QC value; keeps the stable nights that the NEE u* filter removes).
+  NEE removals; **if `NEE_VUT_REF_QC` is entirely missing at a site, `NEE_CUT_REF_QC == 0` instead**, `nee_ref_qc()`,
+  spec 09 amendment 2, G 2026-11-03: GL-ZaF; source per site `nee_qc_source` = VUT / CUT / none in `08_nee_qc_<site>.csv`
+  and `09_network_nee_qc.csv`, CUT sites flagged `nee_qc_cut`); `valid_qc_h` (valid and H measured and QC-good:
+  `H_F_MDS_QC == 0`, or L2 `H` present where FLUXNET has no QC value; keeps the stable nights that the NEE u* filter
+  removes).
 - **Target-area fraction** = integral of the footprint over the ICOS target area relative to the full footprint (the
   FFP function integrates to 1 over the plane); `f_domain` = part inside the ±1000 m domain.
 - **Cases (spec 09 A5)**: `pblhmod`, `pblhmod_clim`, `era5` at every site; at the extra sites
@@ -245,6 +250,11 @@ so code must be reproducible, documented and traceable to references.
   `<derived_dir>/run_status/`. A step whose last status is "ok" with the same inputs hash (step script, all `R/`
   files, configuration, the site's raw inputs, arguments, upstream hashes) is skipped unless `--force`; any code
   change in `R/` therefore reruns every step. The first failing step stops the site.
+- **Measured steps (spec 09 amendment 2)**: at the sites with a primary measured source (`config/measured_run_sites.txt`:
+  FI-Hyy, FR-Gri, CH-Dav), `--steps=meas_std,meas_cmp` (`scripts/09m_measured.R`; scripts per provider from
+  `measured_site_scripts()`: standard files 07c / 10a / 11b, comparison 07 + 10 / 10 / none, CH-Dav in
+  `11_gamma_evaluation.R`), then `08a` again (it hashes the measured standard files, so `n_measured` enters the
+  reference-year proposal). Cloudnet files are downloaded first with `07b` (size report, `--confirm`, re-check).
 - **SLURM**: `scripts/slurm_submit.R --what=sites|chunks [--dry-run]` renders `slurm/sites_array.sbatch` (one task per
   row of `config/run_sites.txt`) or `slurm/footprint_chunks.sbatch` (one task per chunk) with `slurm/local.env`.
   MaxArraySize on the cluster is 1001: a chunk list longer than `SLURM_MAX_ARRAY_TASKS` (default 1000) is submitted as
@@ -255,7 +265,9 @@ so code must be reproducible, documented and traceable to references.
   `chunk_target_min`); each array task runs `08b --chunk-list --chunk-row` with the job's CPUs as workers (result
   independent of the worker count); then step `08` (`run_site.R SITE --steps=08`, reference year) and `09_collect.R`.
 - **Collection**: `scripts/09_collect.R` reads only the per-site tables (`01_inputs_`, `02_cases_`, `02_regimes_`,
-  `11a_gamma_summary_`, `04_metrics_`, `08_coverage_`, `08_year_counts_`) and writes `09_network_*.csv`.
+  `11a_gamma_summary_`, `04_metrics_`, `08_coverage_`, `08_year_counts_`, `08_nee_qc_`) and writes `09_network_*.csv`.
+  Network figure (G 2026-11-03): PBLHmod median ln(PBLHmod / ERA5) as filled dots with a p25–p75 bar
+  (`p25_log_ratio`, `p75_log_ratio` of `pblh_metrics()`), PBLHmod-clim as open circles drawn on top, no bar.
 
 ## Code organisation
 

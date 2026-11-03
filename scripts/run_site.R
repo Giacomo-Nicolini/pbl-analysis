@@ -1,7 +1,9 @@
 # Spec 09 A2: run pipeline steps for one site, each in a fresh R process, with run-status files.
 # Steps (R/run_status.R, pipeline_steps()): 01 input check, 11a ERA5 gamma, 02 PBLHmod (all cases, incl. PBLHmod-clim
 # and the reference gamma values), 04 standard files and ERA5 comparison, 08a footprint inputs and coverage (full
-# period). A step whose last run is "ok" with the same inputs hash is skipped unless --force; the first failing step
+# period); at sites with a primary measured source (spec 09 amendment 2, not in the default list): meas_std
+# (standard files of the measured source) and meas_cmp (per-site comparison, after 04), scripts/09m_measured.R.
+# A step whose last run is "ok" with the same inputs hash is skipped unless --force; the first failing step
 # stops the site (exit code 1). Logs: <output_dir>/logs/<site>/<step>_<timestamp>.log; status:
 # <derived_dir>/run_status/<site>__<step>.json.
 #

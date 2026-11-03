@@ -73,6 +73,9 @@ test_that("pblh_metrics: hand-computed values", {
   # Chang2004 / Sinclair2022: means obs 450, model 450 -> fb 0; nrmsd sqrt(105000 / 450^2)
   expect_equal(m$fb, 0)
   expect_equal(m$nrmsd, sqrt(105000) / 450)
+  # quartiles of (log 2, 0, -log 2, log 2), type 7: sorted (-l, 0, l, l) -> p25 = -l + 0.75 l = -l/4, p75 = l
+  expect_equal(m$p25_log_ratio, -log(2) / 4)
+  expect_equal(m$p75_log_ratio, log(2))
   expect_equal(names(m)[1:11], c("n", "bias", "mae", "rmse", "r_pearson", "r_spearman", "n_log", "n_log_excluded",
                                  "median_log_ratio", "mad_log_ratio", "frac_within_factor2"))
 })

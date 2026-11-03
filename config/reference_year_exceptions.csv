@@ -1,0 +1,2 @@
+site_id,rule,reason,decided
+GL-ZaF,coverage,"remote site with large data loss; stays in the footprint run",G 2026-11-03

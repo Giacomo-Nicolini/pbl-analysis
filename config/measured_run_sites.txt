@@ -1,0 +1,7 @@
+# Stations with a primary measured source (config/measured_sites.csv), run with
+# scripts/run_site.R SITE --steps=meas_std,meas_cmp,08a (spec 09 amendment 2). FI-Hyy needs the Cloudnet files first
+# (scripts/07b_cloudnet_download.R). FI-Lom and DE-RuS (Cloudnet primary sources) follow once their files are
+# downloaded (spec 09 Part B step 5).
+FI-Hyy
+FR-Gri
+CH-Dav

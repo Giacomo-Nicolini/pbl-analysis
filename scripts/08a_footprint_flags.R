@@ -8,10 +8,12 @@
 # outputs under output/*/oper_internal/).
 # Validity sets: kljun (Kljun et al. 2015, Eq. 27), kljun_norsl (Eq. 27 without the roughness condition), etc (ETC
 # pipeline, stability from zm/L), none; all include the code checks and zm < h. Subsets: valid, valid_qc (NEE QC good
-# in FLUXES), valid_qc_used (and NEE not gap-filled in FLUXNET), valid_qc_h (valid and H measured and QC-good).
+# in FLUXES), valid_qc_used (and NEE not gap-filled in FLUXNET: NEE_VUT_REF_QC == 0, or NEE_CUT_REF_QC == 0 where VUT
+# is entirely missing at the site, spec 09 amendment 2), valid_qc_h (valid and H measured and QC-good).
 # Output: <derived_dir>/footprint/<site>/<site>_footprint_inputs[_<period>].rds (input table + flags, for 08b)
 #         <output_dir>/tables/08_coverage_<site>[_<period>].csv, 08_etc_multiplier_<site>.csv,
-#         08_ustar_check_<site>.csv (ONEFlux VUT thresholds vs FLUXNET NEE QC)
+#         08_ustar_check_<site>.csv (ONEFlux VUT thresholds vs FLUXNET NEE QC), 08_nee_qc_<site>.csv (FLUXNET
+#         NEE QC source VUT / CUT / none and status behind valid_qc_used, whole period and per year; amendment 2)
 #
 # Usage: Rscript scripts/08a_footprint_flags.R SITE [--start=YYYY-MM-DD] [--end=YYYY-MM-DD] [--with-oper]
 
@@ -95,6 +97,20 @@ if (per == "") {
   yc <- footprint_year_counts(tab, fl$subsets)
   readr::write_csv(dplyr::mutate(yc, site_id = site_id, .before = 1), file.path(tables_dir, paste0("08_year_counts_", site_id, ".csv")))
 }
+# FLUXNET NEE QC behind valid_qc_used (spec 09 amendment 2; full period as read, and per year): source VUT, or CUT
+# where NEE_VUT_REF_QC is entirely missing at the site
+nq <- nee_qc_status(d)
+readr::write_csv(dplyr::mutate(nq, site_id = site_id, .before = 1), file.path(tables_dir, paste0("08_nee_qc_", site_id, ".csv")))
+nq_all <- nq[is.na(nq$year), ]
+if (nq_all$nee_qc_source == "CUT") {
+  cli::cli_alert_warning("NEE_VUT_REF_QC entirely missing ({nq_all$n_fluxnet} FLUXNET rows): valid_qc_used from NEE_CUT_REF_QC.")
+}
+if (nq_all$status != "ok") {
+  cli::cli_alert_danger("valid_qc_used is empty: FLUXNET NEE QC ({nq_all$nee_qc_source}) status {.val {nq_all$status}} ({nq_all$n_fluxnet} FLUXNET rows, {nq_all$n_qc} QC values, {nq_all$n_qc0} QC 0, {nq_all$n_nee_good} FLUXES NEE QC good).")
+} else {
+  cli::cli_inform("FLUXNET NEE_{nq_all$nee_qc_source}_REF_QC: {nq_all$n_qc0} of {nq_all$n_fluxnet} rows measured (QC 0); {nq_all$n_used} with FLUXES NEE QC good.")
+}
+print_tbl(nq[!is.na(nq$year), c("year", "n_fluxnet", "n_qc0", "n_used", "status")])
 saveRDS(list(site_id = site_id, tab = tab, flags = fl$flags, subsets = fl$subsets, m_etc = m_etc, period = per,
              t0 = t0, t1 = t1), file.path(fp_dir, paste0(site_id, "_footprint_inputs", per, ".rds")))
 
