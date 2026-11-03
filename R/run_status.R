@@ -159,6 +159,17 @@ run_script_rscript <- function(script, args, log) {
   r$status
 }
 
+#' Exit status of a site run
+#'
+#' Spec 09 amendment 1: `scripts/run_site.R` exits with this status after printing the summary table, so that
+#' SLURM marks the array task FAILED (and `--mail-type=FAIL` fires) when any step failed.
+#'
+#' @param res Output of [run_site_steps()].
+#' @return `1L` if any step failed (or no step result is available), else `0L`.
+run_site_exit_status <- function(res) {
+  if (is.null(res) || nrow(res) == 0 || any(res$action == "failed" | is.na(res$action))) 1L else 0L
+}
+
 #' Run pipeline steps for one site
 #'
 #' Runs `steps` in the order given; each step is skipped if current ([step_is_current()]), else run with `runner`
