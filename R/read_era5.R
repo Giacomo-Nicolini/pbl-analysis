@@ -45,6 +45,22 @@ era5_variables <- function() {
 
 era5_end_marker <- "# ==== FINE METADATA (dati sotto) ===="
 
+#' Longitude in the -180..180 convention
+#'
+#' ERA5 files of one station may give longitudes in 0-360 (e.g. the static files: 359.75 = -0.25 E) or in
+#' -180..180 (spec 09 amendment 1). Values in [-180, 180) are returned unchanged (bit-identical); others are
+#' shifted by a multiple of 360.
+#'
+#' @param lon Longitude [decimal degrees, east positive].
+#' @return Longitude in [-180, 180) [decimal degrees].
+era5_lon_180 <- function(lon) {
+  out <- ((lon + 180) %% 360) - 180
+  ifelse(!is.na(lon) & lon >= -180 & lon < 180, lon, out)
+}
+
+# Signed longitude difference a - b in (-180, 180] [deg], valid across 0 and 180 deg.
+era5_lon_diff <- function(a, b) -(((b - a) + 180) %% 360 - 180)
+
 #' Parse the metadata header of an ERA5 file
 #'
 #' Reads the `# key: value` lines between the first line and the end marker
@@ -126,8 +142,10 @@ parse_era5_time <- function(x, label) {
 #' to (`latitude_requested`, `longitude_requested`) and must contain the tower
 #' (within half a grid step); `cell_row = round((grid_lat - tower_grid_lat) /
 #' 0.25)` (+1 = north), `cell_col = round((grid_lon - tower_grid_lon) / 0.25)`
-#' (+1 = east). The name is a cross-check only: single/pressure-level files use
-#' direction flags (`north_+1` -> row +1, `south_+1` -> row -1, `east_+1` ->
+#' (+1 = east; difference wrapped to (-180, 180], so neighbours across 0 deg
+#' work). Header longitudes are converted to -180..180 ([era5_lon_180()]):
+#' some files use 0-360. The name is a cross-check only: single/pressure-level
+#' files use direction flags (`north_+1` -> row +1, `south_+1` -> row -1, `east_+1` ->
 #' col +1, `west_+1` -> col -1), static files signed offsets in `north_` (row)
 #' and `east_` (col) with `south_+0__west_+0`; a disagreement aborts. Per
 #' variable the 9 cells of a 3x3 block are expected: missing cells warn,
@@ -142,8 +160,8 @@ parse_era5_time <- function(x, label) {
 #' @param sites Optional output of [read_sites()]; if given, the requested
 #'   coordinates in the headers are checked with [check_era5_site_coords()].
 #' @return Tibble, one row per file: `site_id`, `family`, `variable`, `path`,
-#'   `file`, `grid_lat`, `grid_lon` cell centre [deg], `lat_requested`,
-#'   `lon_requested` tower [deg], `grid_dist_km` tower to cell centre [km],
+#'   `file`, `grid_lat`, `grid_lon` cell centre [deg; longitude -180..180], `lat_requested`,
+#'   `lon_requested` tower [deg; -180..180], `grid_dist_km` tower to cell centre [km],
 #'   `cell_row`, `cell_col` [integer, cells; +1 = north / east],
 #'   `time_first`, `time_last` [POSIXct UTC, from the name],
 #'   `header_n_rows` [integer], `header_first_time`, `header_last_time`
@@ -207,9 +225,9 @@ find_era5_files <- function(site_id, cfg, family = c("single_level", "pressure_l
     path = paths,
     file = basename(paths),
     grid_lat = hnum("latitude_grid"),
-    grid_lon = hnum("longitude_grid"),
+    grid_lon = era5_lon_180(hnum("longitude_grid")), # 0-360 in some files (spec 09 amendment 1)
     lat_requested = hnum("latitude_requested"),
-    lon_requested = hnum("longitude_requested"),
+    lon_requested = era5_lon_180(hnum("longitude_requested")),
     grid_res = hnum("grid_resolution_deg"),
     time_first = ftime(m[, 3]),
     time_last = ftime(m[, 4]),
@@ -247,11 +265,12 @@ find_era5_files <- function(site_id, cfg, family = c("single_level", "pressure_l
     i <- which(f$variable == v)
     t0 <- i[which.min(f$grid_dist_km[i])]
     half <- era5_grid_res_deg / 2 + 1e-6
-    if (abs(f$grid_lat[t0] - f$lat_requested[t0]) > half || abs(f$grid_lon[t0] - f$lon_requested[t0]) > half) {
+    if (abs(f$grid_lat[t0] - f$lat_requested[t0]) > half ||
+        abs(era5_lon_diff(f$grid_lon[t0], f$lon_requested[t0])) > half) {
       cli::cli_abort("ERA5 {.val {site_id}} {v}: no file for the cell containing the tower (closest cell centre {f$grid_lat[t0]}, {f$grid_lon[t0]}).")
     }
     f$cell_row[i] <- as.integer(round((f$grid_lat[i] - f$grid_lat[t0]) / era5_grid_res_deg))
-    f$cell_col[i] <- as.integer(round((f$grid_lon[i] - f$grid_lon[t0]) / era5_grid_res_deg))
+    f$cell_col[i] <- as.integer(round(era5_lon_diff(f$grid_lon[i], f$grid_lon[t0]) / era5_grid_res_deg))
   }
 
   # Cross-check with the name.

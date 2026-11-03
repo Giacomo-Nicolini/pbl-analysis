@@ -93,7 +93,12 @@ standardize_pblhmod <- function(out, label, opts = NULL) {
 # Short provenance text from a parsed ERA5 header (parse_era5_header()).
 era5_provenance <- function(header) {
   if (is.null(header)) return("ERA5 extraction details unknown")
-  g <- function(k) if (is.null(header[[k]])) "unknown" else format(header[[k]])
+  g <- function(k) {
+    v <- header[[k]]
+    if (is.null(v)) return("unknown")
+    if (startsWith(k, "longitude_") && is.numeric(v)) v <- era5_lon_180(v) # 0-360 in some files
+    format(v)
+  }
   paste0(
     "ERA5 ", g("dataset"), " / ", g("variable"), " extracted by C. Trotta (Oct 2026) with ", g("script"),
     " (method ", g("method"), ", ARCO zarr ", g("geochunked_url"), ", downloaded ", g("download_utc"),
