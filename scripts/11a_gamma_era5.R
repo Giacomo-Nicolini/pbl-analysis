@@ -45,6 +45,16 @@ for (site_id in site_ids) {
     readr::write_csv(dplyr::mutate(clim, site_id = site_id, .before = 1), file.path(g_dir, paste0(site_id, sfx, "_monthly.csv")))
     cli::cli_h2("Layer {ly}: {o$zmin_agl}-{o$zmax_agl} m above the site; {nrow(daily)} days")
     cli::cli_inform("Flags: {paste(names(table(daily$flag)), table(daily$flag), sep = ' ', collapse = ', ')}; profile hour (UTC): {paste(names(table(format(daily$profile_utc, '%H'))), table(format(daily$profile_utc, '%H')), sep = ' ', collapse = ', ')}.")
+    # Polar sites (spec 09 amendment 1): days without sunrise have no morning profile; months without a valid
+    # daily gamma are NA in the climatology (PBLHmod-clim: constant gamma there, "constant_fallback").
+    pol <- clim[clim$n_polar_night + clim$n_polar_day > 0, ]
+    if (nrow(pol) > 0) {
+      cli::cli_inform("Days without sunrise (no morning profile), by month: {paste0(month.abb[pol$month], ' ', pol$n_polar_night, ' night / ', pol$n_polar_day, ' day', collapse = '; ')}.")
+    }
+    empty <- clim$month[is.na(clim$median)]
+    if (length(empty) > 0) {
+      cli::cli_alert_warning("{cli::qty(length(empty))}Month{?s} without a valid daily gamma (climatology NA; PBLHmod-clim uses the constant gamma): {.val {month.abb[empty]}}.")
+    }
     se <- as.character(season_of(as.POSIXct(daily$date, tz = "UTC")))
     by_lev <- dplyr::summarise(dplyr::group_by(dplyr::tibble(levels = daily$levels, n = daily$n_levels, g = daily$gamma,
                                                              raw = daily$gamma_raw, r2 = daily$r2), levels, n),

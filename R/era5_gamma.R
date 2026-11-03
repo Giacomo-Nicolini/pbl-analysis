@@ -94,7 +94,9 @@ gamma_profiles <- function(pl, altitude_m, orography_m = NA_real_, opts = gamma_
 #' @param lat,lon Site coordinates [decimal degrees] (sunrise, [sun_times()]).
 #' @param opts [gamma_options()].
 #' @return Tibble per date: `date` [Date], `sunrise_utc`, `profile_utc` [POSIXct UTC], the columns of
-#'   [gamma_profiles()] for that profile; `flag = "no_profile"` where none is available.
+#'   [gamma_profiles()] for that profile; `flag = "no_profile"` where none is available, `"polar_night"` /
+#'   `"polar_day"` on days without sunrise (no morning profile; spec 09 amendment 1: B&G is not run on these
+#'   days, spec 02 Amendment 2, so gamma enters only N of Eq. B3 there, from the month's climatology).
 gamma_daily <- function(prof, dates, lat, lon, opts = gamma_options()) {
   dates <- as.Date(dates)
   st <- sun_times(dates, lat, lon)
@@ -113,21 +115,31 @@ gamma_daily <- function(prof, dates, lat, lon, opts = gamma_options()) {
   out <- dplyr::bind_cols(dplyr::tibble(date = dates, sunrise_utc = st$sunrise_utc,
                                         profile_utc = p$timestamp_utc), p[setdiff(names(p), "timestamp_utc")])
   out$flag[is.na(j)] <- "no_profile"
+  if (is.null(opts$profile_hour)) {
+    np <- is.na(st$sunrise_utc) & !is.na(st$polar) # no sunrise (a day with sunrise but no sunset keeps its profile)
+    out$flag[np] <- paste0("polar_", st$polar[np])
+  }
   out
 }
 
 #' Monthly gamma climatology
 #'
+#' A month without a valid daily gamma (e.g. polar night or polar day for the whole month) has `NA` statistics
+#' and `n_days = 0`; [gamma_for_rows()] then uses the constant gamma (spec 11 B, `"constant_fallback"`).
+#'
 #' @param daily Output of [gamma_daily()].
 #' @return Tibble per calendar month 1-12: `month`, `median`, `p25`, `p75` [K m-1], `n_days` [-, days with a
-#'   valid gamma], `n_flagged` [-, days with a profile but no valid gamma].
+#'   valid gamma], `n_flagged` [-, days with a profile but no valid gamma], `n_polar_night`, `n_polar_day`
+#'   [-, days without sunrise, hence without a morning profile].
 gamma_climatology <- function(daily) {
   m <- as.integer(format(daily$date, "%m"))
   dplyr::bind_rows(lapply(1:12, function(k) {
     g <- daily$gamma[m == k & !is.na(daily$gamma)]
     q <- if (length(g) > 0) stats::quantile(g, c(0.25, 0.5, 0.75), names = FALSE) else rep(NA_real_, 3)
     dplyr::tibble(month = k, median = q[2], p25 = q[1], p75 = q[3], n_days = length(g),
-                  n_flagged = sum(m == k & daily$flag %in% c("too_few_levels", "implausible")))
+                  n_flagged = sum(m == k & daily$flag %in% c("too_few_levels", "implausible")),
+                  n_polar_night = sum(m == k & daily$flag %in% "polar_night"),
+                  n_polar_day = sum(m == k & daily$flag %in% "polar_day"))
   }))
 }
 
@@ -155,7 +167,9 @@ gamma_for_rows <- function(day_id, source = c("era5_clim", "era5_daily"), daily,
   g_clim <- clim$median[match(m, clim$month)]
   no_clim <- !is.na(m) & is.na(g_clim)
   if (any(no_clim)) {
-    cli::cli_warn(c("ERA5 gamma climatology missing for month{?s} {.val {sort(unique(m[no_clim]))}}.",
+    mm <- sort(unique(m[no_clim]))
+    # explicit quantity: a numeric vector cannot be the quantity of {?s} (spec 09 amendment 1, SE-Sto)
+    cli::cli_warn(c("ERA5 gamma climatology missing for {cli::qty(length(mm))}month{?s} {.val {mm}}.",
                     "i" = "Constant gamma used on {sum(no_clim)} row{?s} ({.field gamma_source_used} = {.val constant_fallback})."))
   }
   g_clim <- ifelse(no_clim, gamma_const, g_clim)

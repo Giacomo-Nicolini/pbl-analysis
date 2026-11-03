@@ -129,3 +129,79 @@ test_that("run_pblh_model gamma_source: constant unchanged, ERA5 tables per day,
   expect_error(run_pblh_model(d, site, pblh_options(gamma_source = "era5_clim")), "gamma_era5")
   expect_error(pblh_options(gamma_source = "era5"), "gamma_source")
 })
+
+# ---- Polar sites (spec 09 amendment 1) ----
+# One synthetic year of valid 6-hourly profiles (gamma 0.005 K m-1).
+polar_prof <- function(year = 2022) {
+  t <- seq(as.POSIXct(paste0(year, "-01-01"), tz = "UTC"), as.POSIXct(paste0(year, "-12-31 18:00"), tz = "UTC"),
+           by = "6 hours")
+  dplyr::tibble(timestamp_utc = t, gamma = 0.005, gamma_raw = 0.005, n_levels = 3L, r2 = 1, levels = "925;850;700",
+                flag = "ok", gamma_orog = 0.005, levels_orog = "925;850;700")
+}
+polar_sites <- list(`SE-Sto` = c(68.35594288, 19.04520892), `GL-ZaF` = c(74.481522, -20.555773))
+
+test_that("gamma_daily / gamma_climatology at 68 N and 74.5 N: no morning profile without sunrise, empty months NA", {
+  days <- seq(as.Date("2022-01-01"), as.Date("2022-12-31"), by = "day")
+  # expected days without sunrise (sun_times(), 2022), by month: night, day (a day with sunrise but no sunset,
+  # one per site in May, keeps its profile)
+  expect_pol <- list(
+    `SE-Sto` = list(night = c(`1` = 11, `11` = 1, `12` = 31), day = c(`5` = 2, `6` = 30, `7` = 14), empty = c(6, 12)),
+    `GL-ZaF` = list(night = c(`1` = 31, `2` = 5, `11` = 26, `12` = 31), day = c(`5` = 29, `6` = 30, `7` = 31, `8` = 10),
+                    empty = c(1, 6, 7, 12))
+  )
+  for (s in names(polar_sites)) {
+    g <- gamma_daily(polar_prof(), days, polar_sites[[s]][1], polar_sites[[s]][2])
+    pol <- g$flag %in% c("polar_night", "polar_day")
+    expect_true(all(is.na(g$gamma[pol])) && all(is.na(g$sunrise_utc[pol])))
+    expect_true(all(g$gamma[!pol] == 0.005))
+    expect_false(any(g$flag == "no_profile"))
+    cl <- gamma_climatology(g)
+    ex <- expect_pol[[s]]
+    nn <- integer(12); nn[as.integer(names(ex$night))] <- ex$night
+    nd <- integer(12); nd[as.integer(names(ex$day))] <- ex$day
+    expect_equal(cl$n_polar_night, nn, label = paste(s, "polar nights"))
+    expect_equal(cl$n_polar_day, nd, label = paste(s, "polar days"))
+    expect_equal(cl$month[cl$n_days == 0], ex$empty, label = paste(s, "empty months"))
+    expect_true(all(is.na(cl$median[cl$n_days == 0])) && all(cl$median[cl$n_days > 0] == 0.005))
+    expect_equal(cl$n_days + cl$n_polar_night + cl$n_polar_day, as.integer(table(format(days, "%m"))))
+  }
+  # GL-ZaF May: 29 days without sunrise -> climatology from the other 2 days
+  g <- gamma_daily(polar_prof(), days, polar_sites[["GL-ZaF"]][1], polar_sites[["GL-ZaF"]][2])
+  expect_equal(gamma_climatology(g)$n_days[5], 2L)
+})
+
+test_that("gamma_for_rows: missing-month message with 0, 1 and several months (no cli quantity error)", {
+  daily <- dplyr::tibble(date = as.Date(character()), gamma = numeric())
+  day <- as.Date(c("2022-01-15", "2022-06-15", "2022-07-15", "2022-12-15", "2022-03-15"))
+  cl <- dplyr::tibble(month = 1:12, median = 0.005)
+  expect_no_warning(g0 <- gamma_for_rows(day, "era5_clim", daily, cl))
+  expect_true(all(g0$source_used == "era5_clim"))
+  cl1 <- cl; cl1$median[6] <- NA
+  expect_warning(g1 <- gamma_for_rows(day, "era5_clim", daily, cl1, gamma_const = 0.01), "missing for month 6")
+  expect_equal(g1$gamma, c(0.005, 0.01, 0.005, 0.005, 0.005))
+  cl4 <- cl; cl4$median[c(1, 6, 7, 12)] <- NA
+  w <- tryCatch(gamma_for_rows(day, "era5_clim", daily, cl4), warning = function(w) w)
+  expect_s3_class(w, "warning")
+  expect_match(conditionMessage(w), "missing for months 1, 6, 7, and 12")
+  expect_match(conditionMessage(w), "4 rows")
+  g4 <- suppressWarnings(gamma_for_rows(day, "era5_daily", daily, cl4, gamma_const = 0.01))
+  expect_equal(g4$source_used, c(rep("constant_fallback", 4), "era5_clim_fallback"))
+})
+
+test_that("run_pblh_model PBLHmod-clim at 74.5 N over a year: runs, constant fallback in empty months, no B&G on polar days", {
+  site <- test_site_meta(lat = 74.481522, lon = -20.555773, utc_offset_h = 0)
+  d <- make_diurnal(365, start = "2022-01-01 00:00:00", site = site)
+  days <- seq(as.Date("2022-01-01"), as.Date("2022-12-31"), by = "day")
+  g <- gamma_daily(polar_prof(), days, site$lat, site$lon)
+  e <- list(daily = g, clim = gamma_climatology(g))
+  expect_warning(out <- run_pblh_model(d, site, pblh_options(gamma_source = "era5_clim"), gamma_era5 = e),
+                 "missing for months 1, 6, 7, and 12")
+  m <- as.integer(format(out$day_id, "%m"))
+  expect_true(all(out$gamma_source_used[m %in% c(1, 6, 7, 12)] == "constant_fallback"))
+  expect_true(all(out$gamma_used[m %in% c(1, 6, 7, 12)] == 0.01))
+  expect_true(all(out$gamma_source_used[!m %in% c(1, 6, 7, 12)] == "era5_clim"))
+  # polar day: diagnostic only (spec 02 Amendment 2), never B&G
+  expect_true(all(is.na(out$h_bg_m[out$flag_polar_day])))
+  expect_true(any(out$flag_polar_day))
+  expect_true(all(out$pblh_m > 0, na.rm = TRUE))
+})
