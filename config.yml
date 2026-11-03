@@ -33,6 +33,7 @@ default:
   sec_per_ffp_halfhour: 2.0
   footprint_extra_sites_file: "config/footprint_extra_sites.txt"   # supplementary footprint cases (spec 09 A5)
   reference_years_file: "config/reference_years.csv"               # approved reference years (G; spec 09 A5)
+  sites_not_run_file: "config/sites_not_run.csv"                   # stations not run, with the reason (spec 09 amendment 1)
 
 cluster:
   icos_l2_dir: "LOCAL"

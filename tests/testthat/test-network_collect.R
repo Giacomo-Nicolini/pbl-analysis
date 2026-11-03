@@ -49,3 +49,35 @@ test_that("network_gamma_summary and network_flags", {
   expect_match(f$detail[f$flag == "step_failed"], "11a")
   expect_match(f$detail[f$flag == "era5_orography"], "\\+362 m")
 })
+
+test_that("stations not run: read, listed as not_run (not as a missing step); config lists consistent", {
+  p <- withr::local_tempfile(fileext = ".csv")
+  writeLines(c("site_id,reason,detail,decided", "XX-Nor,no L2 data,no data in the L2I 2026 release,G 2026-11-03"), p)
+  nr <- read_sites_not_run(p)
+  expect_equal(nr$site_id, "XX-Nor")
+  expect_equal(nrow(read_sites_not_run(file.path(tempdir(), "none.csv"))), 0)
+  bad <- withr::local_tempfile(fileext = ".csv")
+  writeLines(c("site_id,reason,detail,decided", "XX-Nor,,x,y"), bad)
+  expect_error(read_sites_not_run(bad), "reason")
+  st <- dplyr::tibble(site_id = rep("A", 5), step = c("01", "11a", "02", "04", "08a"), state = "ok")
+  empty_cv <- dplyr::tibble(site_id = character(), case = character(), set = character(), stratum = character(),
+                            n_rows = integer(), n_valid_qc_used = integer())
+  empty_ce <- dplyr::tibble(site_id = character(), cell_dist_km = numeric(), dalt_m = numeric())
+  empty_ca <- dplyr::tibble(site_id = character(), case = character(), gt5km = integer())
+  # also in the site list and without any run status: still "not_run", never "step_missing"
+  f <- network_flags(c("A", "XX-Nor"), st, empty_ca, empty_cv, empty_ce, not_run = nr)
+  expect_equal(f$site_id, "XX-Nor")
+  expect_equal(f$flag, "not_run")
+  expect_equal(f$detail, "not run (no L2 data): no data in the L2I 2026 release [G 2026-11-03]")
+  expect_equal(network_flags(c("A", "XX-Nor"), st, empty_ca, empty_cv, empty_ce)$flag, "step_missing")
+
+  # the committed lists: run_sites.txt + sites_not_run.csv = sites.csv, disjoint (IT-SR2 not run; 39 sites)
+  ids <- trimws(readLines(here::here("config", "run_sites.txt"), warn = FALSE))
+  ids <- ids[nzchar(ids) & !startsWith(ids, "#")]
+  nr_cfg <- read_sites_not_run(here::here("config", "sites_not_run.csv"))
+  all_sites <- read_sites(here::here("config", "sites.csv"))$site_id
+  expect_length(intersect(ids, nr_cfg$site_id), 0)
+  expect_setequal(c(ids, nr_cfg$site_id), all_sites)
+  expect_true("IT-SR2" %in% nr_cfg$site_id && "IT-SR2" %in% all_sites)
+  expect_length(ids, 39)
+})

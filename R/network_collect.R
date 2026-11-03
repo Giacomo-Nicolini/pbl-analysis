@@ -88,6 +88,26 @@ network_gamma_summary <- function(monthly, summ) {
                      list(one(as.numeric(site_all), "all"))))
 }
 
+#' Read the list of stations that are not run
+#'
+#' Spec 09 amendment 1: stations kept in `config/sites.csv` (metadata) but left out of the network run, with the
+#' reason (e.g. IT-SR2: no data in the L2I 2026 release, G 2026-11-03).
+#'
+#' @param path CSV with `site_id`, `reason` (short label, e.g. `"no L2 data"`), `detail`, `decided`; a missing file
+#'   means no station is excluded.
+#' @return Tibble `site_id`, `reason`, `detail`, `decided` (character).
+read_sites_not_run <- function(path) {
+  cols <- c("site_id", "reason", "detail", "decided")
+  if (is.null(path) || !file.exists(path)) return(dplyr::tibble(!!!stats::setNames(rep(list(character()), 4), cols)))
+  x <- readr::read_csv(path, col_types = readr::cols(.default = readr::col_character()), comment = "#",
+                       show_col_types = FALSE, progress = FALSE)
+  miss <- setdiff(cols, names(x))
+  if (length(miss)) cli::cli_abort("{.path {path}}: missing column{?s} {.field {miss}}.")
+  if (anyNA(x$site_id) || anyDuplicated(x$site_id)) cli::cli_abort("{.path {path}}: empty or duplicated {.field site_id}.")
+  if (anyNA(x$reason)) cli::cli_abort("{.path {path}}: every station needs a {.field reason}.")
+  x[cols]
+}
+
 #' Site flags of the network run
 #'
 #' @param sites Station codes.
@@ -97,11 +117,21 @@ network_gamma_summary <- function(monthly, summ) {
 #' @param cells ERA5 cell metadata (`site_id`, `cell_dist_km`, `dalt_m`).
 #' @param steps Steps expected to have run.
 #' @param min_coverage Flag below this share of `valid_qc_used` half-hours (PBLHmod, set `etc`) [-].
+#' @param not_run Output of [read_sites_not_run()]: listed as `"not_run"` (detail `"not run (<reason>): ..."`),
+#'   never as a missing step, even if also in `sites`.
 #' @return Tibble: `site_id`, `flag`, `detail`.
 network_flags <- function(sites, status, cases_tbl, coverage, cells, steps = c("01", "11a", "02", "04", "08a"),
-                          min_coverage = 0.2) {
+                          min_coverage = 0.2, not_run = NULL) {
   f <- list()
   add <- function(s, flag, detail) f[[length(f) + 1]] <<- dplyr::tibble(site_id = s, flag = flag, detail = detail)
+  if (!is.null(not_run)) {
+    for (j in seq_len(nrow(not_run))) {
+      add(not_run$site_id[j], "not_run", paste0("not run (", not_run$reason[j], ")",
+                                                if (!is.na(not_run$detail[j])) paste0(": ", not_run$detail[j]) else "",
+                                                if (!is.na(not_run$decided[j])) paste0(" [", not_run$decided[j], "]") else ""))
+    }
+    sites <- setdiff(sites, not_run$site_id)
+  }
   for (s in sites) {
     st <- status[status$site_id == s, ]
     miss <- setdiff(steps, st$step[st$state %in% "ok"])
