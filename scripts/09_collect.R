@@ -10,7 +10,8 @@
 #   09_network_era5_cells.csv      ERA5 cell distance and orography
 #   09_network_footprint_coverage.csv  footprint coverage per case x set (08a, full period, stratum all)
 #   08_reference_years.csv         reference-year proposal (spec 09 A5): review, then commit config/reference_years.csv
-#   09_network_run_status.csv      last status per site x step; 09_network_flags.csv sites with problems
+#   09_network_run_status.csv      last status per site x step; 09_network_flags.csv sites with problems and the
+#                                  stations not run (config/sites_not_run.csv: flag "not_run", spec 09 amendment 1)
 # Figure: 09_network_logratio_<n>sites.png, median ln(PBLHmod / ERA5) by site and regime (PBLHmod, PBLHmod-clim).
 #
 # Usage: Rscript scripts/09_collect.R [--sites-file=config/run_sites.txt]
@@ -25,6 +26,12 @@ opt <- function(k, def = NULL) {
 cfg <- get_cfg()
 ids <- trimws(readLines(opt("sites-file", here::here("config", "run_sites.txt")), warn = FALSE))
 sites <- ids[nzchar(ids) & !startsWith(ids, "#")]
+# Stations not run (spec 09 amendment 1): listed in the flags as "not run (<reason>)", not as missing steps.
+not_run <- read_sites_not_run(if (is.null(cfg$sites_not_run_file)) NULL else resolve_path(cfg$sites_not_run_file))
+if (length(intersect(sites, not_run$site_id))) {
+  cli::cli_alert_warning("In the site list but marked as not run (dropped): {.val {intersect(sites, not_run$site_id)}}.")
+}
+sites <- setdiff(sites, not_run$site_id)
 tdir <- file.path(resolve_path(cfg$output_dir, must_exist = FALSE), "tables")
 derived <- resolve_path(cfg$derived_dir, must_exist = FALSE)
 dir.create(tdir, recursive = TRUE, showWarnings = FALSE)
@@ -34,6 +41,7 @@ write_tab <- function(x, name) {
   cli::cli_alert_success("{name}: {nrow(x)} rows")
 }
 cli::cli_h1("Network collection: {length(sites)} sites")
+if (nrow(not_run)) cli::cli_inform("Not run: {paste0(not_run$site_id, ' (', not_run$reason, ')', collapse = ', ')}.")
 
 # --- run status ---
 status <- dplyr::bind_rows(lapply(sites, function(s) dplyr::bind_rows(lapply(names(pipeline_steps()), function(st) {
@@ -97,7 +105,8 @@ if (nrow(yc)) {
 fl <- network_flags(sites, status, if (nrow(cases_tbl)) cases_tbl else dplyr::tibble(site_id = character(), case = character(), gt5km = integer()),
                     if (nrow(cov)) cov else dplyr::tibble(site_id = character(), case = character(), set = character(), stratum = character(),
                                                           n_rows = integer(), n_valid_qc_used = integer()),
-                    if (nrow(cells)) cells else dplyr::tibble(site_id = character(), cell_dist_km = numeric(), dalt_m = numeric()))
+                    if (nrow(cells)) cells else dplyr::tibble(site_id = character(), cell_dist_km = numeric(), dalt_m = numeric()),
+                    not_run = not_run)
 write_tab(fl, "09_network_flags.csv")
 if (nrow(fl)) print(as.data.frame(fl), row.names = FALSE)
 

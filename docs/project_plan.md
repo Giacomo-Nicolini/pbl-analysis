@@ -12,7 +12,9 @@ Status: agreed design, v0.1 (2026-10-08). Living document: update as decisions c
 
 ## Scope
 
-- Sites: ICOS ecosystem stations only, for now.
+- Sites: ICOS ecosystem stations only, for now. Network run (spec 09): 39 of the 40 stations of `config/sites.csv`;
+  IT-SR2 is not run (no data in the L2I 2026 release, station work in progress; G 2026-11-03): its metadata stay in
+  `config/sites.csv`, the reason in `config/sites_not_run.csv` (spec 09 amendment 1).
 - Language: R (a Python port is possible later; keep the logic language-agnostic and well documented).
 - Execution: developed locally (Windows, VS Code), run on the Unitus cluster.
 - Sources compared (G, 2026-10-23): the evaluation (phases 3–4) compares **PBLHmod, ERA5 and measured PBLH only**.
@@ -222,7 +224,8 @@ too shallow when deep") is a **hypothesis under test**.
   chunks keep the unsmoothed summed fields and counts per group, so annual climatologies are built by summing months
   and smoothing at the end. Runtime ≈ 2 s per FFP half-hour (single core).
 - **Execution on the cluster (spec 09, implemented 2026-10-30):** per-site driver `scripts/run_site.R` (steps 01,
-  11a, 02, 04, 08a; run status with inputs hash) as a SLURM array over `config/run_sites.txt` (all 40 stations);
+  11a, 02, 04, 08a; run status with inputs hash) as a SLURM array over `config/run_sites.txt` (39 stations; IT-SR2
+  not run, spec 09 amendment 1);
   footprint chunks site × case × month (half-months above `chunk_target_min`) of the approved reference year as a
   second array; collection `scripts/09_collect.R`. Footprint cases: `pblhmod`, `pblhmod_clim`, `era5` everywhere;
   `measured` where a primary measured source exists (aerosol: comparable set only); at the extra sites

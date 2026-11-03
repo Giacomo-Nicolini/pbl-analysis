@@ -252,3 +252,101 @@ test_that("read_era5_static: one row per cell, orography from z / g, units check
   edit_lines(sf, function(x) sub("^# units: m$", "# units: km", x))
   expect_error(read_era5_static("XX-Tst", era_cfg(root)), "units")
 })
+
+# ---- Longitude conventions (spec 09 amendment 1) ----
+# Minimal 3x3 block of one variable per family for a site, header longitudes in 0-360 (`conv = 360`) or
+# -180..180; `req_conv` the same for longitude_requested.
+write_lon_block <- function(root, site, lat, lon, conv = 180, req_conv = conv) {
+  wrap <- function(x, cv) if (cv == 360) x %% 360 else x
+  lat0 <- round(lat / 0.25) * 0.25
+  lon0 <- round(lon / 0.25) * 0.25
+  fams <- list(
+    single_level = list(dir = file.path(root, "sl", site), var = "boundary_layer_height", time = "time",
+                        name = function(fl) sprintf("%s__reanalysis_era5_single_level__boundary_layer_height__20200101T0000__20200101T0000__%s.csv", site, fl)),
+    pressure_level = list(dir = file.path(root, "pl", site), var = "temperature", time = "time",
+                          name = function(fl) sprintf("%s__reanalysis_era5_pressure_levels-pl__temperature__20200101T0000__20200101T0000__%s.csv", site, fl)),
+    static = list(dir = file.path(root, "static"), var = "z", time = "valid_time_utc",
+                  name = function(fl) sprintf("%s__single-levels__z__197901201200__197901201200__%s.csv", site, fl))
+  )
+  for (fm in names(fams)) {
+    a <- fams[[fm]]
+    dir.create(a$dir, recursive = TRUE, showWarnings = FALSE)
+    for (r in -1:1) for (c in -1:1) {
+      fl <- if (fm == "static") sprintf("north_%+d__south_+0__east_%+d__west_+0", r, c) else
+        sprintf("north_+%d__south_+%d__east_+%d__west_+%d", r == 1, r == -1, c == 1, c == -1)
+      tm <- if (fm == "static") "1979-01-20 12:00:00" else "2020-01-01 00:00:00"
+      writeLines(c("# ==== METADATA ====", paste0("# ", c(
+        paste("point_id:", site), paste("variable:", a$var),
+        paste("latitude_requested:", lat), paste("longitude_requested:", wrap(lon, req_conv)),
+        paste("latitude_grid:", lat0 + 0.25 * r), paste("longitude_grid:", wrap(lon0 + 0.25 * c, conv)),
+        "grid_resolution_deg: 0.25", "n_rows: 1", paste("first_time:", tm), paste("last_time:", tm))),
+        "# ==== FINE METADATA (dati sotto) ====", paste0(a$time, ",x"), paste0(tm, ",1")),
+        file.path(a$dir, a$name(fl)))
+    }
+  }
+  invisible(c(lat0 = lat0, lon0 = lon0))
+}
+
+lon_sites <- list(`GL-ZaF` = c(74.481522, -20.555773), `UK-AMo` = c(55.792546, -3.2436918),
+                  `FR-Bil` = c(44.493653, -0.956092), `FR-Lus` = c(46.4142461, 0.1206518),
+                  `FR-Gri` = c(48.84422, 1.95191))
+
+test_that("era5_lon_180: 0-360 to -180..180, in-range values unchanged (bit-identical)", {
+  expect_equal(era5_lon_180(c(359, 356.75, 339.5, 359.75, 0, 0.12, 1.95191, 180, -180, 540, -190, NA)),
+               c(-1, -3.25, -20.5, -0.25, 0, 0.12, 1.95191, -180, -180, -180, 170, NA))
+  x <- c(4.51984, 1.95191, 24.29477, 9.85591, -0.956092)
+  expect_identical(era5_lon_180(x), x)
+  expect_equal(era5_lon_diff(359.75, 0), -0.25)
+  expect_equal(era5_lon_diff(0, 359.75), 0.25)
+  expect_equal(era5_lon_diff(-0.25, 0.25), -0.5)
+  expect_equal(era5_lon_diff(179.75, -179.75), -0.5)
+})
+
+test_that("find_era5_files: same cells in 0-360 and -180..180, neighbours across 0 deg, all families", {
+  for (s in names(lon_sites)) {
+    for (cv in list(c(180, 180), c(360, 360), c(360, 180), c(180, 360))) {
+      root <- withr::local_tempdir()
+      p <- write_lon_block(root, s, lon_sites[[s]][1], lon_sites[[s]][2], conv = cv[1], req_conv = cv[2])
+      cfg <- list(era5_sl_dir = file.path(root, "sl", "{site}"), era5_pl_dir = file.path(root, "pl", "{site}"),
+                  era5_static_dir = file.path(root, "static"))
+      for (fm in c("single_level", "pressure_level", "static")) {
+        lab <- paste(s, fm, "grid", cv[1], "requested", cv[2])
+        f <- expect_no_error(suppressMessages(find_era5_files(s, cfg, fm)), message = lab)
+        expect_equal(nrow(f), 9, label = lab)
+        expect_setequal(paste(f$cell_row, f$cell_col), paste(rep(-1:1, 3), rep(-1:1, each = 3)))
+        tw <- f[f$cell_row == 0 & f$cell_col == 0, ]
+        expect_equal(c(tw$grid_lat, tw$grid_lon), unname(p), label = lab)
+        expect_equal(f$grid_lon, p[["lon0"]] + 0.25 * f$cell_col, label = lab)
+        expect_true(all(f$grid_lon >= -180 & f$grid_lon < 180), label = lab)
+        expect_equal(unique(f$lon_requested), lon_sites[[s]][2], label = lab)
+        expect_lt(max(tw$grid_dist_km), 20)
+      }
+    }
+  }
+})
+
+test_that("FR-Lus (+0.12 E): the western neighbour at 359.75 is col -1, bilinear weights across 0 deg", {
+  root <- withr::local_tempdir()
+  write_lon_block(root, "FR-Lus", 46.4142461, 0.1206518, conv = 360)
+  cfg <- list(era5_sl_dir = file.path(root, "sl", "{site}"), era5_pl_dir = file.path(root, "pl", "{site}"),
+              era5_static_dir = file.path(root, "static"))
+  f <- suppressMessages(find_era5_files("FR-Lus", cfg, "static"))
+  w <- f[f$cell_row == 0 & f$cell_col == -1, ]
+  expect_equal(w$grid_lon, -0.25)
+  expect_match(w$file, "east_-1", fixed = TRUE)
+  # tower east of the cell centre (0.0): bilinear uses the eastern column, weight fx = 0.1206518 / 0.25
+  long <- dplyr::tibble(cell_row = f$cell_row, cell_col = f$cell_col, grid_lat = f$grid_lat, grid_lon = f$grid_lon,
+                        timestamp_utc = as.POSIXct("2020-01-01", tz = "UTC"), v = 10 * f$cell_col)
+  b <- era5_bilinear(long, 46.4142461, 0.1206518, "v")
+  expect_equal(b$v_bilin, 10 * 0.1206518 / 0.25, tolerance = 1e-9)
+  # FR-Bil (-0.96 E, cell -1.0 = 359.0): tower east of the centre, neighbour -0.75 = 359.25
+  write_lon_block(root, "FR-Bil", 44.493653, -0.956092, conv = 360)
+  g <- suppressMessages(find_era5_files("FR-Bil", cfg, "static"))
+  expect_equal(g$grid_lon[g$cell_row == 0 & g$cell_col == 1], -0.75)
+})
+
+test_that("ERA5 provenance text gives longitudes in -180..180", {
+  txt <- era5_provenance(list(latitude_requested = 46.41, longitude_requested = 0.12, latitude_grid = 46.5,
+                              longitude_grid = 359.75))
+  expect_match(txt, "cell centre 46.5 N, -0.25 E", fixed = TRUE)
+})

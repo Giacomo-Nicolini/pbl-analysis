@@ -88,3 +88,32 @@ test_that("step_is_current and the inputs hash", {
   expect_false(h == step_inputs_hash("02", "XX-Tst", utils::modifyList(cfg, list(pblh_gamma_default = 0.005)), c(`11a` = "x")))
   expect_false(h == step_inputs_hash("02", "XX-Tst", cfg, c(`11a` = "x"), args = "--with-oper"))
 })
+
+test_that("run_site_exit_status: non-zero when a step failed, propagated as the Rscript exit code (spec 09 amendment 1)", {
+  cfg <- local_pipeline_cfg()
+  steps <- c("01", "11a", "02", "04")
+  res <- suppressMessages(run_site_steps("XX-Tst", steps, cfg, runner = fake_runner(fail = "11a")$run))
+  expect_equal(res$action, c("ok", "failed", "not_run", "not_run"))
+  expect_identical(run_site_exit_status(res), 1L)
+  res2 <- suppressMessages(run_site_steps("XX-Tst", steps, cfg, runner = fake_runner()$run))
+  expect_equal(res2$action, c("skipped", "ok", "ok", "ok"))
+  expect_identical(run_site_exit_status(res2), 0L)
+  res3 <- suppressMessages(run_site_steps("XX-Tst", steps, cfg, runner = fake_runner()$run))
+  expect_identical(run_site_exit_status(res3), 0L) # all skipped
+  expect_identical(run_site_exit_status(res[0, ]), 1L)
+  # the final lines of scripts/run_site.R in a fresh Rscript process: summary printed, then the exit code
+  tail_src <- grep("run_site_exit_status|quit[(]|^if [(]status", readLines(here::here("scripts", "run_site.R")), value = TRUE)
+  expect_length(tail_src, 3)
+  for (case in list(list(res = res, status = 1L), list(res = res2, status = 0L))) {
+    rds <- withr::local_tempfile(fileext = ".rds")
+    saveRDS(case$res, rds)
+    scr <- withr::local_tempfile(fileext = ".R")
+    writeLines(c(sprintf('for (f in list.files(%s, pattern = "[.]R$", full.names = TRUE)) source(f)', deparse(here::here("R"))),
+                 sprintf("res <- readRDS(%s); site_id <- 'XX-Tst'", deparse(rds)),
+                 'print(as.data.frame(res[c("step", "action", "exit_code")]), row.names = FALSE)', tail_src), scr)
+    out <- withr::local_tempfile()
+    r <- callr::rscript(scr, stdout = out, stderr = "2>&1", fail_on_status = FALSE, show = FALSE, wd = here::here())
+    expect_identical(r$status, case$status)
+    expect_true(any(grepl("step +action +exit_code", readLines(out))))
+  }
+})

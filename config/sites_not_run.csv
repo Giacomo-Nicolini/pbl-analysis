@@ -1,0 +1,2 @@
+site_id,reason,detail,decided
+IT-SR2,no L2 data,no data in the L2I 2026 release (station work in progress); metadata kept in config/sites.csv,G 2026-11-03

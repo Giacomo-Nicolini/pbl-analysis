@@ -34,6 +34,11 @@ if (what == "sites") {
   ids <- ids[nzchar(ids) & !startsWith(ids, "#")]
   known <- read_sites(resolve_path(cfg$sites_file))$site_id
   if (length(setdiff(ids, known))) cli::cli_abort("Unknown site{?s} in {.path {src}}: {.val {setdiff(ids, known)}}.")
+  # stations not run (spec 09 amendment 1): never submitted
+  nr <- read_sites_not_run(if (is.null(cfg$sites_not_run_file)) NULL else resolve_path(cfg$sites_not_run_file))
+  if (length(intersect(ids, nr$site_id))) {
+    cli::cli_abort("Site{?s} {.val {intersect(ids, nr$site_id)}} in {.path {src}} {?is/are} marked as not run in {.file {cfg$sites_not_run_file}}.")
+  }
   list_file <- file.path(out_dir, paste0("sites_", stamp, ".txt"))
   writeLines(ids, list_file)
   extra <- c(if ("--force" %in% args) "--force", if ("--with-oper" %in% args) "--with-oper")
