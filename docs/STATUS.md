@@ -1,6 +1,6 @@
 # Project status (handover note)
 
-Last update: 2026-10-30. Read this first in a new session, then `docs/project_plan.md` and `CLAUDE.md`.
+Last update: 2026-11-03. Read this first in a new session, then `docs/project_plan.md` and `CLAUDE.md`.
 
 ## PBLH sources (names used in the code and in the standard files)
 
@@ -30,7 +30,7 @@ Last update: 2026-10-30. Read this first in a new session, then `docs/project_pl
 | 08 | Footprint sensitivity to the PBLH source (FFP, Kljun et al. 2015) at BE-Bra and FI-Hyy; one-month PC test (FI-Hyy 2022-09); ONEFlux BIF reader and u* thresholds | 5a | merged (`main`, 320f4ec); production run in spec 09 |
 | 10 | Aerosol-based measured MLH: Part A SIRTA ReOBS at FR-Gri (reader, two standard sources, FR-Gri runs 01/02/04, generalised spec-07 comparison, range-compression statistics also for FI-Hyy; review additions 2026-10-29: FB/nRMSD, symmetric slope + Bland–Altman, censored-tail null, PBLHmod-deficit diagnostics, NEE column check); Part B Lanzhot not started (two sample days only); Part C (Cloudnet ε at Palaiseau) only with G's go | 2, 3 | Part A merged (`main`, 63497d8) |
 | 11 | γ from ERA5 profiles (`gamma_source` option, spec 02 Amendment 14); MeteoSwiss STRATfinder MLH at CH-Dav; CH-Dav runs 01/02/04; four-site evaluation of the γ cases; faded-context plotting convention | 1, 3 | merged (`main`, ccc6c08); decided: default unchanged (EC-only), ERA5 climatology = variant PBLHmod-clim |
-| 09 | Cluster deployment. Part A (PC): config (BIF folder with glob, FLUXNET year spans, `pblh_gamma_default`), per-site driver with run status, SLURM templates and submit script, footprint chunks (c5 storage, chunk list, chunk mode, new cases, measured primary source), network collection and reference-year proposal, one figure style (`pblh_sources_style`, `theme_pblh()`). Part B (cluster runs) by G | 1–5 | Part A implemented on `spec-09-cluster` (2026-10-30), to review; Part B not started |
+| 09 | Cluster deployment. Part A (PC): config (BIF folder with glob, FLUXNET year spans, `pblh_gamma_default`), per-site driver with run status, SLURM templates and submit script, footprint chunks (c5 storage, chunk list, chunk mode, new cases, measured primary source), network collection and reference-year proposal, one figure style (`pblh_sources_style`, `theme_pblh()`). Part B (cluster runs) by G | 1–5 | Part A merged (`main`, 9656cd1); Part B: BE-Bra/FI-Hyy cluster regression passed (2026-11-02); first network run (job 11449) failed at FR-Bil, FR-Lus, UK-AMo, GL-ZaF (ERA5 0-360 longitudes) and SE-Sto (polar months, cli message): amendment 1 on `spec-09-amend1` (2026-11-03), to review. Network run on 39 stations: IT-SR2 not run (no L2 data in the L2I 2026 release; `config/sites_not_run.csv`) |
 
 Phases (see `project_plan.md`): 0 done; 1 done (model, input QC, legacy regression); 2 standard format, three
 sources (spec 04) and the first measured source (spec 07, FI-Hyy) done; 3 BE-Bra (vs ERA5) and FI-Hyy (vs ERA5 and

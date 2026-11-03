@@ -7,8 +7,8 @@ Read first: `CLAUDE.md`, `docs/STATUS.md`, `docs/project_plan.md` ("Scope"), `do
 
 ## Goal
 
-Run the pipeline at the 40 class 1–2 ICOS ecosystem stations (`config/sites.csv`) on the Unitus cluster (SLURM):
-inputs check, PBLHmod, ERA5 comparison, footprint validity and coverage (full period), and the footprint sensitivity
+Run the pipeline at the 40 class 1–2 ICOS ecosystem stations (`config/sites.csv`; 39 since amendment 1: IT-SR2
+not run) on the Unitus cluster (SLURM): inputs check, PBLHmod, ERA5 comparison, footprint validity and coverage (full period), and the footprint sensitivity
 on one reference year per station. Claude Code implements and tests on G's PC (light work only, no heavy runs:
 RAM issue on the PC, see STATUS). **G runs everything on the cluster** with Cowork's runbook
 (`docs/local/cluster_runbook.md`, untracked). The repo is public: no cluster paths, user names, host names or e-mail
@@ -63,8 +63,8 @@ failure costs little and the array spreads well across nodes; restartable as in 
 
 ### A3. SLURM templates (tracked, no machine data)
 
-- `slurm/sites_array.sbatch`: array over the row index of a site list (`config/run_sites.txt`, default: all 40);
-  calls `scripts/run_site.R`. `slurm/footprint_chunks.sbatch`: array over the rows of a chunk list (A5).
+- `slurm/sites_array.sbatch`: array over the row index of a site list (`config/run_sites.txt`: 39 stations, all of
+  `config/sites.csv` except `config/sites_not_run.csv`); calls `scripts/run_site.R`. `slurm/footprint_chunks.sbatch`: array over the rows of a chunk list (A5).
 - Machine data (partition, mail address, R setup line, memory, wall time) from an untracked `slurm/local.env`,
   template `slurm/local.env.example`; `.gitignore` updated. Templates use `--cpus-per-task` from it (default 6).
 - `scripts/slurm_submit.R --what=sites|chunks [--dry-run]`: writes the list, checks `local.env`, prints or runs the
@@ -149,6 +149,26 @@ can restyle all figures later by editing them alone. Current colours are placeho
 Okabe–Ito set: PBLHmod blue, PBLHmod-clim bluish green, ERA5 vermillion, measured black, reference γ values sky blue /
 orange, operational reddish purple); G will replace them with the final theme. `docs/STATUS.md`: spec 09 row. `docs/project_plan.md`:
 execution on the cluster, cases and extra-site list. The runbook stays in `docs/local/` (Cowork).
+
+## Amendment 1 (2026-11-03): fixes from the first network run (job 11449, 2026-11-02)
+
+1. **ERA5 longitudes.** Static files (and possibly others) give 0-360 longitudes at sites west of 0.125 E (FR-Bil,
+   FR-Lus, UK-AMo, GL-ZaF): the tower cell was not found, and at FR-Lus the western neighbour (359.75) became col
+   1439. `find_era5_files()` converts header longitudes to -180..180 (`era5_lon_180()`: values already in range are
+   unchanged, bit-identical) and takes column offsets as wrapped differences, for every family; the ERA5 provenance
+   text in the standard-file metadata uses the same convention.
+2. **Polar sites (11a, 02).** Days without sunrise have no morning profile (`gamma_daily()` flag `polar_night` /
+   `polar_day`; counts per month in the monthly table, `n_polar_night`, `n_polar_day`, and in the 11a log). A
+   month without a valid daily γ is `NA` in the climatology (reported by 11a); PBLHmod-clim then uses the constant
+   γ (`pblh_gamma_default`, `gamma_source_used = "constant_fallback"`, spec 11 B). With `gamma_scope = "all"` this
+   constant enters N of Eq. B3 on those rows; B&G is not run on polar days (spec 02 Amendment 2). The SE-Sto failure
+   was the missing-months warning (cli quantity from a vector of months).
+3. **Exit status.** `scripts/run_site.R` exits with `run_site_exit_status()` (1 if any step failed) after the
+   summary table; `slurm/local.env.example`: `SLURM_MAIL_TYPE=FAIL,ARRAY_TASKS` (per-task mails in an array).
+4. **IT-SR2 not run** (no data in the L2I 2026 release, station work in progress; G 2026-11-03): removed from
+   `config/run_sites.txt` (39 stations), kept in `config/sites.csv`; reason in `config/sites_not_run.csv` (config
+   key `sites_not_run_file`). `slurm_submit.R` refuses a listed station; `09_collect.R` lists it in
+   `09_network_flags.csv` as `not_run`, "not run (no L2 data)", never as a missing step.
 
 ## Acceptance criteria
 

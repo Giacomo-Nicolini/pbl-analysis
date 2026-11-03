@@ -52,7 +52,8 @@ so code must be reproducible, documented and traceable to references.
   below.
 - Other config keys (spec 09): `oneflux_bif_dir` (`{icos_l2_dir}` placeholder, glob allowed), `pblh_gamma_default`
   (EC-only constant γ), `chunk_target_min`, `sec_per_ffp_halfhour`, `footprint_extra_sites_file`,
-  `reference_years_file`.
+  `reference_years_file`, `sites_not_run_file` (stations kept in `sites.csv` but not run, with the reason; spec 09
+  amendment 1: IT-SR2, no L2 data; `09_collect.R` lists them as "not run").
 
 ## Input data (facts; do not guess beyond these)
 
@@ -120,6 +121,9 @@ so code must be reproducible, documented and traceable to references.
     (`north_+1__south_+0__east_+0__west_+1` = NW cell); static files use signed offsets in `north_` (row) and `east_`
     (column), with `south_+0__west_+0` always (`north_-1__..__east_+1` = SE cell). In both families the tower cell is
     `north_+0__south_+0__east_+0__west_+0`.
+  - **Longitudes may be 0-360 in the header** (static files at FR-Bil, FR-Lus, UK-AMo, GL-ZaF: e.g. 359.75 = −0.25 E;
+    spec 09 amendment 1, network run 2026-11-02): `find_era5_files()` converts them to −180..180 (`era5_lon_180()`)
+    and wraps column offsets across 0°. Never compare raw header longitudes.
   - Variables and conventions:
     - `boundary_layer_height` [m above model surface]: instantaneous at the timestamp. ERA5 diagnostic = lowest level
       where the bulk Richardson number (from the lowest model level, virtual dry static energy, 2 m wind = 0, no
