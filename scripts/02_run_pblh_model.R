@@ -20,6 +20,10 @@
 # pblhmod_clim: site x month climatology; G 2026-10-30),
 # gamma_era5daily (morning gamma of the day, climatology fallback), gamma_era5clim_zmin1000 (fit layer from 1000 m),
 # gamma_era5clim_bgonly (ERA5 climatology in B&G only, N (Eq. B3) from the constant gamma; G 2026-10-30).
+# Side-result constants (spec 09 amendment 3, G 2026-11-04; no footprints, step 04 pairs 7 and 8): gamma_site (one
+# constant per site: median of the site's daily ERA5 gamma) and gamma_med (one constant for all stations: median
+# of the site medians, <derived_dir>/gamma/network_gamma.csv from scripts/09_collect.R; skipped while the
+# file is missing, i.e. before all 11a runs are collected).
 #
 # Usage: Rscript scripts/02_run_pblh_model.R [SITE ...] [--cases=label1,label2]
 #   Without sites the sites in cfg$test_sites are used; --cases runs only the listed cases.
@@ -65,12 +69,19 @@ runs <- list(
 )
 # ERA5 gamma tables per case (file suffix in <derived_dir>/gamma/: "" = fit layer 500-3500 m, "_zmin1000")
 gamma_layer <- c(gamma_era5clim_zmin1000 = "_zmin1000")
+# Side-result constants (spec 09 amendment 3, G 2026-11-04; no footprints): gamma_med = median of the site medians
+# of the daily ERA5 gamma (<derived_dir>/gamma/network_gamma.csv, written by scripts/09_collect.R after all 11a
+# runs; not run while the file is missing), gamma_site = median of the site's daily ERA5 gamma (built per site below).
+side_cases <- c("gamma_med", "gamma_site")
+gnet <- read_gamma_network(gamma_network_path(cfg))
+keep <- NULL
 if (length(case_arg) == 1) {
   keep <- strsplit(sub("^--cases=", "", case_arg), ",")[[1]]
-  bad <- setdiff(keep, names(runs))
+  bad <- setdiff(keep, c(names(runs), side_cases))
   if (length(bad) > 0) cli::cli_abort("Unknown case{?s}: {.val {bad}}.")
-  runs <- runs[keep]
+  runs <- runs[intersect(keep, names(runs))]
 }
+want_side <- if (is.null(keep)) side_cases else intersect(keep, side_cases)
 g_dir <- file.path(resolve_path(cfg$derived_dir, must_exist = FALSE), "gamma")
 read_gamma_tables <- function(site_id, sfx) {
   p <- file.path(g_dir, paste0(site_id, sfx, c("_daily.csv", "_monthly.csv")))
@@ -157,9 +168,32 @@ for (site_id in site_ids) {
   cli::cli_inform("H_F_MDS_QC distribution (FLUXNET convention: 0 measured, 1 good, 2 medium, 3 poor gap-fill):")
   print_tbl(count_tbl(d$fn_H_F_MDS_QC, "H_F_MDS_QC"))
 
+  # Side-result constants of this site (spec 09 amendment 3)
+  runs_s <- runs
+  if ("gamma_site" %in% want_side) {
+    gs <- gamma_site_constant(read_gamma_tables(site_id, "")$daily)
+    if (is.na(gs$gamma)) {
+      cli::cli_alert_warning("gamma_site: no valid daily ERA5 gamma at {site_id}, case not run.")
+    } else {
+      runs_s$gamma_site <- pblh_options(gamma = gs$gamma, label = "gamma_site")
+      cli::cli_inform("gamma_site = {signif(gs$gamma, 4)} K m-1 (median of {gs$n_days} daily ERA5 gamma values).")
+    }
+  }
+  if ("gamma_med" %in% want_side) {
+    stale <- file.path(out_dir, paste0(site_id, "_pblhmod_gamma_med.csv.gz"))
+    if (is.null(gnet)) {
+      # first pass: no network gamma yet; drop an output of an earlier network value, so step 04 does not use it
+      if (file.exists(stale)) unlink(stale)
+      cli::cli_alert_info("gamma_med not run: {.path {gamma_network_path(cfg)}} not found (written by scripts/09_collect.R after all 11a runs).")
+    } else {
+      runs_s$gamma_med <- pblh_options(gamma = gnet$gamma_med, label = "gamma_med")
+      cli::cli_inform("gamma_med = {signif(gnet$gamma_med, 4)} K m-1 (median of the site medians of the daily ERA5 gamma, {gnet$n_sites} sites).")
+    }
+  }
+
   outs <- list()
-  for (lab in names(runs)) {
-    opts <- runs[[lab]]
+  for (lab in names(runs_s)) {
+    opts <- runs_s[[lab]]
     cli::cli_h2("Run {.val {opts$label}} (gamma = {opts$gamma} K m-1, stable = {opts$stable_method}, neutral = {opts$neutral_method}, H = {opts$h_source}, combine = {opts$combine})")
     ge <- NULL
     if (opts$gamma_source != "constant") {
@@ -262,18 +296,18 @@ for (site_id in site_ids) {
   }
 
   cli::cli_h2("u* filter summary across cases (gt5km / gt10km: pblh_m > 5 / 10 km)")
-  print_tbl(do.call(rbind, lapply(names(outs), function(k) ustar_report(d, outs[[k]], runs[[k]]))))
+  print_tbl(do.call(rbind, lapply(names(outs), function(k) ustar_report(d, outs[[k]], runs_s[[k]]))))
 
   cli::cli_h2("L consistency summary across cases (checked: L_check consistent / sign / magnitude)")
-  print_tbl(do.call(rbind, lapply(names(outs), function(k) l_report(outs[[k]], runs[[k]]))))
+  print_tbl(do.call(rbind, lapply(names(outs), function(k) l_report(outs[[k]], runs_s[[k]]))))
 
   # Per-site summaries for the network collection (spec 09 A4): one row per case (u* filter, L check, validity,
   # gamma) and one per case x regime (share, quantiles of pblh_m [m]).
   cases_tbl <- do.call(rbind, lapply(names(outs), function(k) {
     o <- outs[[k]]
     ok <- !o$excl_flag
-    cbind(ustar_report(d, o, runs[[k]]), l_report(o, runs[[k]])[c("checked", "replaced", "pct_L_from_L2", "sign_inconsistent")],
-          pct_valid = round(100 * mean(!is.na(o$pblh_m[ok])), 2), gamma_source = runs[[k]]$gamma_source,
+    cbind(ustar_report(d, o, runs_s[[k]]), l_report(o, runs_s[[k]])[c("checked", "replaced", "pct_L_from_L2", "sign_inconsistent")],
+          pct_valid = round(100 * mean(!is.na(o$pblh_m[ok])), 2), gamma_source = runs_s[[k]]$gamma_source,
           gamma_median = stats::median(o$gamma_used, na.rm = TRUE),
           n_constant_fallback = sum(o$gamma_source_used %in% "constant_fallback"))
   }))

@@ -5,7 +5,8 @@
 # Outputs:
 #   <derived_dir>/era5/era5_cell_metadata.csv (one row per site)
 #   <standard_dir>/<site>/<site>__<source>.csv.gz + .yml (7 sources: PBLHmod default, clim, gamma001, gamma0025; ERA5 centre, bilinear; ICOS operational)
-#   <output_dir>/tables/04_metrics_<site>.csv, 04_diurnal_<site>.csv,
+#   <output_dir>/tables/04_metrics_<site>.csv (pairs 7, 8: side-result constants gamma_med, gamma_site of step 02,
+#     if their outputs exist; spec 09 amendment 3), 04_diurnal_<site>.csv,
 #     04_H_metrics_<site>.csv, 04_gamma_850_700_<site>.csv
 #   <output_dir>/figures/04_*_<site>.png / .pdf (7 figures)
 #
@@ -95,6 +96,18 @@ for (site_id in site_ids) {
     }
     mods[[lab]] <- readr::read_csv(p, show_col_types = FALSE, progress = FALSE, guess_max = 1e5)
   }
+  # Side-result constants of step 02 (spec 09 amendment 3): compared with ERA5 only (pairs 7, 8), no standard file,
+  # no footprints; gamma_med exists only after the network gamma was collected (second pass)
+  side <- list()
+  for (lab in c("gamma_med", "gamma_site")) {
+    p <- file.path(derived_dir, "pblhmod", paste0(site_id, "_pblhmod_", lab, ".csv.gz"))
+    if (!file.exists(p)) {
+      cli::cli_alert_info("{lab}: {.path {p}} not found, pair not computed.")
+      next
+    }
+    o <- readr::read_csv(p, show_col_types = FALSE, progress = FALSE, guess_max = 1e5)
+    side[[lab]] <- standardize_pblhmod(o, lab, pblh_options(gamma = stats::median(o$gamma_used, na.rm = TRUE), label = lab))
+  }
 
   # --- 4. Standard files ----------------------------------------------------------
   cli::cli_h2("Standard files")
@@ -138,7 +151,11 @@ for (site_id in site_ids) {
     # pair 5: both half-hourly, compared on the half-hour (start time)
     if (with_oper) pair_table(def_hh, dplyr::rename(op_qc0_hh, timestamp_utc = timestamp_start_utc),
                               "5_pblhmod_default_vs_icos_oper_qc0_halfhourly"),
-    pair_table(h_cl, era_c, "6_pblhmod_clim_vs_era5_center")
+    pair_table(h_cl, era_c, "6_pblhmod_clim_vs_era5_center"),
+    if (!is.null(side$gamma_med)) pair_table(match_halfhours_to_hours(side$gamma_med$data, hours), era_c,
+                                             "7_pblhmod_gamma_med_vs_era5_center"),
+    if (!is.null(side$gamma_site)) pair_table(match_halfhours_to_hours(side$gamma_site$data, hours), era_c,
+                                              "8_pblhmod_gamma_site_vs_era5_center")
   )
   # PBLHmod regime as stratum for pairs 4a/4b (operational has no regime)
   reg_h <- stats::setNames(h_def$x_regime, as.character(as.numeric(h_def$timestamp_utc)))

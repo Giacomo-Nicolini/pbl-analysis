@@ -12,7 +12,7 @@ test_that("footprint_year_counts: usable = both main cases valid under etc in va
   expect_equal(y$n_measured, c(1L, 1L))
 })
 
-test_that("propose_reference_year: >= 9 months, most usable, 2 % tolerance, measured overlap, then most recent", {
+test_that("propose_reference_year: >= 9 months, measured overlap within 80 %, most usable (2 % tolerance), most recent", {
   yc <- dplyr::tibble(year = 2020:2024, n_usable = c(10000, 9900, 9850, 9000, 12000),
                       n_months = c(12, 12, 12, 12, 8), n_measured = c(0, 0, 0, 0, 0))
   p <- propose_reference_year(yc)
@@ -23,8 +23,24 @@ test_that("propose_reference_year: >= 9 months, most usable, 2 % tolerance, meas
   expect_equal(propose_reference_year(yc)$year, 2020L) # measured overlap preferred over the most recent
   expect_match(propose_reference_year(yc)$reason, "measured")
   yc$n_usable[2] <- 20000
-  expect_equal(propose_reference_year(yc)$year, 2021L) # a clear maximum wins over measured overlap
+  expect_equal(propose_reference_year(yc)$year, 2021L) # measured year below 80 % of the best: standard rule
+  expect_equal(propose_reference_year(yc)$reason, "most usable half-hours") # one candidate: no tolerance wording
   expect_true(is.na(propose_reference_year(dplyr::mutate(yc, n_months = 3))$year))
+
+  # spec 09 amendment 3: FI-Hyy year counts of the cluster (Cloudnet 2022-01 to 2024-04): 2021 has the most usable
+  # half-hours, 2022 has 88 % of them and the most measured half-hours -> 2022
+  fh <- dplyr::tibble(year = 2017:2026, n_usable = c(0, 0, 0, 3648, 3986, 3510, 3574, 3450, 3574, 2772),
+                      n_months = c(0, 0, 0, 12, 12, 12, 12, 12, 12, 8), n_measured = c(0, 0, 0, 0, 0, 1200, 657, 231, 0, 0))
+  p <- propose_reference_year(fh)
+  expect_equal(p$year, 2022L)
+  expect_equal(p$n_measured, 1200L)
+  expect_equal(p$n_candidates, 3L) # 2022, 2023, 2024 all >= 80 % of 3986
+  expect_match(p$reason, "most measured half-hours [(]1200[)], usable 88 % of the best year [(]>= 80 %[)]")
+  # threshold above 2022's share: 2023 (90 %) is the only measured candidate left
+  expect_equal(propose_reference_year(fh, measured_min_share = 0.89)$year, 2023L)
+  # without measured overlap: unchanged standard rule (2021)
+  expect_equal(propose_reference_year(dplyr::mutate(fh, n_measured = 0))$year, 2021L)
+  expect_equal(propose_reference_year(fh, measured_min_share = 0.95)$year, 2021L)
 })
 
 test_that("network_gamma_summary and network_flags", {
@@ -157,7 +173,7 @@ test_that("network figure (spec 09 amendment 2): IQR bar for PBLHmod only, PBLHm
   i_bar <- which(geoms == "GeomLinerange")
   i_pts <- which(geoms == "GeomPoint")
   expect_length(i_bar, 1)
-  expect_length(i_pts, 2)
+  expect_length(i_pts, 3) # PBLHmod, side-result constants (empty here), PBLHmod-clim
   # bar from p25 to p75, PBLHmod only
   expect_equal(unique(p$layers[[i_bar]]$data$source), "pblhmod_default")
   expect_equal(range(b$data[[i_bar]]$xmin), c(-0.3, -0.3))
@@ -174,4 +190,62 @@ test_that("network figure (spec 09 amendment 2): IQR bar for PBLHmod only, PBLHm
   p0 <- plot_network_logratio(d0)
   expect_equal(nrow(p0$layers[[which(vapply(p0$layers, function(l) class(l$geom)[1], "") == "GeomLinerange")]]$data), 0)
   expect_s3_class(ggplot2::ggplot_build(p0), "ggplot_built")
+})
+
+test_that("supplementary network figure (spec 09 amendment 3): gamma_med and gamma_site, clim still on top", {
+  prs <- network_logratio_pairs(supp = TRUE)
+  expect_equal(names(prs), c("pblhmod_default", "pblhmod_clim", "pblhmod_gamma_med", "pblhmod_gamma_site"))
+  expect_equal(network_logratio_pairs(), prs[1:2])
+  met <- dplyr::bind_rows(lapply(c("AA-One", "BB-Two"), function(s) {
+    dplyr::bind_rows(lapply(seq_along(prs), function(j) {
+      dplyr::tibble(site_id = s, pair = unname(prs[j]), stratum = rep(c("all", "regime=stable"), 4),
+                    metric = rep(c("median_log_ratio", "p25_log_ratio", "p75_log_ratio", "n_log"), each = 2),
+                    value = rep(c(0.1 * j, -0.3, 0.5, 100), each = 2))
+    }))
+  }))
+  expect_setequal(unique(network_logratio_table(met)$source), c("pblhmod_default", "pblhmod_clim")) # main figure
+  d <- network_logratio_table(met, pairs = prs)
+  expect_equal(d$median[d$site_id == "AA-One" & d$source == "pblhmod_gamma_site" & d$regime == "all"], 0.4)
+  p <- plot_network_logratio(d)
+  b <- ggplot2::ggplot_build(p)
+  geoms <- vapply(p$layers, function(l) class(l$geom)[1], "")
+  i_pts <- which(geoms == "GeomPoint")
+  expect_setequal(unique(p$layers[[i_pts[2]]]$data$source), c("pblhmod_gamma_med", "pblhmod_gamma_site"))
+  expect_setequal(unique(b$data[[i_pts[2]]]$shape), c(17, 2))
+  expect_equal(unique(p$layers[[max(i_pts)]]$data$source), "pblhmod_clim") # clim still last
+  expect_equal(unique(p$layers[[which(geoms == "GeomLinerange")]]$data$source), "pblhmod_default") # bar: PBLHmod only
+  expect_true(all(c("pblhmod_gamma_med", "pblhmod_gamma_site") %in% style_ids("source")))
+})
+
+test_that("network and site gamma constants (spec 09 amendment 3)", {
+  a <- dplyr::tibble(gamma = c(0.004, 0.005, NA, 0.006))
+  b <- dplyr::tibble(gamma = c(0.003, 0.003))
+  cc <- dplyr::tibble(gamma = c(NA_real_, NA_real_))
+  expect_equal(gamma_site_constant(a), dplyr::tibble(gamma = 0.005, n_days = 3L))
+  expect_true(is.na(gamma_site_constant(cc)$gamma))
+  g <- gamma_network_median(list(A = a, B = b, C = cc))
+  expect_equal(g$gamma_med, 0.004) # median of the site medians 0.005 (A), 0.003 (B); C has no valid day
+  expect_equal(g$gamma_med_pooled, 0.004) # reference: pooled 0.003 0.003 0.004 0.005 0.006
+  # the two differ when the sites hold different numbers of valid days: A weighs 3 days, B 1 day in the pooled value
+  g2 <- gamma_network_median(list(A = a, B = dplyr::tibble(gamma = 0.001)))
+  expect_equal(c(g2$gamma_med, g2$gamma_med_pooled), c(0.003, 0.0045))
+  expect_equal(c(g$n_sites, g$n_days), c(2L, 5L))
+  expect_equal(g$sites, "A;B")
+  expect_error(gamma_network_median(list()), "non-empty")
+  expect_error(gamma_network_median(list(C = cc)), "No valid")
+  # written only if changed (step-02 inputs hash uses size and mtime); read back
+  cfg <- list(derived_dir = withr::local_tempdir())
+  p <- gamma_network_path(cfg)
+  expect_null(read_gamma_network(p))
+  expect_true(write_gamma_network(g, p))
+  expect_false(write_gamma_network(g, p))
+  expect_equal(read_gamma_network(p)$gamma_med, 0.004)
+  expect_true(write_gamma_network(dplyr::mutate(g, gamma_med = 0.0045), p))
+  bad <- withr::local_tempfile(fileext = ".csv")
+  writeLines(c("gamma_med", "-1"), bad)
+  expect_error(read_gamma_network(bad), "positive")
+  # step 02 hashes the file: input group gamma_network
+  expect_true("gamma_network" %in% pipeline_steps()[["02"]]$inputs)
+  expect_equal(site_input_files("XX-Tst", cfg, "gamma_network")$path, p)
+  expect_equal(nrow(site_input_files("XX-Tst", list(derived_dir = withr::local_tempdir()), "gamma_network")), 0)
 })

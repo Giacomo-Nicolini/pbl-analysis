@@ -196,6 +196,9 @@ regime_labels <- function() style_of(c("stable", "unstable_diag", "convective", 
 #' stay visible. Sites ordered by the PBLHmod median over all rows. Stable rows do not depend on γ (the stable height
 #' does not use it): PBLHmod-clim equals PBLHmod there, stated in the caption.
 #'
+#' Supplementary version (spec 09 amendment 3, `09_network_logratio_supp`): also the side-result constants
+#' gamma_med (filled triangles) and gamma_site (open triangles), drawn after PBLHmod and before PBLHmod-clim.
+#'
 #' @param d Output of [network_logratio_table()].
 #' @return ggplot object.
 plot_network_logratio <- function(d) {
@@ -212,10 +215,12 @@ plot_network_logratio <- function(d) {
     ggplot2::geom_linerange(data = bars, ggplot2::aes(xmin = p25, xmax = p75), linewidth = 0.4,
                             orientation = "y", show.legend = FALSE) +
     ggplot2::geom_point(data = d[d$source == "pblhmod_default", ], size = 1.6) +
+    ggplot2::geom_point(data = d[d$source %in% c("pblhmod_gamma_med", "pblhmod_gamma_site"), ], size = 1.8, stroke = 0.6) +
     ggplot2::geom_point(data = d[d$source == "pblhmod_clim", ], size = 2.4, stroke = 0.6) +
     ggplot2::facet_wrap(~regime, nrow = 1) +
     ggplot2::scale_colour_manual(values = style_of(ids_s), labels = style_of(ids_s, "label"), breaks = ids_s, name = NULL) +
-    ggplot2::scale_shape_manual(values = c(pblhmod_default = 16, pblhmod_clim = 1)[ids_s],
+    ggplot2::scale_shape_manual(values = c(pblhmod_default = 16, pblhmod_clim = 1, pblhmod_gamma_med = 17,
+                                           pblhmod_gamma_site = 2)[ids_s],
                                 labels = style_of(ids_s, "label"), breaks = ids_s, name = NULL) +
     ggplot2::labs(x = "ln(PBLHmod / ERA5 tower cell) [-]", y = NULL,
                   subtitle = paste0(length(unique(d$site_id)), " sites; point: median; bar: p25-p75 (PBLHmod); ",

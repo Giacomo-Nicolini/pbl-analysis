@@ -182,3 +182,84 @@ gamma_for_rows <- function(day_id, source = c("era5_clim", "era5_daily"), daily,
   list(gamma = ifelse(is.na(g_day), g_clim, g_day),
        source_used = ifelse(is.na(day_id), NA_character_, ifelse(is.na(g_day), src_fb, "era5_daily")))
 }
+
+#' Constant gamma of one site: median of its daily ERA5 gamma
+#'
+#' Side result of spec 09 amendment 3 (G 2026-11-04): case `gamma_site` of step 02, one constant per site = the
+#' median of the site's valid daily morning gamma ([gamma_daily()], default fit layer, all days of the ERA5 period).
+#'
+#' @param daily Output of [gamma_daily()] (`<derived_dir>/gamma/<site>_daily.csv`; `gamma` [K m-1], `NA` if flagged).
+#' @return Tibble: `gamma` [K m-1, `NA` without a valid day], `n_days` [-, valid days].
+gamma_site_constant <- function(daily) {
+  g <- daily$gamma[is.finite(daily$gamma)]
+  dplyr::tibble(gamma = if (length(g)) stats::median(g) else NA_real_, n_days = length(g))
+}
+
+#' Network constant gamma: median of the site medians of the daily ERA5 gamma
+#'
+#' Side result of spec 09 amendment 3 (G 2026-11-04): case `gamma_med` of step 02, one constant for all stations =
+#' the median over the stations of each station's median valid daily morning gamma ([gamma_site_constant()], default
+#' fit layer; every station weighs the same). The median of the daily values pooled over every site-day is kept in the
+#' table for reference (G 2026-11-04).
+#'
+#' @param daily_by_site Named list (names = station codes) of [gamma_daily()] tables.
+#' @return One-row tibble: `gamma_med` [K m-1, median of the site medians], `gamma_med_pooled` [K m-1, reference],
+#'   `n_sites`, `n_days` [-, pooled valid days], `sites` [character, `;`-separated, sorted].
+gamma_network_median <- function(daily_by_site) {
+  if (length(daily_by_site) == 0 || is.null(names(daily_by_site))) {
+    cli::cli_abort("{.arg daily_by_site} must be a named, non-empty list of daily gamma tables.")
+  }
+  g <- lapply(daily_by_site, function(x) x$gamma[is.finite(x$gamma)])
+  g <- g[lengths(g) > 0]
+  if (length(g) == 0) cli::cli_abort("No valid daily gamma at any site.")
+  dplyr::tibble(gamma_med = stats::median(vapply(g, stats::median, 0)),
+                gamma_med_pooled = stats::median(unlist(g, use.names = FALSE)),
+                n_sites = length(g), n_days = sum(lengths(g)), sites = paste(sort(names(g)), collapse = ";"))
+}
+
+#' Path of the network gamma table
+#'
+#' Written by `scripts/09_collect.R` ([gamma_network_median()]), read by step 02 (case `gamma_med`) and part of the
+#' step-02 inputs (input group `gamma_network`). Spec 09 amendment 3.
+#'
+#' @param cfg Configuration list with `derived_dir`.
+#' @return Path [character]: `<derived_dir>/gamma/network_gamma.csv`.
+gamma_network_path <- function(cfg) {
+  file.path(resolve_path(cfg$derived_dir, must_exist = FALSE), "gamma", "network_gamma.csv")
+}
+
+#' Read the network gamma table
+#'
+#' @param path Output of [gamma_network_path()].
+#' @return The one-row table of [gamma_network_median()], or `NULL` if the file does not exist (first pass: case
+#'   `gamma_med` not run). Aborts on a malformed file or a non-positive `gamma_med`.
+read_gamma_network <- function(path) {
+  if (!file.exists(path)) return(NULL)
+  x <- readr::read_csv(path, show_col_types = FALSE, progress = FALSE)
+  if (nrow(x) != 1 || !"gamma_med" %in% names(x) || !(is.finite(x$gamma_med) && x$gamma_med > 0)) {
+    cli::cli_abort("{.path {path}}: one row with a positive {.field gamma_med} [K m-1] expected.")
+  }
+  x
+}
+
+#' Write the network gamma table only if its content changed
+#'
+#' The step-02 inputs hash uses file size and modification time, so an unchanged table is not rewritten (no rerun of
+#' step 02 at the next collection).
+#'
+#' @param x Output of [gamma_network_median()].
+#' @param path Output of [gamma_network_path()].
+#' @return `TRUE` if written, `FALSE` if unchanged (invisibly).
+write_gamma_network <- function(x, path) {
+  dir.create(dirname(path), recursive = TRUE, showWarnings = FALSE)
+  tmp <- tempfile(fileext = ".csv")
+  readr::write_csv(x, tmp)
+  if (file.exists(path) && identical(unname(tools::md5sum(tmp)), unname(tools::md5sum(path)))) {
+    unlink(tmp)
+    return(invisible(FALSE))
+  }
+  ok <- file.copy(tmp, path, overwrite = TRUE)
+  unlink(tmp)
+  if (!ok) cli::cli_abort("Could not write {.path {path}}.")
+  invisible(TRUE)
+}

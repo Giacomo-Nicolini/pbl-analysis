@@ -206,6 +206,51 @@ C. **Measured data on the cluster.** New `run_site.R` steps `meas_std` (standard
    `config/measured_run_sites.txt`. Order: Cloudnet download (07b: size, `--confirm`, re-check of the checksums),
    then `--steps=meas_std,meas_cmp,08a`, then `11_gamma_evaluation.R` and `09_collect.R`.
 
+## Amendment 3 (2026-11-04)
+
+1. **FI-Hyy reference year.** The Cloudnet MLH is counted: the cluster year counts give `n_measured` 1200 (2022), 657
+   (2023), 231 (2024); only the exact values (qc 0/2) count, as in the footprint case `measured`; qc 1 (censored below
+   z_min) has no value and qc 3 (signal-limited lower bound) is the case `bound`. The proposal showed 0 because the
+   rule picked 2021 (3986 usable half-hours; 2022: 3510, −12 %, outside the 2 % tolerance within which a measured
+   year was preferred). **Rule changed (G 2026-11-04):** among the years with ≥ 9 months, a year overlapping the
+   site's measured source is preferred when its usable half-hours are ≥ 80 % of the best year's
+   (`propose_reference_year(measured_min_share = 0.8)`); among those, the most measured half-hours (ties: most
+   recent); otherwise the year with the most usable half-hours as before (2 % tolerance, most recent). FI-Hyy → 2022
+   (88 % of 2021, 1200 measured). CH-Dav and FR-Gri may also move to another measured year with more measured
+   half-hours (their year counts were not available on the PC): check the new proposal.
+2. **Footprint cases.** `pblhmod_clim` was already a case at every site (spec 09 A5: 08a builds it from the standard
+   file written by step 04, 08c takes every case of the input table), next to `pblhmod` (γ 0.01) and `era5`.
+   Decision point 3b stays open: if the EC-only constant changes, the `pblhmod` chunks rerun (`pblhmod_clim` only in
+   months that use the fallback constant). Estimate for the 39 proposed reference years of job 11546 (spec-08 timing
+   2 s per FFP half-hour, 2 CPUs per chunk; half-hours = `n_valid` of set `none`, full period, scaled to one year):
+   ≈ 1,840 chunks (12 per site × case; no month exceeds the 120 min split threshold, the largest ≈ 1,650 half-hours
+   ≈ 28 min), ≈ 1.87 M FFP half-hours, ≈ 1,040 CPU-hours: `pblhmod`, `pblhmod_clim`, `era5` ≈ 470 chunks and
+   ≈ 262 CPU-hours each; the six extra sites' cases (`era5_bilinear`, ±20 %, γ 0.01 / 0.0025, `oper`) 432 chunks,
+   ≈ 261 CPU-hours; `measured`/`bound` at FI-Hyy (now 2022), FR-Gri, CH-Dav a few dozen chunks, a few CPU-hours.
+   More than 1000 chunks: `slurm_submit.R --what=chunks` submits two arrays (MaxArraySize 1001).
+3. **γ strategy (G 2026-11-04).** Default `pblhmod_default` = constant 0.01 K m-1 (EC only); PBLHmod-clim = ERA5 site
+   × month climatology. Side results, **step 02 only, no footprints**: `gamma_med` = one constant for all stations,
+   the median over the stations of each site's median daily ERA5 γ (`gamma_network_median()`, default fit layer; every
+   station weighs the same; G 2026-11-04; the median of the daily values pooled over every site-day is kept as
+   `gamma_med_pooled` for reference), and `gamma_site` = one constant per site, the median
+   of the site's daily ERA5 γ (`gamma_site_constant()`). `09_collect.R` writes `gamma_med` to
+   `<derived_dir>/gamma/network_gamma.csv` (only when every run site has its 11a table, and only if the value
+   changed) and `09_network_gamma_site.csv`; step 02 reads the file (input group `gamma_network` of its inputs hash)
+   and skips `gamma_med` while it is missing. Step 04 compares both with ERA5 (pairs `7_pblhmod_gamma_med_vs_era5_center`,
+   `8_pblhmod_gamma_site_vs_era5_center`; no standard files); `09_collect.R` adds them to `09_network_era5_metrics.csv`,
+   `09_network_regimes.csv` and the supplementary figure `09_network_logratio_supp_<n>sites` (PBLHmod with IQR bar,
+   PBLHmod-clim, `gamma_med` filled triangles, `gamma_site` open triangles). Paper: a recommended constant and/or the
+   γ tables for the ICOS stations as a side result.
+   **Two-pass dependency and cluster order:** `gamma_med` needs the 11a results of every site. Order: (i) site array
+   `--steps=01,11a`; (ii) `09_collect.R --gamma-only` (writes the network γ, seconds); (iii) site arrays with the
+   default and measured steps (01 and 11a are skipped as current; 02 runs `gamma_med` and `gamma_site`); (iv)
+   `11_gamma_evaluation.R`, `09_collect.R`. If the network γ changes later (e.g. a site added), the collection rewrites
+   the file and the next site run reruns 02, 04 and 08a; footprint chunks are keyed by their content (rows, groups,
+   code), so finished chunks stay valid.
+   Check on BE-Bra (PC, run with the 4-site pooled γ 0.00463 before the switch to the median of the site medians,
+   0.00469; BE-Bra 0.00473 K m-1): median ln(x / ERA5 tower cell), convective,
+   default −0.07, `gamma_site` +0.18, `gamma_med` +0.19; stable identical in all cases.
+
 ## Acceptance criteria
 
 - Part A: tests pass on the PC; `--dry-run` renders valid sbatch scripts; `git grep` for `/bigdata`, `/home/`,
