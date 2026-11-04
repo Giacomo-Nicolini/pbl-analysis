@@ -122,6 +122,33 @@ make_chunk_list <- function(inp, year, cases, sets = c("kljun", "kljun_norsl", "
   dplyr::bind_rows(out)
 }
 
+#' Approved reference years
+#'
+#' Reads `config/reference_years.csv` (G's approval of the proposal `08_reference_years.csv` of
+#' `scripts/09_collect.R`; spec 09 A5): one row per site, columns `site_id`, `year`, `reason`, `approved`.
+#'
+#' @param path File (`reference_years_file` in `config.yml`).
+#' @param site_ids Sites that need an approved year, or `NULL` (all rows of the file).
+#' @return Tibble `site_id`, `year` [integer], `reason`, `approved`, restricted to `site_ids` (in that order). Aborts
+#'   if the file is missing, a column is missing, a site appears twice, a year or approval is empty, or a requested
+#'   site has no approved year.
+read_reference_years <- function(path, site_ids = NULL) {
+  if (!file.exists(path)) {
+    cli::cli_abort(c("No approved reference years: {.path {path}} not found.",
+                     "i" = "Review output/tables/08_reference_years.csv (scripts/09_collect.R) and commit the approved list."))
+  }
+  ry <- readr::read_csv(path, col_types = readr::cols(year = "i", .default = "c"), progress = FALSE)
+  need <- c("site_id", "year", "reason", "approved")
+  if (!all(need %in% names(ry))) cli::cli_abort("{.path {path}} needs columns {.field {need}}.")
+  if (anyDuplicated(ry$site_id)) cli::cli_abort("{.path {path}}: more than one year for {.val {unique(ry$site_id[duplicated(ry$site_id)])}}.")
+  bad <- ry$site_id[is.na(ry$year) | is.na(ry$approved) | !nzchar(trimws(ry$approved))]
+  if (length(bad)) cli::cli_abort("{.path {path}}: no year or no approval for {.val {bad}}.")
+  if (is.null(site_ids)) site_ids <- ry$site_id
+  miss <- setdiff(site_ids, ry$site_id)
+  if (length(miss)) cli::cli_abort("No approved reference year for {.val {miss}} in {.path {path}}.")
+  ry[match(site_ids, ry$site_id), need]
+}
+
 # FFP and metrics for the rows `idx` of a task: per-half-hour metrics (1 m field, smoothed) and the 5 m block sums of
 # the unsmoothed fields per group. `env` = load_ffp_code() of the worker.
 ffp_chunk_block <- function(idx, tk, env, grid, mask, r_levels, block) {

@@ -269,7 +269,7 @@ so code must be reproducible, documented and traceable to references.
 - **Footprints**: after step 08a and G's approval of the reference years (`scripts/09_collect.R` writes the proposal
   `output/tables/08_reference_years.csv`; rule: ≥ 9 months, a measured-overlap year preferred if its usable
   half-hours are ≥ 80 % of the best year's, else the most usable (2 %, most recent), spec 09 amendment 3; the
-  approved list is committed as `config/reference_years.csv`),
+  approved list is committed as `config/reference_years.csv`, approved G 2026-11-04 for the 39 run sites),
   `scripts/08c_make_chunks.R` writes `<derived_dir>/footprint/chunk_list.csv` (site × case × month, half-months above
   `chunk_target_min`); each array task runs `08b --chunk-list --chunk-row` with the job's CPUs as workers (result
   independent of the worker count); then step `08` (`run_site.R SITE --steps=08`, reference year) and `09_collect.R`.

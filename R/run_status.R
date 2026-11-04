@@ -67,11 +67,7 @@ measured_primary_provider <- function(ms, site_id) {
 
 # Approved reference year of a site (config/reference_years.csv); aborts without one.
 reference_year_of <- function(site_id, cfg) {
-  p <- resolve_path(cfg$reference_years_file, must_exist = FALSE)
-  ry <- if (file.exists(p)) readr::read_csv(p, col_types = readr::cols(.default = "c"), progress = FALSE) else NULL
-  y <- if (is.null(ry)) character() else ry$year[ry$site_id == site_id & !is.na(ry$year)]
-  if (length(y) != 1) cli::cli_abort("{site_id}: no approved reference year in {.path {p}}.")
-  y
+  as.character(read_reference_years(resolve_path(cfg$reference_years_file, must_exist = FALSE), site_id)$year)
 }
 
 #' Raw input files of a site
