@@ -58,9 +58,10 @@ reference_year_rules <- function() c("standard", "coverage")
 
 #' Reference-year proposal of one site
 #'
-#' Spec 09 A5 (spec 08 section 4c): among the years with at least `min_months` months of data, the one with the most
-#' usable half-hours; years within `tol` of the maximum are equivalent, among them a year overlapping the site's
-#' measured source is preferred (most measured half-hours), otherwise the most recent.
+#' Spec 09 A5 (spec 08 section 4c), amended by spec 09 amendment 3 (G 2026-11-04): among the years with at least
+#' `min_months` months of data, a year overlapping the site's measured source is preferred when its usable half-hours
+#' are at least `measured_min_share` of the best year's (most measured half-hours; ties: most recent); otherwise the
+#' year with the most usable half-hours, years within `tol` of the maximum being equivalent (most recent).
 #'
 #' Exception rule `coverage` (spec 09 amendment 2, G 2026-11-03; stations listed in
 #' `config/reference_year_exceptions.csv`): only when the standard rule finds no year, the year with the most
@@ -69,11 +70,15 @@ reference_year_rules <- function() c("standard", "coverage")
 #' @param counts Output of [footprint_year_counts()].
 #' @param min_months Minimum months with usable data [-].
 #' @param tol Relative tolerance on the number of usable half-hours [-].
+#' @param measured_min_share Minimum usable half-hours of a measured-overlap year, relative to the best year [-]
+#'   (spec 09 amendment 3: 0.8).
 #' @param rule `"standard"` or `"coverage"` (see [reference_year_rules()]).
 #' @param rule_reason Why the site has the exception (written into `reason`) [character].
 #' @return One-row tibble: `year` (`NA` if no year qualifies), `n_usable`, `n_months`, `n_measured`, `n_candidates`
-#'   (years within `tol`), `reason`, `rule` (rule that chose the year).
-propose_reference_year <- function(counts, min_months = 9, tol = 0.02, rule = "standard", rule_reason = NA_character_) {
+#'   (measured-overlap years within `measured_min_share`, or years within `tol`), `reason`, `rule` (rule that chose
+#'   the year).
+propose_reference_year <- function(counts, min_months = 9, tol = 0.02, measured_min_share = 0.8, rule = "standard",
+                                   rule_reason = NA_character_) {
   rule <- match.arg(rule, reference_year_rules())
   ok <- counts[counts$n_months >= min_months & counts$n_usable > 0, ]
   if (nrow(ok) == 0) {
@@ -99,13 +104,17 @@ propose_reference_year <- function(counts, min_months = 9, tol = 0.02, rule = "s
                                          " months), any number of months: ", rule_reason),
                          rule = "coverage"))
   }
-  cand <- ok[ok$n_usable >= (1 - tol) * max(ok$n_usable), ]
-  if (any(cand$n_measured > 0)) {
+  best <- max(ok$n_usable)
+  meas <- ok[ok$n_measured > 0 & ok$n_usable >= measured_min_share * best, ]
+  if (nrow(meas)) {
+    cand <- meas
     pick <- cand[order(-cand$n_measured, -cand$year), ][1, ]
-    why <- "most usable half-hours (within 2 %), overlapping the measured source"
+    why <- sprintf("overlapping the measured source: most measured half-hours (%d), usable %.0f %% of the best year (>= %.0f %%)",
+                   as.integer(pick$n_measured), 100 * pick$n_usable / best, 100 * measured_min_share)
   } else {
+    cand <- ok[ok$n_usable >= (1 - tol) * best, ]
     pick <- cand[order(-cand$year), ][1, ]
-    why <- if (nrow(cand) > 1) "most usable half-hours (within 2 %), most recent" else "most usable half-hours"
+    why <- if (nrow(cand) > 1) sprintf("most usable half-hours (within %g %%), most recent", 100 * tol) else "most usable half-hours"
   }
   dplyr::tibble(year = as.integer(pick$year), n_usable = as.integer(pick$n_usable), n_months = as.integer(pick$n_months),
                 n_measured = as.integer(pick$n_measured), n_candidates = nrow(cand), reason = why, rule = "standard")
@@ -229,18 +238,32 @@ network_flags <- function(sites, status, cases_tbl, coverage, cells, steps = c("
   dplyr::bind_rows(f)
 }
 
+#' Step-04 pairs of the network log-ratio figures
+#'
+#' @param supp `FALSE`: main figure (PBLHmod, PBLHmod-clim); `TRUE`: supplementary figure, also the side-result
+#'   constants `pblhmod_gamma_med` and `pblhmod_gamma_site` (spec 09 amendment 3).
+#' @return Named character: source id -> pair.
+network_logratio_pairs <- function(supp = FALSE) {
+  p <- c(pblhmod_default = "1_pblhmod_default_vs_era5_center", pblhmod_clim = "6_pblhmod_clim_vs_era5_center")
+  if (supp) p <- c(p, pblhmod_gamma_med = "7_pblhmod_gamma_med_vs_era5_center",
+                   pblhmod_gamma_site = "8_pblhmod_gamma_site_vs_era5_center")
+  p
+}
+
 #' Network log-ratio table for the figure
 #'
 #' Median and interquartile range of ln(PBLHmod / ERA5 tower cell) per site x regime, PBLHmod (pair 1) and
-#' PBLHmod-clim (pair 6) (spec 09 amendment 2, G 2026-11-03).
+#' PBLHmod-clim (pair 6) (spec 09 amendment 2, G 2026-11-03); for the supplementary figure also the side-result
+#' constants gamma_med (pair 7) and gamma_site (pair 8) (spec 09 amendment 3, G 2026-11-04).
 #'
 #' @param met Step-04 metrics, long (`site_id`, `pair`, `stratum`, `metric`, `value`); `p25_log_ratio` and
 #'   `p75_log_ratio` are `NA` when the metrics predate spec 09 amendment 2.
 #' @param regimes Regimes to keep (`"all"` = whole table).
-#' @return Tibble: `site_id`, `source` (`pblhmod_default`, `pblhmod_clim`), `regime`, `median`, `p25`, `p75`
-#'   [-, natural log], `n_log` [-].
-network_logratio_table <- function(met, regimes = c("all", "stable", "unstable_diag", "convective")) {
-  pairs <- c(pblhmod_default = "1_pblhmod_default_vs_era5_center", pblhmod_clim = "6_pblhmod_clim_vs_era5_center")
+#' @param pairs Named character: source id -> step-04 pair ([network_logratio_pairs()]).
+#' @return Tibble: `site_id`, `source` (names of `pairs`), `regime`, `median`, `p25`, `p75` [-, natural log],
+#'   `n_log` [-].
+network_logratio_table <- function(met, regimes = c("all", "stable", "unstable_diag", "convective"),
+                                   pairs = network_logratio_pairs()) {
   d <- met[met$pair %in% pairs & (met$stratum == "all" | startsWith(met$stratum, "regime=")), ]
   d$regime <- ifelse(d$stratum == "all", "all", sub("^regime=", "", d$stratum))
   d <- d[d$regime %in% regimes, ]

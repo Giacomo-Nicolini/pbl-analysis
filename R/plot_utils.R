@@ -41,6 +41,9 @@ pblh_sources_style <- local({
     row("cloudnet_exact", "source", k["grey"], "Measured MLH (qc 0/2 median)", 6, "dashed"),
     row("pblhmod_gamma001", "source", k["sky"], "PBLHmod (γ 0.01)", 7),
     row("pblhmod_gamma0025", "source", k["orange"], "PBLHmod (γ 0.0025)", 8),
+    # side-result constants of step 02 (spec 09 amendment 3; supplementary network figure only)
+    row("pblhmod_gamma_med", "source", k["purple"], "PBLHmod (γ network median)", 11),
+    row("pblhmod_gamma_site", "source", k["grey_dark"], "PBLHmod (γ site median)", 12),
     row("icos_oper_qc0", "source", k["purple"], "ICOS operational (qc 0)", 9),
     row("icos_oper_all", "source", k["purple"], "ICOS operational (all)", 10, "dashed"),
     # footprint cases (spec 08 / 09 A5)

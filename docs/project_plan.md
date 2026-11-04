@@ -81,6 +81,14 @@ and results; for each measured source it cites the DOIs / references and the ack
     **Figures (G 2026-10-30, spec 11 and from now on):** main figures show PBLHmod, PBLHmod-clim, ERA5 and the
     measurement; other γ cases in tables only; the reference γ values in supplementary figures with the same layout,
     labelled "reference γ values".
+    **γ strategy (confirmed by G 2026-11-04, spec 09 amendment 3):** default = constant 0.01 K m-1 (EC only; the value
+    stays open until decision point 3b); PBLHmod-clim = ERA5 site × month climatology; both get footprints. Side
+    results, step 02 only (no footprints): `gamma_med`, one constant for all stations = median of the site medians
+    of the daily ERA5 γ (pooled median kept for reference; computed by `09_collect.R` from the 11a tables, read by
+    step 02 at the next run), and
+    `gamma_site`, one constant per site = the site's median daily ERA5 γ; compared with ERA5 in step 04 and shown in
+    the supplementary network figure `09_network_logratio_supp` (PBLHmod, PBLHmod-clim, `gamma_med`, `gamma_site`).
+    Paper: publish a recommended constant and/or the γ tables of the ICOS stations as a side result.
   - convective trigger: H > 0 vs 1/L class (must be consistent);
   - H forcing: `H_F_MDS` (gap-filled, default; values with `H_F_MDS_QC` above a threshold, default > 1, treated as
     missing because poor gap-filling can be very bad) vs `H` (FLUXES) vs `H_CORR` (energy-balance corrected,
@@ -292,6 +300,8 @@ too shallow when deep") is a **hypothesis under test**.
     spec 09 A5 (G 2026-10-30): the calendar year with the most half-hours usable in both main cases (`pblhmod` and
     `era5`, valid under `etc`, `valid_qc_used`), within the FLUXES period and ERA5, ≥ 9 months of data; within 2 %,
     prefer a year overlapping the measured source, else the most recent. Proposal by `scripts/09_collect.R`, G approves.
+    Amended (spec 09 amendment 3, G 2026-11-04): a year overlapping the measured source is preferred when its usable
+    half-hours are ≥ 80 % of the best year's (most measured half-hours); FI-Hyy → 2022.
   - ~~Storage of the monthly summed fields~~: `c5` (5 m block sums, G 2026-10-28), implemented in spec 09; the 80 %
     regions of the chunk climatologies are packed as bitmasks (they were ≈ 100 MB per chunk as cell indices).
   - The ICOS target-area criterion (≥ 90 % from the area of interest; Rebmann2018 p. 475) fails at BE-Bra and FI-Hyy
@@ -406,7 +416,7 @@ too shallow when deep") is a **hypothesis under test**.
   stable-formula issue (B1), not γ (G 2026-10-30). It lies at the deep end, PBLHmod below the lidar lower bound on
   43 % vs ≤ 30 % under scatter alone, the same in every γ case; at the shallow end the stable set is consistent
   (32 % vs ≥ 27 %). The shallow end that remains too deep is the convective set: PBLHmod ≤ 105 m where the lidar
-  MLH is < 105 m on 13 % vs ≥ 16 % (PBLHmod-clim; default 14 % vs ≥ 23 %, γ 0.0025 12 % vs ≥ 13 %); (c) the EC-only constant to be revised after the network γ
+  MLH is < 105 m on 13 % vs ≥ 16 % (PBLHmod-clim; default 14 % vs ≥ 23 %, γ 0.0025 12 % vs ≥ 13 %); (c) the EC-only constant to be revised after the network γ (side results `gamma_med`, `gamma_site`: spec 09 amendment 3)
   climatology (cluster, spec 09 decision point 3b), and the value then recommended for ICOS stations; (d) γ tables
   of all sites as a deliverable (ERA5 attribution).
 - Timing of EC vs ERA5 sensible heat (evaluation; possible error driver for the evening transition). EC timestamps

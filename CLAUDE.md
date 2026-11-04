@@ -210,6 +210,11 @@ so code must be reproducible, documented and traceable to references.
   `gamma_source_used = "constant_fallback"`). Written by scripts 02/04 at every site.
 - **Reference γ values** (supplement only): `pblhmod_gamma001` (0.01, Batchvarova & Gryning 1991 as cited by Kljun
   et al. 2015; equal to the default for now, keep both names) and `pblhmod_gamma0025` (0.0025, legacy ETC code).
+- **Side-result constants** (spec 09 amendment 3, G 2026-11-04; step 02 only, **no footprints**, no standard files):
+  `gamma_med` = one constant for all stations, median of the site medians of the daily ERA5 γ (pooled median kept
+  for reference; `<derived_dir>/gamma/network_gamma.csv`, written by `09_collect.R` once every site has its 11a
+  table; step 02 skips the case while it is missing); `gamma_site` = the site's median daily ERA5 γ. Step 04 pairs 7 and 8 vs ERA5;
+  supplementary figure `09_network_logratio_supp`. Paper: recommended constant and/or γ tables as a side result.
 - **Figures**: main figures show PBLHmod, PBLHmod-clim, ERA5 and the measurement; reference γ values in
   supplementary figures with the same layout, labelled "reference γ values"; other γ cases in tables only.
 
@@ -259,8 +264,12 @@ so code must be reproducible, documented and traceable to references.
   row of `config/run_sites.txt`) or `slurm/footprint_chunks.sbatch` (one task per chunk) with `slurm/local.env`.
   MaxArraySize on the cluster is 1001: a chunk list longer than `SLURM_MAX_ARRAY_TASKS` (default 1000) is submitted as
   several independent arrays (row offset per array). Example default: 2 CPUs per chunk (`CHUNK_CPUS_PER_TASK`).
+- **Order (two passes, spec 09 amendment 3)**: `gamma_med` needs the 11a results of every site: site array
+  `--steps=01,11a`, then `09_collect.R --gamma-only`, then the site arrays with the default (and measured) steps.
 - **Footprints**: after step 08a and G's approval of the reference years (`scripts/09_collect.R` writes the proposal
-  `output/tables/08_reference_years.csv`; the approved list is committed as `config/reference_years.csv`),
+  `output/tables/08_reference_years.csv`; rule: ≥ 9 months, a measured-overlap year preferred if its usable
+  half-hours are ≥ 80 % of the best year's, else the most usable (2 %, most recent), spec 09 amendment 3; the
+  approved list is committed as `config/reference_years.csv`),
   `scripts/08c_make_chunks.R` writes `<derived_dir>/footprint/chunk_list.csv` (site × case × month, half-months above
   `chunk_target_min`); each array task runs `08b --chunk-list --chunk-row` with the job's CPUs as workers (result
   independent of the worker count); then step `08` (`run_site.R SITE --steps=08`, reference year) and `09_collect.R`.
@@ -268,6 +277,8 @@ so code must be reproducible, documented and traceable to references.
   `11a_gamma_summary_`, `04_metrics_`, `08_coverage_`, `08_year_counts_`, `08_nee_qc_`) and writes `09_network_*.csv`.
   Network figure (G 2026-11-03): PBLHmod median ln(PBLHmod / ERA5) as filled dots with a p25–p75 bar
   (`p25_log_ratio`, `p75_log_ratio` of `pblh_metrics()`), PBLHmod-clim as open circles drawn on top, no bar.
+  Supplementary version `09_network_logratio_supp` (amendment 3): also `gamma_med` (filled triangles) and
+  `gamma_site` (open triangles); also writes `09_network_gamma_site.csv` and the network γ file.
 
 ## Code organisation
 

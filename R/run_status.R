@@ -16,7 +16,8 @@ pipeline_steps <- function() {
     `01` = list(script = "scripts/01_check_inputs.R", upstream = character(), inputs = c("l2", "era5_sl"), oper = FALSE),
     `11a` = list(script = "scripts/11a_gamma_era5.R", upstream = character(), inputs = c("era5_pl", "era5_static"),
                  oper = FALSE),
-    `02` = list(script = "scripts/02_run_pblh_model.R", upstream = "11a", inputs = "l2", oper = FALSE),
+    # gamma_network: network gamma of scripts/09_collect.R (case gamma_med; spec 09 amendment 3)
+    `02` = list(script = "scripts/02_run_pblh_model.R", upstream = "11a", inputs = c("l2", "gamma_network"), oper = FALSE),
     `04` = list(script = "scripts/04_era5_compare.R", upstream = "02", inputs = c("l2", "era5_sl", "era5_pl", "era5_static"),
                 oper = TRUE),
     # measured sites only (config/measured_sites.csv, primary source; spec 09 amendment 2): standard files of the
@@ -79,7 +80,8 @@ reference_year_of <- function(site_id, cfg) {
 #' @param cfg Configuration list ([get_cfg()]).
 #' @param groups Input groups: `l2` (ICOS L2 folder), `bif` (ONEFlux BIF), `era5_sl`, `era5_pl` (ERA5 folders),
 #'   `era5_static` (static files of the site), `measured_raw` (Cloudnet files and
-#'   PI / provider files of the site, `cloudnet_dir`, `measured_dir`), `measured_std` (standard files of measured sources), `chunks`
+#'   PI / provider files of the site, `cloudnet_dir`, `measured_dir`), `measured_std` (standard files of measured sources),
+#'   `gamma_network` (network gamma table, [gamma_network_path()]; spec 09 amendment 3), `chunks`
 #'   (footprint chunk meta files of the site).
 #' @return Tibble: `group`, `path`, `size` [bytes], `mtime` [character, UTC]; a group whose folder is not configured
 #'   or missing gives no rows (the step itself reports missing inputs).
@@ -107,6 +109,7 @@ site_input_files <- function(site_id, cfg, groups) {
            measured_raw = c(in_dir("cloudnet_dir"),
                             safe(list.files(resolve_path(cfg$measured_dir, site = site_id, must_exist = FALSE),
                                             recursive = TRUE, full.names = TRUE))),
+           gamma_network = safe(Filter(file.exists, gamma_network_path(cfg))),
            chunks = safe(list.files(file.path(resolve_path(cfg$derived_dir, must_exist = FALSE), "footprint", site_id,
                                               "chunks"), pattern = "_meta\\.rds$", full.names = TRUE)),
            cli::cli_abort("Unknown input group {.val {g}}."))

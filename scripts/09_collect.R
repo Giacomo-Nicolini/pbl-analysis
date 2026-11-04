@@ -4,9 +4,10 @@
 #   09_network_inputs.csv          files, reference period, ERA5 period and cell distance per site (01)
 #   09_network_gamma_monthly.csv   gamma climatology per site x month (11a) and 09_network_gamma_summary.csv
 #                                  (median, p25, p75 over the sites per month and overall; sites with only 2 fit levels)
-#   09_network_regimes.csv         PBLHmod and PBLHmod-clim per regime: share and quantiles (02)
+#   09_network_regimes.csv         PBLHmod, PBLHmod-clim (and gamma_med, gamma_site) per regime: share, quantiles (02)
 #   09_network_filters.csv         u* filter and L check counts, validity, gamma per case (02)
-#   09_network_era5_metrics.csv    PBLHmod and PBLHmod-clim vs ERA5 (tower cell, bilinear): pairs 1, 2, 6 (04)
+#   09_network_era5_metrics.csv    PBLHmod and PBLHmod-clim vs ERA5 (tower cell, bilinear): pairs 1, 2, 6; side-result
+#                                  constants gamma_med, gamma_site: pairs 7, 8 (04; amendment 3)
 #   09_network_era5_cells.csv      ERA5 cell distance and orography
 #   09_network_footprint_coverage.csv  footprint coverage per case x set (08a, full period, stratum all)
 #   09_network_nee_qc.csv          FLUXNET NEE QC source (VUT / CUT / none) and status per site and year (08a; amendment 2)
@@ -14,10 +15,16 @@
 #                                  (exceptions: config/reference_year_exceptions.csv, rule coverage; amendment 2)
 #   09_network_run_status.csv      last status per site x step; 09_network_flags.csv sites with problems and the
 #                                  stations not run (config/sites_not_run.csv: flag "not_run", spec 09 amendment 1)
+#   09_network_gamma_site.csv      gamma_site per site: median of the site's daily ERA5 gamma (11a; amendment 3)
+# Derived: <derived_dir>/gamma/network_gamma.csv: gamma_med = median of the site medians of the daily ERA5 gamma (pooled
+#   median kept for reference), read by step 02
+#   (case gamma_med; spec 09 amendment 3); written only when every site has its 11a table and the value changed.
 # Figure: 09_network_logratio_<n>sites.png, ln(PBLHmod / ERA5) by site and regime: PBLHmod median and p25-p75 bar,
-#   PBLHmod-clim median as open circles on top (spec 09 amendment 2).
+#   PBLHmod-clim median as open circles on top (spec 09 amendment 2); 09_network_logratio_supp_<n>sites.png, the same
+#   with the side-result constants gamma_med and gamma_site (pairs 7, 8; amendment 3).
 #
-# Usage: Rscript scripts/09_collect.R [--sites-file=config/run_sites.txt]
+# Usage: Rscript scripts/09_collect.R [--sites-file=config/run_sites.txt] [--gamma-only]
+#   --gamma-only: only the network gamma (first pass of the cluster order, after step 11a at every site).
 
 for (f in list.files(here::here("R"), pattern = "\\.R$", full.names = TRUE)) source(f)
 
@@ -45,6 +52,29 @@ write_tab <- function(x, name) {
 }
 cli::cli_h1("Network collection: {length(sites)} sites")
 if (nrow(not_run)) cli::cli_inform("Not run: {paste0(not_run$site_id, ' (', not_run$reason, ')', collapse = ', ')}.")
+
+# --- network gamma constants (spec 09 amendment 3): gamma_med for step 02, gamma_site per site for the record ---
+# Needs the 11a daily tables of every site; written only when all are present and only if the value changed (the
+# file is an input of step 02: a rewrite would rerun it).
+g_daily_p <- per_site("%s_daily.csv", file.path(derived, "gamma"))
+g_miss <- names(g_daily_p)[!file.exists(g_daily_p)]
+if (length(g_miss) == length(g_daily_p)) {
+  cli::cli_alert_warning("No 11a daily gamma table: network gamma not computed.")
+} else {
+  g_daily <- lapply(g_daily_p[file.exists(g_daily_p)], function(p) readr::read_csv(p, show_col_types = FALSE, progress = FALSE))
+  g_const <- dplyr::bind_rows(lapply(names(g_daily), function(s) dplyr::mutate(gamma_site_constant(g_daily[[s]]), site_id = s, .before = 1)))
+  gnet <- gamma_network_median(g_daily)
+  write_tab(dplyr::rename(g_const, gamma_site = gamma), "09_network_gamma_site.csv")
+  cli::cli_inform("Network gamma: median of the site medians at {gnet$n_sites} sites = {signif(gnet$gamma_med, 4)} K m-1 (reference: median of the {gnet$n_days} pooled daily values {signif(gnet$gamma_med_pooled, 4)}).")
+  if (length(g_miss)) {
+    cli::cli_alert_warning("11a daily gamma missing at {.val {g_miss}}: {.path {gamma_network_path(cfg)}} not written (gamma_med needs every site).")
+  } else if (write_gamma_network(gnet, gamma_network_path(cfg))) {
+    cli::cli_alert_success("{.path {gamma_network_path(cfg)}} written: step 02 reruns at every site (case gamma_med).")
+  } else {
+    cli::cli_inform("{.path {gamma_network_path(cfg)}} unchanged.")
+  }
+}
+if ("--gamma-only" %in% args) quit(save = "no", status = 0)
 
 # --- run status ---
 status <- dplyr::bind_rows(lapply(sites, function(s) dplyr::bind_rows(lapply(names(pipeline_steps()), function(st) {
@@ -74,13 +104,14 @@ if (nrow(g_month)) {
 
 # --- 02 regimes and filters ---
 reg <- bind_site_tables(per_site("02_regimes_%s.csv"))
-if (nrow(reg)) write_tab(reg[reg$case %in% c("default", "clim"), ], "09_network_regimes.csv")
+if (nrow(reg)) write_tab(reg[reg$case %in% c("default", "clim", "gamma_med", "gamma_site"), ], "09_network_regimes.csv")
 cases_tbl <- bind_site_tables(per_site("02_cases_%s.csv"))
 if (nrow(cases_tbl)) write_tab(cases_tbl, "09_network_filters.csv")
 
 # --- 04 metrics vs ERA5, cells ---
 met <- bind_site_tables(per_site("04_metrics_%s.csv"))
-pairs_main <- c("1_pblhmod_default_vs_era5_center", "2_pblhmod_default_vs_era5_bilinear", "6_pblhmod_clim_vs_era5_center")
+pairs_main <- c("1_pblhmod_default_vs_era5_center", "2_pblhmod_default_vs_era5_bilinear", "6_pblhmod_clim_vs_era5_center",
+                "7_pblhmod_gamma_med_vs_era5_center", "8_pblhmod_gamma_site_vs_era5_center")
 if (nrow(met)) {
   met <- met[met$pair %in% pairs_main & (met$stratum == "all" | startsWith(met$stratum, "regime=")), ]
   write_tab(met, "09_network_era5_metrics.csv")
@@ -131,5 +162,17 @@ if (nrow(met)) {
   p <- plot_network_logratio(d)
   pth <- save_figure(p, paste0("09_network_logratio_", length(unique(d$site_id)), "sites"), 22,
                      6 + 0.35 * length(unique(d$site_id)))
+  cli::cli_alert_success("{.path {pth[['png']]}}")
+}
+# Supplementary version (spec 09 amendment 3): also the side-result constants gamma_med and gamma_site (pairs 7, 8)
+if (nrow(met)) {
+  ds <- network_logratio_table(met, pairs = network_logratio_pairs(supp = TRUE))
+  for (s in c("pblhmod_gamma_med", "pblhmod_gamma_site")) {
+    miss <- setdiff(unique(d$site_id), ds$site_id[ds$source == s])
+    if (length(miss)) cli::cli_alert_warning("{s}: no step-04 pair at {length(miss)} site{?s} ({.val {miss}}; gamma_med needs the second pass, see spec 09 amendment 3).")
+  }
+  p <- plot_network_logratio(ds)
+  pth <- save_figure(p, paste0("09_network_logratio_supp_", length(unique(ds$site_id)), "sites"), 22,
+                     6 + 0.35 * length(unique(ds$site_id)))
   cli::cli_alert_success("{.path {pth[['png']]}}")
 }
