@@ -1,5 +1,5 @@
 # Spec 09 A5: footprint chunk list for the cluster array, from the approved reference years only.
-# Reads config/reference_years.csv (site_id, year, reason; committed after G's review of the proposal
+# Reads config/reference_years.csv (site_id, year, reason, approved; committed after G's review of the proposal
 # output/tables/08_reference_years.csv written by scripts/09_collect.R) and each site's full-period input table
 # (scripts/08a_footprint_flags.R). One chunk per site x case x month of the year; a month whose estimated duration
 # (half-hours x sec_per_ffp_halfhour / CPUs) exceeds chunk_target_min is split into halves (config.yml).
@@ -20,19 +20,10 @@ opt <- function(k, def = NULL) {
 cfg <- get_cfg()
 cpus <- as.integer(opt("cpus", "2"))
 with_oper <- "--with-oper" %in% args
-ry_file <- resolve_path(cfg$reference_years_file, must_exist = FALSE)
-if (!file.exists(ry_file)) {
-  cli::cli_abort(c("No approved reference years: {.path {ry_file}} not found.",
-                   "i" = "Review output/tables/08_reference_years.csv (scripts/09_collect.R) and commit the approved list."))
-}
-ry <- readr::read_csv(ry_file, col_types = readr::cols(year = "i", .default = "c"), progress = FALSE)
-need <- c("site_id", "year", "reason")
-if (!all(need %in% names(ry))) cli::cli_abort("{.path {ry_file}} needs columns {.field {need}}.")
-if (anyDuplicated(ry$site_id)) cli::cli_abort("{.path {ry_file}}: more than one year for {.val {ry$site_id[duplicated(ry$site_id)]}}.")
 site_ids <- grep("^--", args, value = TRUE, invert = TRUE)
-if (length(site_ids) == 0) site_ids <- ry$site_id
-miss <- setdiff(site_ids, ry$site_id[!is.na(ry$year)])
-if (length(miss)) cli::cli_abort("No approved reference year for {.val {miss}} in {.path {ry_file}}.")
+ry <- read_reference_years(resolve_path(cfg$reference_years_file, must_exist = FALSE),
+                           if (length(site_ids)) site_ids else NULL)
+site_ids <- ry$site_id
 extra_sites <- footprint_extra_sites(resolve_path(cfg$footprint_extra_sites_file))
 derived <- resolve_path(cfg$derived_dir, must_exist = FALSE)
 

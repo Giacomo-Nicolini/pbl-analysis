@@ -191,3 +191,34 @@ test_that("ffp_region_pack / unpack are lossless; index vectors (spec 08 files) 
   expect_equal(ffp_region_unpack(ffp_region_pack(integer(), 10L)), integer())
   expect_equal(ffp_region_unpack(idx), idx)
 })
+
+test_that("read_reference_years: approved list, missing site or approval aborts", {
+  f <- withr::local_tempfile(fileext = ".csv")
+  readr::write_csv(dplyr::tibble(site_id = c("AA-Aaa", "BB-Bbb"), year = c(2022L, 2025L),
+                                 reason = c("most usable half-hours", "x"), approved = "G 2026-11-04"), f)
+  ry <- read_reference_years(f)
+  expect_equal(ry$site_id, c("AA-Aaa", "BB-Bbb"))
+  expect_type(ry$year, "integer")
+  expect_equal(read_reference_years(f, "BB-Bbb")$year, 2025L)
+  expect_error(read_reference_years(f, c("AA-Aaa", "CC-Ccc")), "CC-Ccc")
+  expect_error(read_reference_years(file.path(tempdir(), "none.csv")), "not found")
+  cfg <- list(reference_years_file = f)
+  expect_equal(reference_year_of("AA-Aaa", cfg), "2022")
+  expect_error(reference_year_of("CC-Ccc", cfg), "CC-Ccc")
+  readr::write_csv(dplyr::tibble(site_id = c("AA-Aaa", "BB-Bbb"), year = c(2022L, NA), reason = "x",
+                                 approved = c("G 2026-11-04", "G 2026-11-04")), f)
+  expect_error(read_reference_years(f), "BB-Bbb")
+  readr::write_csv(dplyr::tibble(site_id = "AA-Aaa", year = 2022L, reason = "x"), f)
+  expect_error(read_reference_years(f), "approved")
+  readr::write_csv(dplyr::tibble(site_id = c("AA-Aaa", "AA-Aaa"), year = c(2022L, 2023L), reason = "x",
+                                 approved = "G"), f)
+  expect_error(read_reference_years(f), "year for")
+})
+
+test_that("config/reference_years.csv: one approved year for every run site", {
+  ry <- read_reference_years(here::here("config", "reference_years.csv"))
+  runs <- trimws(readLines(here::here("config", "run_sites.txt")))
+  runs <- runs[nzchar(runs) & !startsWith(runs, "#")]
+  expect_setequal(ry$site_id, runs)
+  expect_true(all(ry$year >= 2020 & ry$year <= 2026))
+})

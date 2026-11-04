@@ -102,8 +102,8 @@ Settings as spec 08 (ETC grid ±1000 m at 1 m, umean only, smoothing EBImage-com
   specs 10–11; turbulence sources (Cloudnet) exact values plus the `bound` case, as in spec 08.
 - **Chunks:** `scripts/08c_make_chunks.R` writes the list site × case × month for each site's reference year
   from the approved reference years only: `09_collect.R` writes the proposal (`output/tables/08_reference_years.csv`);
-  after review, the approved list is committed as `config/reference_years.csv` (site, year, reason); 08c aborts if a
-  site has no approved year. Each chunk carries an estimated duration from the spec-08 timings;
+  after review, the approved list is committed as `config/reference_years.csv` (site, year, reason, approved); 08c
+  aborts if a site has no approved year. Each chunk carries an estimated duration from the spec-08 timings;
   months are split into half-months when the estimate exceeds `chunk_target_min`. Each array task runs one chunk with
   the job's cores as workers; chunk outputs keyed by inputs hash (restartable, as spec 08).
 - After all chunks of a site: `08_footprint_compare.R SITE` (reference year), then `09_collect.R`.
@@ -250,6 +250,28 @@ C. **Measured data on the cluster.** New `run_site.R` steps `meas_std` (standard
    Check on BE-Bra (PC, run with the 4-site pooled γ 0.00463 before the switch to the median of the site medians,
    0.00469; BE-Bra 0.00473 K m-1): median ln(x / ERA5 tower cell), convective,
    default −0.07, `gamma_site` +0.18, `gamma_med` +0.19; stable identical in all cases.
+
+## Reference years approved (G, 2026-11-04)
+
+- `config/reference_years.csv`: the proposal of the cluster collection of 2026-11-04 (`08_reference_years.csv`, 39
+  run sites), approved unchanged; columns `site_id`, `year`, `reason` (proposal text), `approved` (`G 2026-11-04`).
+  All 39 years follow the standard rule (no `coverage` exception was needed, GL-ZaF included); the measured-overlap
+  rule chose FI-Hyy 2022, FR-Gri 2023 and CH-Dav 2022. Years: 2020 (2 sites), 2022 (6), 2023 (8), 2024 (9),
+  2025 (14).
+- `read_reference_years()` (`R/footprint_chunks.R`) reads the list for `08c_make_chunks.R` and step `08`
+  (`reference_year_of()`); it aborts if the file or a column (`approved` included) is missing, a site appears twice,
+  a year or approval is empty, or a requested site is not listed.
+- Footprint cases per site, from the code (08a `footprint_h_cases()`, 08c/08b case filter) and confirmed by the
+  cluster 08a coverage table: `pblhmod`, `pblhmod_clim`, `era5` at all 39 sites; at the six extra sites also
+  `era5_bilinear`, `pblhmod_x0.8`, `pblhmod_x1.2`, `pblhmod_gamma001`, `pblhmod_gamma0025` and `oper`; `measured` at
+  FI-Hyy, FR-Gri, CH-Dav and `bound` at FI-Hyy (Cloudnet, turbulence). `oper` at the extra sites needs no
+  `--with-oper` (08a, 08c, 08b and 08 include it there; `--with-oper` would add it at every site, internal only).
+- Estimate (cluster year counts and coverage, 2 s per half-hour): about 1,880 chunks (no half-months: the longest
+  month is far below `chunk_target_min`), 1.85 M FFP half-hours, about 1,030 CPU-hours at the nominal cost; up to
+  about 2,000 CPU-hours if the PC cost per worker (4–6.6 s including the per-chunk climatologies) holds on the
+  cluster. Two arrays (> 1000 tasks). Disk: c5 block sums ≈ 0.42 MB per group (measured on a BE-Bra test chunk),
+  ≤ 47 GB in total (fewer where the `kljun` set is empty, as at forest sites), climatologies ≈ 0.7 GB, half-hour
+  chunk tables ≈ 0.25 GB under `derived/`; step 08 tables and figures ≈ 0.5 GB under `output/`.
 
 ## Acceptance criteria
 
