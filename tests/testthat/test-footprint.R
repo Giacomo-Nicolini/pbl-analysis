@@ -310,3 +310,104 @@ test_that("FLUXNET NEE QC (spec 09 amendment 2): reader keeps VUT and CUT QC, CU
   nf <- nee_qc_status(dplyr::tibble(timestamp_start_utc = ts[1:2], src_fluxnet = FALSE, NEE = 1, NEE_DATA_FLAG = 0))
   expect_equal(nf$status, c("no_fluxnet", "no_fluxnet"))
 })
+
+# Synthetic target areas (spec 09, footprint run 2026-11-05): square of half-width `hw` [m] around (x0, y0) [m] from
+# the tower at (lat, lon), as lon/lat rings.
+ta_square <- function(lat, lon, x0, y0, hw) {
+  dlat <- 1 / 111320
+  dlon <- 1 / (111320 * cos(lat * pi / 180))
+  xs <- x0 + c(-hw, hw, hw, -hw, -hw)
+  ys <- y0 + c(-hw, -hw, hw, hw, -hw)
+  cbind(lon + xs * dlon, lat + ys * dlat)
+}
+
+test_that("target_area_polygons / target_area_mask: every layer, polygons only, union", {
+  lat <- 50; lon <- 4
+  grid <- ffp_grid(c(-300, 300, -300, 300), 10)
+  # KML with a polygon folder and a label-point folder (as IT-Cp2)
+  sq <- ta_square(lat, lon, 0, 0, 95)
+  kml <- withr::local_tempfile(fileext = ".kml")
+  writeLines(c('<?xml version="1.0" encoding="UTF-8"?>', '<kml xmlns="http://www.opengis.net/kml/2.2"><Document>',
+               "<Folder><name>poly</name><Placemark><name>TA</name><Polygon><outerBoundaryIs><LinearRing><coordinates>",
+               paste(sprintf("%.8f,%.8f,0", sq[, 1], sq[, 2]), collapse = " "),
+               "</coordinates></LinearRing></outerBoundaryIs></Polygon></Placemark></Folder>",
+               "<Folder><name>labpt</name><Placemark><name>TA</name><Point><coordinates>",
+               sprintf("%.8f,%.8f,0", lon, lat), "</coordinates></Point></Placemark></Folder>", "</Document></kml>"), kml)
+  g <- target_area_polygons(kml)
+  expect_length(g, 1)
+  expect_equal(attr(g, "n_layers"), 2)
+  expect_equal(attr(g, "layers"), "poly")
+  m <- target_area_mask(kml, lat, lon, grid)
+  expect_equal(sum(m), 19^2) # cell centres -90 ... 90 m inside +-95 m
+  expect_equal(attr(m, "area_m2"), 190^2, tolerance = 0.01)
+  expect_equal(attr(m, "n_polygons"), 1)
+
+  # GeoPackage: an empty first layer, a point layer and two overlapping polygons in separate layers
+  sfc <- function(...) sf::st_sfc(..., crs = 4326)
+  gpkg <- withr::local_tempfile(fileext = ".gpkg")
+  sf::st_write(sf::st_sf(id = integer(), geometry = sfc(sf::st_polygon())[0]), gpkg, layer = "empty", quiet = TRUE)
+  sf::st_write(sf::st_sf(id = 1L, geometry = sfc(sf::st_point(c(lon, lat)))), gpkg, layer = "pt", quiet = TRUE)
+  sf::st_write(sf::st_sf(geometry = sfc(sf::st_polygon(list(ta_square(lat, lon, -50, 0, 95))))), gpkg, layer = "a",
+               quiet = TRUE, append = FALSE)
+  sf::st_write(sf::st_sf(other = "x", geometry = sfc(sf::st_polygon(list(ta_square(lat, lon, 50, 0, 95))))), gpkg,
+               layer = "b", quiet = TRUE)
+  g2 <- target_area_polygons(gpkg)
+  expect_equal(attr(g2, "n_layers"), 4)
+  expect_setequal(attr(g2, "layers"), c("a", "b"))
+  m2 <- target_area_mask(gpkg, lat, lon, grid)
+  expect_equal(sum(m2), 29 * 19) # union: x in [-145, 145], y in [-95, 95]
+  expect_equal(attr(m2, "area_m2"), 290 * 190, tolerance = 0.01) # overlap counted once
+  expect_true(m2[which.min(abs(grid$y)), which.min(abs(grid$x))])
+
+  # no polygon at all
+  pts <- withr::local_tempfile(fileext = ".gpkg")
+  sf::st_write(sf::st_sf(id = 1L, geometry = sfc(sf::st_point(c(lon, lat)))), pts, layer = "pt", quiet = TRUE)
+  expect_error(target_area_polygons(pts), "polygon in 1 layer")
+})
+
+test_that("target_area_mask_cached: atomic write, reuse, rebuild of a mask from the single-layer builder", {
+  lat <- 50; lon <- 4
+  grid <- ffp_grid(c(-300, 300, -300, 300), 10)
+  gpkg <- withr::local_tempfile(fileext = ".gpkg")
+  sf::st_write(sf::st_sf(geometry = sf::st_sfc(sf::st_polygon(list(ta_square(lat, lon, 0, 0, 95))), crs = 4326)),
+               gpkg, layer = "a", quiet = TRUE)
+  d <- withr::local_tempdir()
+  f <- file.path(d, "site", "X_target_area_mask.rds")
+  m <- target_area_mask_cached(f, gpkg, lat, lon, grid)
+  expect_true(file.exists(f))
+  expect_equal(list.files(dirname(f)), basename(f)) # no temporary file left
+  expect_equal(readRDS(f), m)
+  # a cached mask with n_layers is reused as is
+  m_mark <- m
+  attr(m_mark, "marker") <- TRUE
+  saveRDS(m_mark, f)
+  expect_true(attr(target_area_mask_cached(f, gpkg, lat, lon, grid), "marker"))
+  # a mask of the earlier builder (no n_layers) is rebuilt and replaced
+  old <- matrix(FALSE, length(grid$y), length(grid$x))
+  attr(old, "area_m2") <- 1
+  saveRDS(old, f)
+  m3 <- target_area_mask_cached(f, gpkg, lat, lon, grid)
+  expect_equal(sum(m3), 19^2)
+  expect_equal(readRDS(f), m3)
+  expect_equal(list.files(dirname(f)), basename(f))
+})
+
+test_that("make_worker_cluster retries on another port and reports every failure", {
+  tried <- integer()
+  fake <- function(n, port) {
+    tried <<- c(tried, port)
+    if (length(tried) < 3) stop("cannot open server socket") else structure(list(n = n, port = port), class = "fake")
+  }
+  cl <- make_worker_cluster(2, tries = 5, port_of = function(k) 20000L + k, make = fake)
+  expect_equal(cl$port, 20003L)
+  expect_equal(tried, 20001:20003)
+  expect_error(make_worker_cluster(2, tries = 2, port_of = function(k) 20000L + k,
+                                   make = function(n, port) stop("busy")), "2 attempts")
+  # default ports: in range and different between attempts
+  ports <- vapply(1:5, function(k) {
+    p <- NULL
+    try(make_worker_cluster(1, tries = 1, port_of = NULL, make = function(n, port) { p <<- port; stop("x") }), silent = TRUE)
+    p
+  }, 1L)
+  expect_true(all(ports >= 11000 & ports <= 60999))
+})

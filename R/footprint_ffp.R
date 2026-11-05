@@ -331,20 +331,47 @@ point_in_rings <- function(px, py, rings) {
   inside
 }
 
+#' Target-area polygons of a KML file
+#'
+#' Reads every layer of the ICOS target-area KML (a KML may hold several layers: nested folders, which some GDAL
+#' builds list as empty layers, or a label point next to the polygon, as at IT-Cp2) and keeps the polygon
+#' geometries only (polygons inside geometry collections included). Attribute columns are not used.
+#'
+#' @param kml Path of `<site>_TA.kml`.
+#' @return `sfc` of polygons and multipolygons (2D, CRS of the file); attributes `n_layers` (layers in the file) and
+#'   `layers` (names of the layers that contributed polygons). Aborts if the file has no polygon.
+target_area_polygons <- function(kml) {
+  lay <- sf::st_layers(kml)$name
+  g <- lapply(lay, function(l) sf::st_zm(sf::st_geometry(sf::st_read(kml, layer = l, quiet = TRUE))))
+  poly <- lapply(g, function(x) {
+    x <- x[!sf::st_is_empty(x)]
+    gc <- sf::st_geometry_type(x) == "GEOMETRYCOLLECTION"
+    if (any(gc)) x <- c(x[!gc], sf::st_collection_extract(x[gc], "POLYGON"))
+    x[sf::st_geometry_type(x) %in% c("POLYGON", "MULTIPOLYGON")]
+  })
+  keep <- lengths(poly) > 0
+  if (!any(keep)) cli::cli_abort("{.path {kml}}: no polygon in {length(lay)} layer{?s} ({.val {lay}}).")
+  out <- do.call(c, poly[keep])
+  attr(out, "n_layers") <- length(lay)
+  attr(out, "layers") <- lay[keep]
+  out
+}
+
 #' Target-area mask on the footprint grid
 #'
-#' Reads the ICOS target-area KML, projects it to a local azimuthal equidistant
-#' projection centred on the tower (metres, x east, y north, matching the FFP grid) and
-#' marks the grid cells whose centre lies inside.
+#' Reads all polygons of the ICOS target-area KML ([target_area_polygons()]), projects them to a local azimuthal
+#' equidistant projection centred on the tower (metres, x east, y north, matching the FFP grid), merges them into
+#' one area (union: overlapping polygons count once) and marks the grid cells whose centre lies inside.
 #'
 #' @param kml Path of `<site>_TA.kml`.
 #' @param lat,lon Tower coordinates [decimal degrees].
 #' @param grid Output of [ffp_grid()].
-#' @return Logical matrix on `grid`; attribute `area_m2` (polygon area).
+#' @return Logical matrix on `grid`; attributes `area_m2` (area of the union [m2]), `n_layers`, `layers` (see
+#'   [target_area_polygons()]) and `n_polygons` (polygon features read).
 target_area_mask <- function(kml, lat, lon, grid) {
-  p <- sf::st_zm(sf::st_read(kml, quiet = TRUE))
+  g <- target_area_polygons(kml)
   crs <- sprintf("+proj=aeqd +lat_0=%.8f +lon_0=%.8f +x_0=0 +y_0=0 +datum=WGS84 +units=m", lat, lon)
-  p <- sf::st_transform(p, crs)
+  p <- sf::st_union(sf::st_make_valid(sf::st_transform(g, crs)))
   co <- sf::st_coordinates(p)
   grp <- interaction(as.data.frame(co[, grepl("^L[0-9]", colnames(co)), drop = FALSE]), drop = TRUE)
   rings <- lapply(split(seq_len(nrow(co)), grp), function(i) co[i, c("X", "Y"), drop = FALSE])
@@ -352,5 +379,43 @@ target_area_mask <- function(kml, lat, lon, grid) {
   py <- rep(grid$y, times = length(grid$x))
   m <- matrix(point_in_rings(px, py, rings), nrow = length(grid$y), ncol = length(grid$x))
   attr(m, "area_m2") <- as.numeric(sum(sf::st_area(p)))
+  attr(m, "n_layers") <- attr(g, "n_layers")
+  attr(m, "layers") <- attr(g, "layers")
+  attr(m, "n_polygons") <- length(g)
   m
+}
+
+#' Cached target-area mask
+#'
+#' Reads the site's mask file, or builds it with [target_area_mask()] and writes it atomically (temporary file in the
+#' same folder, then rename), so that a concurrent chunk never reads a partly written file. A cached mask without the
+#' attribute `n_layers` comes from the earlier builder, which read only the first KML layer (spec 09, footprint run
+#' 2026-11-05): it is rebuilt.
+#'
+#' @param mask_file Cache file (`<derived_dir>/footprint/<site>/<site>_target_area_mask.rds`).
+#' @inheritParams target_area_mask
+#' @return The mask (see [target_area_mask()]).
+target_area_mask_cached <- function(mask_file, kml, lat, lon, grid) {
+  if (file.exists(mask_file)) {
+    m <- readRDS(mask_file)
+    if (!is.null(attr(m, "n_layers"))) return(m)
+  }
+  m <- target_area_mask(kml, lat, lon, grid)
+  write_rds_atomic(m, mask_file)
+  m
+}
+
+#' Write an RDS file atomically
+#'
+#' @param x Object.
+#' @param path Target file.
+#' @return `path`, invisibly. The object is written to a temporary file in the same folder and renamed (atomic on
+#'   one file system); if the target appeared meanwhile, the rename replaces it.
+write_rds_atomic <- function(x, path) {
+  dir.create(dirname(path), recursive = TRUE, showWarnings = FALSE)
+  tmp <- tempfile(paste0(basename(path), ".tmp"), tmpdir = dirname(path))
+  on.exit(if (file.exists(tmp)) unlink(tmp), add = TRUE)
+  saveRDS(x, tmp)
+  if (!file.rename(tmp, path)) cli::cli_abort("Could not rename {.path {tmp}} to {.path {path}}.")
+  invisible(path)
 }

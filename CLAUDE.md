@@ -237,6 +237,10 @@ so code must be reproducible, documented and traceable to references.
   and `09_network_nee_qc.csv`, CUT sites flagged `nee_qc_cut`); `valid_qc_h` (valid and H measured and QC-good:
   `H_F_MDS_QC == 0`, or L2 `H` present where FLUXNET has no QC value; keeps the stable nights that the NEE u* filter
   removes).
+- **Target-area mask** (G 2026-11-05): from every layer of `<site>_TA.kml`, polygons only, union
+  (`target_area_mask()`); never only the first layer or an attribute column (KML layers differ between GDAL builds:
+  CZ-Lnz nested folders, IT-Cp2 label point). Cached per site, written atomically; rebuild with
+  `scripts/08t_target_area_masks.R`.
 - **Target-area fraction** = integral of the footprint over the ICOS target area relative to the full footprint (the
   FFP function integrates to 1 over the plane); `f_domain` = part inside the ±1000 m domain.
 - **Cases (spec 09 A5)**: `pblhmod`, `pblhmod_clim`, `era5` at every site; at the extra sites

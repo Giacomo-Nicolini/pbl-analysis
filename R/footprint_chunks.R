@@ -221,7 +221,7 @@ run_footprint_chunk <- function(tk, ffp_dir, grid, mask, r_levels, chunk_dir, wo
     bm <<- c(bm, res$bm)
   }
   if (workers > 1 && length(blocks) > 1) {
-    cl <- if (.Platform$OS.type == "windows") parallel::makePSOCKcluster(workers) else parallel::makeForkCluster(workers)
+    cl <- make_worker_cluster(workers)
     on.exit(parallel::stopCluster(cl), add = TRUE)
     if (.Platform$OS.type == "windows") {
       rfiles <- list.files(here::here("R"), pattern = "\\.R$", full.names = TRUE)
@@ -254,6 +254,39 @@ run_footprint_chunk <- function(tk, ffp_dir, grid, mask, r_levels, chunk_dir, wo
   saveRDS(list(hash = tk$hash, n = n, seconds = secs, workers = workers, block = block), paste0(b, "_meta.rds"))
   sprintf("%s %s %s %s: %d half-hours, %d climatologies, %.0f s, %d worker(s)", format(Sys.time(), "%Y-%m-%d %H:%M:%S"),
           tk$site_id, tk$case, tk$part, n, length(clim), secs, as.integer(workers))
+}
+
+#' Worker processes for a chunk
+#'
+#' Fork cluster on Linux, PSOCK on Windows, on a port chosen per attempt. The default port of `parallel` depends on
+#' the start time only, so array tasks starting together on one node can collide ("serverSocket(port = port)", two
+#' chunks of the footprint run of 2026-11-05). Each attempt takes a port in 11000-60999 from the process id, the time
+#' and the attempt number (no random-number draw) and retries on failure.
+#'
+#' @param workers Processes [-].
+#' @param tries Attempts [-].
+#' @param port_of Function of the attempt number giving the port (tests).
+#' @param make Cluster constructor taking `(workers, port)` (tests).
+#' @return A `parallel` cluster.
+make_worker_cluster <- function(workers, tries = 10L, port_of = NULL, make = NULL) {
+  if (is.null(port_of)) {
+    port_of <- function(k) {
+      11000L + as.integer((Sys.getpid() * 7919 + floor(as.numeric(Sys.time()) * 1000) %% 1e6 + k * 104729) %% 50000)
+    }
+  }
+  if (is.null(make)) {
+    make <- function(n, port) {
+      if (.Platform$OS.type == "windows") parallel::makePSOCKcluster(n, port = port) else parallel::makeForkCluster(n, port = port)
+    }
+  }
+  msg <- character()
+  for (k in seq_len(tries)) {
+    port <- port_of(k)
+    cl <- tryCatch(make(workers, port), error = function(e) e)
+    if (!inherits(cl, "error")) return(cl)
+    msg <- c(msg, sprintf("port %d: %s", port, conditionMessage(cl)))
+  }
+  cli::cli_abort(c("No worker cluster after {tries} attempt{?s}.", stats::setNames(msg, rep("x", length(msg)))))
 }
 
 #' Pack / unpack a source region

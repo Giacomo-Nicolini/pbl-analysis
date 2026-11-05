@@ -273,6 +273,35 @@ C. **Measured data on the cluster.** New `run_site.R` steps `meas_std` (standard
   ≤ 47 GB in total (fewer where the `kljun` set is empty, as at forest sites), climatologies ≈ 0.7 GB, half-hour
   chunk tables ≈ 0.25 GB under `derived/`; step 08 tables and figures ≈ 0.5 GB under `output/`.
 
+## Footprint run fixes (G, 2026-11-05; jobs 11769 / 11796)
+
+- **Failures:** 24 chunks at CZ-Lnz (era5, pblhmod, pblhmod_clim; 2024-01..05, 07..09) while building the
+  target-area mask ("attempt to select less than one element", after GDAL's "automatically selected the first layer"),
+  1 chunk reading a mask still being written by another chunk, 2 chunks at the worker start
+  ("serverSocket(port = port)").
+- **Cause (mask):** `target_area_mask()` read only the first KML layer and grouped rings by coordinate columns that
+  are absent for an empty layer. `CZ-Lnz_TA.kml` nests its placemark in Folder > Folder > Document; the PC's GDAL
+  (3.10.1, KML driver) reports one layer, the cluster's build reports more (first one empty). `IT-Cp2_TA.kml` has two
+  folders: the polygon and a label point (`labpt`); the first layer is the polygon. No other KML has more than one
+  layer on the PC; IT-Ren (4 polygons, one layer), CH-Dav, FR-Lus, GL-ZaF (multipolygons) read fully; no polygons
+  overlap.
+- **Fix:** `target_area_polygons()` reads every layer (`sf::st_layers()`), keeps polygons only (from geometry
+  collections too), never uses attribute columns, and aborts without any polygon; `target_area_mask()` takes their
+  union (overlaps count once) and records `n_layers`, `layers`, `n_polygons`. On the PC the new masks equal the old
+  ones cell by cell at all 40 KMLs (IT-Cp2 included). Masks are written atomically (`write_rds_atomic()`: temporary
+  file in the same folder, rename) by `target_area_mask_cached()`, which also rebuilds a cached mask without
+  `n_layers` (earlier builder). Worker start: `make_worker_cluster()` picks a port in 11000-60999 from the process id,
+  the time and the attempt, and retries (10 attempts) instead of `parallel`'s time-based default port.
+- **Rebuild before the rerun:** `scripts/08t_target_area_masks.R` (report only; `--apply` writes the masks and
+  deletes the `_meta.rds` of the finished chunks of a site whose mask changed, then writes
+  `<derived_dir>/footprint/chunk_list_rerun.csv`: every chunk of the list without `_meta.rds`). Table
+  `08_target_area_masks[_check].csv`: layers, polygons, cells and area old / new, first layer and its polygon area.
+- **Rerun or recompute:** the per-half-hour target-area fraction (`f_target_area` in the chunk `_hh` tables) is
+  computed from the 1 m footprint fields, which are not stored; only the climatologies could be recomputed from the
+  c5 sums. A site whose mask changed therefore needs a full rerun of its chunks (the chunk hash includes only the
+  number of mask cells, hence the explicit invalidation). If the IT-Cp2 mask on the cluster equals the new one (the
+  first layer is the polygon), its chunks stay valid.
+
 ## Acceptance criteria
 
 - Part A: tests pass on the PC; `--dry-run` renders valid sbatch scripts; `git grep` for `/bigdata`, `/home/`,

@@ -81,13 +81,14 @@ chunk_dir_of <- function(case) {
   d
 }
 
-# Target-area mask on the grid (computed once per site, cached)
+# Target-area mask on the grid (computed once per site, cached; written atomically; a mask of the old single-layer
+# builder, without the attribute n_layers, is rebuilt from all layers of the KML)
 grid <- ffp_grid(c(-1000, 1000, -1000, 1000), 1)
 mask_file <- file.path(fp_dir, paste0(site_id, "_target_area_mask.rds"))
 kml <- file.path(resolve_path(cfg$target_areas_dir), paste0(site_id, "_TA.kml"))
-if (!file.exists(mask_file)) saveRDS(target_area_mask(kml, meta$lat, meta$lon, grid), mask_file)
-mask <- readRDS(mask_file)
-logm(site_id, ": target area ", round(attr(mask, "area_m2")), " m2 (", sum(mask), " grid cells)")
+mask <- target_area_mask_cached(mask_file, kml, meta$lat, meta$lon, grid)
+logm(site_id, ": target area ", round(attr(mask, "area_m2")), " m2 (", sum(mask), " grid cells; layers ",
+     paste(attr(mask, "layers"), collapse = ", "), ")")
 ffp_md5 <- unname(tools::md5sum(file.path(ffp_dir, c("calc_footprint_FFP.R", "calc_footprint_FFP_climatology.R"))))
 
 # Tasks: one chunk-list row, or case x month of the period
