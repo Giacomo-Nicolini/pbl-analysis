@@ -36,6 +36,7 @@ pblh_sources_style <- local({
     row("cloudnet_eps_mlh", "source", k["black"], "Cloudnet ε MLH", 5),
     row("sirta_mlh_chm15k", "source", k["black"], "SIRTA CHM15k (STRATfinder)", 5),
     row("meteoswiss_stratfinder_mlh", "source", k["black"], "MeteoSwiss STRATfinder", 5),
+    row("meteoswiss_cabam_mlh", "source", k["black"], "MeteoSwiss CABAM", 5),
     row("sirta_mlh_cl31", "source", k["grey"], "SIRTA CL31 (CABAM)", 6),
     row("cloudnet_censored", "source", k["black"], "Measured MLH (censored median)", 5),
     row("cloudnet_exact", "source", k["grey"], "Measured MLH (qc 0/2 median)", 6, "dashed"),
@@ -93,7 +94,12 @@ pblh_sources_style <- local({
     row("gamma_era5", "element", k["green"], "ERA5 γ", 10),
     row("hour_00", "element", k["blue"], "00 UTC", 11),
     row("hour_12", "element", k["vermillion"], "12 UTC", 12),
-    row("point_fill", "element", "white", "open point", 13)
+    row("point_fill", "element", "white", "open point", 13),
+    # MeteoSwiss QC report (spec 13)
+    row("qc_good", "element", k["blue"], "share quality 0", 14),
+    row("qc_window", "element", k["orange"], "share window-flagged", 15),
+    row("qc_midday", "element", k["vermillion"], "midday median (10-16 h AST)", 16),
+    row("qc_night", "element", k["blue_dark"], "night median (22-04 h AST)", 17)
   )
 })
 

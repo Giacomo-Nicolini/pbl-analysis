@@ -1,0 +1,8 @@
+site_id,source_id,date_start,date_end,reason
+FR-Fon,meteoswiss_cabam_mlh,2023-05-01,2023-05-31,"Melun CL31 dirty window: >= 30 % of the 15-min steps flagged (bit 2), spurious deep layers in the rest (spec 13 QC; G 2026-11-06)"
+FR-Fon,meteoswiss_cabam_mlh,2023-06-01,2023-06-30,"Melun CL31 dirty window: >= 30 % of the 15-min steps flagged (bit 2), spurious deep layers in the rest (spec 13 QC; G 2026-11-06)"
+FR-Fon,meteoswiss_cabam_mlh,2025-09-01,2025-09-30,"Melun CL31 dirty window: >= 30 % of the 15-min steps flagged (bit 2), spurious deep layers in the rest (spec 13 QC; G 2026-11-06)"
+FR-Fon,meteoswiss_cabam_mlh,2026-08-01,2026-08-31,"Melun CL31 dirty window: >= 30 % of the 15-min steps flagged (bit 2), spurious deep layers in the rest (spec 13 QC; G 2026-11-06)"
+FR-Fon,meteoswiss_cabam_mlh,2026-09-01,2026-09-30,"Melun CL31 dirty window: >= 30 % of the 15-min steps flagged (bit 2), spurious deep layers in the rest (spec 13 QC; G 2026-11-06)"
+FR-Fon,meteoswiss_cabam_mlh,2026-10-01,2026-10-31,"Melun CL31 dirty window: >= 30 % of the 15-min steps flagged (bit 2), spurious deep layers in the rest (spec 13 QC; G 2026-11-06)"
+FR-Lus,meteoswiss_cabam_mlh,2021-02-01,2021-10-31,"Poitiers CL31 dirty-window period of the MeteoSwiss README (2021-02 to 2021-10; >= 30 % flagged in 2021-03, 2021-09, 2021-10) (spec 13 QC; G 2026-11-06)"

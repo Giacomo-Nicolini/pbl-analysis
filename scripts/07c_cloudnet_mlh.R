@@ -30,6 +30,7 @@ site_id <- commandArgs(trailingOnly = TRUE)
 if (length(site_id) != 1) cli::cli_abort("Pass exactly one ICOS station code, e.g. {.val FI-Hyy}.")
 sites <- read_sites(resolve_path(cfg$sites_file))
 exclusions <- read_exclusions(resolve_path(cfg$exclusions_file))
+meas_excl <- read_measured_exclusions(resolve_path(cfg$measured_exclusions_file)) # spec 13
 ms <- read_measured_sites(resolve_path(cfg$measured_sites_file))
 ms <- ms[ms$provider == "cloudnet" & ms$icos_site == site_id, ]
 if (nrow(ms) != 1) cli::cli_abort("{site_id}: no (or more than one) Cloudnet pairing in {.file measured_sites.csv}.")
@@ -182,7 +183,7 @@ info <- list(
     "Profile-level output kept in derived/cloudnet (", basename(prof_file), ")."
   )
 )
-std <- standardize_cloudnet_mlh(hh, site_id, exclusions, meta_site$utc_offset_h, info)
+std <- standardize_cloudnet_mlh(hh, site_id, exclusions, meta_site$utc_offset_h, info, meas_excl)
 paths <- write_standard_pblh(std$data, std$meta, std_dir)
 cli::cli_alert_success("Standard file: {.path {paths[['data']]}} ({nrow(std$data)} half-hours); files table {.path {files_file}}.")
 

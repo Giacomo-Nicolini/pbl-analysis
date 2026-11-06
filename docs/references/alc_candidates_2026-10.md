@@ -13,6 +13,10 @@ KNMI Deep-Pathfinder in implementation, EMS2025-700). RMI has an internal resear
 layers are "planned to be released". Apart from Cloudnet ε (turbulence) and the Lanzhot BL-View L3 product, every
 candidate below means running an aerosol-MLH retrieval ourselves on backscatter.
 
+**Update 2026-11-06 (spec 13):** MeteoSwiss processed the E-PROFILE backscatter of Jülich, Magdeburg (STRATfinder) and
+Kenttärova, Melun, Poitiers (CABAM) for this project; these five stations are now used (marked below). Licence to be
+confirmed: internal use only.
+
 ## Within 5 km
 
 | ICOS | Instrument site | Operator | Type | km | Notes |
@@ -22,10 +26,10 @@ candidate below means running an aerosol-MLH retrieval ourselves on backscatter.
 | SE-Svb | Svartberget | SLU (E-PROFILE since 2024-12; SLU archive 2018–24) | CL51 | 0.0 | backscatter only |
 | CH-Dav | Davos | MeteoSwiss (E-PROFILE, since 2021-07) | CHM15k | 1.0 | no MLH in record; MeteoSwiss has PathfinderTURB (Poltera2017) — ask; alpine valley |
 | FI-Sod | Sodankylä | FMI | HALO Doppler lidar + CT25K | 1.2 | research data, confirmed to 2019 only; check Cloudnet |
-| FI-Lom | Kenttärova | FMI (E-PROFILE) + Cloudnet | CL31; Cloudnet ε (spec 07 inventory) | 1.8 | Cloudnet ε 2022-08 → 2023-12, from 2026-04 |
+| FI-Lom | Kenttärova | FMI (E-PROFILE) + Cloudnet | CL31; Cloudnet ε (spec 07 inventory) | 1.8 | **used (spec 13)**: MeteoSwiss CABAM MLH 2021-01 → 2024-05 (1.80 km, 100 m above the tower); Cloudnet ε 2022-08 → 2023-12, from 2026-04 (inventory) |
 | FI-Sii | Hyytiälä SMEAR II | FMI / UHel | HALO Doppler lidar (Cloudnet) | 5.2 | just over 5 km |
-| DE-RuS | Jülich JOYCE | Univ. Cologne (E-PROFILE + Cloudnet) | CHM15k; Cloudnet ε | 5.3 | daytime convective only (rule) |
-| CZ-Lnz | Lanzhot grassland | CzechGlobe (E-PROFILE) | CL61, BL-View L3 MLH | < 5 (to confirm) | data offered by PI (2026-10) |
+| DE-RuS | Jülich JOYCE | Univ. Cologne (E-PROFILE + Cloudnet) | CHM15k; Cloudnet ε | 5.3 | **used (spec 13)**: MeteoSwiss STRATfinder MLH 2021-03 → 2026-11 (5.30 km, daytime convective only) |
+| CZ-Lnz | Lanzhot grassland | CzechGlobe (E-PROFILE) | CL61, BL-View L3 MLH | ≈ 3 (site) | pending (spec 13): data expected 2026-11; reader prototype |
 
 ## 5–25 km (daytime convective only)
 
@@ -35,12 +39,12 @@ candidate below means running an aerosol-MLH retrieval ourselves on backscatter.
 | FR-Gri | Trappes | Météo-France | Mini-MPL | 9.1 | closer than SIRTA |
 | SE-Deg | Svartberget | SLU | CL51 | 13.4 | backscatter only |
 | BE-Maa | Diepenbeek | RMI | CL51 | ≈ 16 if in Diepenbeek | CEDA coordinates (50.55, 5.27) look wrong: verify (OSCAR) |
-| FR-Fon | Melun | Météo-France | CL31 | 16.6 | |
+| FR-Fon | Melun | Météo-France | CL31 | 16.6 | **used (spec 13)**: MeteoSwiss CABAM MLH 2022-08 → 2026-11 (16.64 km; dirty-window months) |
 | IT-Cp2 | Castel di Guido | CNR-ISAC (ALICENET) | CHM15k | 21.9 | coastal; ALICENET layers not released |
 | FR-Gri | SIRTA Palaiseau | IPSL (Cloudnet) | CHM15k, CL31, Doppler lidar | 23.4 | Cloudnet ε from 2025-01 |
-| DE-HoH | Magdeburg | DWD | CHM15k | ≈ 24.5 (coords ±1 km) | borderline |
+| DE-HoH | Magdeburg | DWD | CHM15k | 24.5 (coords ±0.5 km) | **used (spec 13)**: MeteoSwiss STRATfinder MLH 2021-01 → 2026-11 (24.48 km, borderline) |
 | BE-Dor | Humain | RMI | CL51 | ≈ 24–25 | borderline; RMI internal MLH |
-| FR-Lus | Poitiers | Météo-France | CL31 | 24.9 | borderline |
+| FR-Lus | Poitiers | Météo-France | CL31 | 24.9 | **used (spec 13)**: MeteoSwiss CABAM MLH 2021-01 → 2026-11 (24.87 km, borderline) |
 
 ## Nothing within 25 km (nearest)
 

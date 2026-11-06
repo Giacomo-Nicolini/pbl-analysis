@@ -134,8 +134,10 @@ reobs_qc <- function(nb, nominal) {
 #' @param utc_offset_h ICOS site UTC offset [h] (for the exclusion periods).
 #' @return List: `data` (standard table with `x_cbh_m` [m agl, cloud base of the same instrument],
 #'   `x_tcf_oktas` [oktas, CL31 total cloud fraction], `x_coverage` [`_nb` / nominal, 0-1], and for the CHM15k
-#'   `x_ablh_m` [m agl, aerosol-layer top, not a mixing height]), `meta` (sidecar list), `n_excluded` [-].
-standardize_reobs_mlh <- function(r, instrument, site_id, exclusions, utc_offset_h) {
+#'   `x_ablh_m` [m agl, aerosol-layer top, not a mixing height]), `meta` (sidecar list), `n_excluded` [-, site
+#'   exclusion periods], `n_excluded_measured` [-, measured-source periods].
+#' @param measured_exclusions Output of [read_measured_exclusions()] (spec 13); `NULL` = none (reported).
+standardize_reobs_mlh <- function(r, instrument, site_id, exclusions, utc_offset_h, measured_exclusions = NULL) {
   src <- reobs_mlh_sources()
   src <- src[src$instrument == instrument, ]
   if (nrow(src) != 1) cli::cli_abort("Unknown ReOBS instrument {.val {instrument}} (chm15k or cl31).")
@@ -165,6 +167,8 @@ standardize_reobs_mlh <- function(r, instrument, site_id, exclusions, utc_offset
   d <- ex$data
   d$excl_flag <- NULL
   d$excl_reason <- NULL
+  mx <- apply_measured_exclusions(d, site_id, src$source_id, measured_exclusions)
+  d <- mx$data
 
   meta <- standard_meta(
     site_id, src$source_id, "aerosol",
@@ -183,11 +187,11 @@ standardize_reobs_mlh <- function(r, instrument, site_id, exclusions, utc_offset
       "SIRTA 1D ReOBS file ", rm$file, ", product_version ", rm$product_version, ", ReOBS ", rm$reobs_version,
       ", uuid ", rm$uuid, " (", rm$metadata_link, "); read by read_reobs() from the zip without permanent ",
       "extraction; uncertainty_m = within-hour std of the native values; rows in exclusion periods dropped (",
-      ex$n_excluded, "); standardized by standardize_reobs_mlh() (spec 10)."
+      ex$n_excluded, "); ", mx$history, "; standardized by standardize_reobs_mlh() (spec 10)."
     ),
     licence = paste0(rm$licence, " (file attribute 'license'; ", rm$metadata_link, ")"),
     citation = paste0(src$citation_keys, " (docs/references/pblh_literature_2026-10.bib). Acknowledgement: ",
                       rm$acknowledgement)
   )
-  list(data = d, meta = meta, n_excluded = ex$n_excluded)
+  list(data = d, meta = meta, n_excluded = ex$n_excluded, n_excluded_measured = mx$n_excluded)
 }

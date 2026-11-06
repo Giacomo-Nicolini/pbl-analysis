@@ -5,10 +5,13 @@
 # by tercile of the measured MLH as diagnostics (regression dilution / regression to the mean). Range compression
 # is a hypothesis under test.
 #
-# Aerosol-based reference (provider SIRTA-ReOBS in config/measured_sites.csv; FR-Gri):
-#   standard sources sirta_mlh_chm15k (primary) and sirta_mlh_cl31 (script 10a), hourly means [t, t + 1 h).
+# Aerosol-based reference (primary source with method_class aerosol in config/measured_sites.csv):
+#   FR-Gri (SIRTA-ReOBS): sirta_mlh_chm15k (primary) and sirta_mlh_cl31 (script 10a), hourly means [t, t + 1 h);
 #   PBLHmod: mean of the two half-hours inside the hour (both required), convective if both are convective;
 #   ERA5: mean of the values at t and t + 1 h (both required), an approximation of the hourly mean.
+#   MeteoSwiss sites (spec 13; script 11b): one half-hourly source, meteoswiss_stratfinder_mlh or meteoswiss_cabam_mlh;
+#   PBLHmod on the same half-hours; ERA5 at its hours against the mean of the two adjacent half-hours
+#   (measured_time_base()). Pairs 1, 2, 2b and 6 only (no second instrument).
 #   Primary stratum: PBLHmod convective and apparent solar time at the interval midpoint in opts$aerosol_window
 #   (10-16 h; Schween2014, Kotthaus2018); sensitivity: all convective hours. The distance class (23 km:
 #   daytime_convective) keeps night and transition hours out of every metric; in the figures the hours outside the
@@ -61,18 +64,17 @@ fb_note <- paste("fb = (mean_obs - mean_source) / (0.5 (mean_obs + mean_source))
                  "nrmsd = sqrt(mean((obs - source)^2) / (mean_obs mean_source)) (Sinclair2022 Eq. 7)")
 tercile_note <- "terciles of the measured MLH: affected by regression to the mean (diagnostic only)"
 
-if (any(ms$provider == "SIRTA-ReOBS")) {
-  ms <- ms[ms$provider == "SIRTA-ReOBS", ]
-  mode <- "aerosol"
-} else if (any(ms$provider == "cloudnet")) {
-  ms <- ms[ms$provider == "cloudnet", ]
-  mode <- "turbulence"
-} else {
-  cli::cli_abort("{site_id}: no SIRTA-ReOBS or Cloudnet pairing in {.file measured_sites.csv}.")
-}
-if (nrow(ms) != 1) cli::cli_abort("{site_id}: more than one {ms$provider[1]} pairing.")
+# The site's primary measured source decides the mode (spec 13): aerosol (SIRTA-ReOBS, MeteoSwiss) or turbulence
+# (Cloudnet).
+ms <- ms[!is.na(ms$primary_source_id), ]
+if (nrow(ms) != 1) cli::cli_abort("{site_id}: {nrow(ms)} primary measured source{?s} in {.file measured_sites.csv} (need 1).")
+mode <- ms$method_class
+if (mode == "turbulence" && ms$provider != "cloudnet") cli::cli_abort("{site_id}: turbulence references only from Cloudnet.")
+if (!mode %in% c("aerosol", "turbulence")) cli::cli_abort("{site_id}: method_class {.val {mode}} not supported.")
 dclass <- distance_class(ms$distance_km)
 if (dclass == "not_used") cli::cli_abort("{site_id}: measurement {ms$distance_km} km away: not used (distance rule).")
+# Tables carry the pairing distance and the borderline flag (spec 13, G 2026-11-06)
+write_tab <- function(x, path) readr::write_csv(tag_measured_pairing(x, site_id, ms), path)
 cli::cli_h1("Measured MLH comparison (spec 10): {site_id}, {ms$provider} {ms$provider_site}, {ms$distance_km} km ({dclass})")
 cli::cli_inform("Bootstrap: {opts$n_boot} day-block replicates, seed {opts$seed}; aerosol window {opts$aerosol_window[1]}-{opts$aerosol_window[2]} h apparent solar time.")
 
@@ -149,8 +151,8 @@ if (mode == "turbulence") {
   }
   cb <- bind_comp(comp)
   cb$comp$reference <- "cloudnet_eps_mlh"
-  readr::write_csv(cb$comp, file.path(tables_dir, paste0("10_compression_", site_id, ".csv")))
-  readr::write_csv(cb$bins, file.path(tables_dir, paste0("10_bland_altman_bins_", site_id, ".csv")))
+  write_tab(cb$comp, file.path(tables_dir, paste0("10_compression_", site_id, ".csv")))
+  write_tab(cb$bins, file.path(tables_dir, paste0("10_bland_altman_bins_", site_id, ".csv")))
 
   # --- Scatter-only null for the censored tails (all values: exact, below z_min, lower bound) ---
   cli::cli_h2("Censored tails: observed shares vs scatter-only null")
@@ -176,7 +178,7 @@ if (mode == "turbulence") {
   nul$sim_note <- ifelse(nul$sim_bound == "lower",
                          "null share is a lower bound (true depth <= z_min): observed below it = source too deep",
                          "null share is an upper bound (true depth >= bound): observed above it = source too shallow")
-  readr::write_csv(nul, file.path(tables_dir, paste0("10_censored_null_", site_id, ".csv")))
+  write_tab(nul, file.path(tables_dir, paste0("10_censored_null_", site_id, ".csv")))
   print_tbl(dplyr::mutate(nul[c("pair", "regime_set", "tail", "n", "n_days", "obs_share", "obs_lo", "obs_hi",
                                 "sim_share", "sim_lo", "sim_hi", "sim_bound", "n_fallback_regime", "n_fallback_all")],
                           dplyr::across(dplyr::where(is.double), ~ round(.x, 3))))
@@ -194,42 +196,68 @@ if (mode == "turbulence") {
   quit(save = "no")
 }
 
-# --- Aerosol reference (FR-Gri, SIRTA ReOBS) ---
-chm <- rd("sirta_mlh_chm15k")
-cl <- rd("sirta_mlh_cl31")
-v_rng <- function(d) range(d$timestamp_start_utc[!is.na(d$pblh_m)])
-p_start <- max(v_rng(mod)[1], v_rng(chm)[1], v_rng(cl)[1])
-p_end <- min(v_rng(mod)[2], v_rng(chm)[2], v_rng(cl)[2])
-cli::cli_inform("Comparison period (valid PBLHmod, CHM15k and CL31): {format(p_start, '%Y-%m-%d %H:%M')} to {format(p_end, '%Y-%m-%d %H:%M')} UTC.")
-in_per <- function(d) d[d$timestamp_start_utc >= p_start & d$timestamp_start_utc <= p_end, ]
-chm <- in_per(chm)
-cl <- in_per(cl)
-tb_ch <- measured_time_base(chm, mod, era)
-tb_cl <- measured_time_base(cl, mod, era)
-cli::cli_inform(c(
-  "CHM15k hours: {nrow(chm)}, valid {sum(!is.na(chm$pblh_m))} (qc 0 {sum(chm$qc_flag %in% 0L)}, qc 1 {sum(chm$qc_flag %in% 1L)}); PBLHmod valid on {sum(!is.na(tb_ch$mod$pblh_m))} of them.",
-  "CL31 hours: {nrow(cl)}, valid {sum(!is.na(cl$pblh_m))} (qc 0 {sum(cl$qc_flag %in% 0L)}, qc 1 {sum(cl$qc_flag %in% 1L)})."
-))
 
-# CL31 on the CHM15k intervals, with the PBLHmod regime of the interval (pair 5).
-cl_on_ch <- dplyr::tibble(timestamp_utc = tb_ch$meas$timestamp_utc,
-                          pblh_m = cl$pblh_m[match(as.numeric(tb_ch$meas$timestamp_utc), as.numeric(cl$timestamp_start_utc))],
-                          x_regime = tb_ch$mod$x_regime[match(as.numeric(tb_ch$meas$timestamp_utc), as.numeric(tb_ch$mod$timestamp_utc))])
+# --- Aerosol reference: the primary source, plus the second SIRTA instrument at FR-Gri ---
+# Short tags (pair names, figure labels): FR-Gri pair names unchanged from spec 10.
+aero_tag <- c(sirta_mlh_chm15k = "chm15k", sirta_mlh_cl31 = "cl31", meteoswiss_stratfinder_mlh = "stratfinder",
+              meteoswiss_cabam_mlh = "cabam")
+aero_lab <- c(sirta_mlh_chm15k = "CHM15k", sirta_mlh_cl31 = "CL31", meteoswiss_stratfinder_mlh = "STRATfinder",
+              meteoswiss_cabam_mlh = "CABAM")
+ref1 <- ms$primary_source_id
+ref2 <- if (ms$provider == "SIRTA-ReOBS") "sirta_mlh_cl31" else NULL
+if (!all(c(ref1, ref2) %in% names(aero_tag))) cli::cli_abort("{site_id}: aerosol source {.val {ref1}} not supported.")
+refs <- c(ref1, ref2)
+meas <- lapply(stats::setNames(refs, refs), rd)
+v_rng <- function(d) range(d$timestamp_start_utc[!is.na(d$pblh_m)])
+p_start <- do.call(max, lapply(c(list(mod), meas), function(d) v_rng(d)[1]))
+p_end <- do.call(min, lapply(c(list(mod), meas), function(d) v_rng(d)[2]))
+if (p_start >= p_end) cli::cli_abort("{site_id}: no common period of PBLHmod and {paste(refs, collapse = ', ')}.")
+cli::cli_inform("Comparison period (valid PBLHmod and {paste(aero_lab[refs], collapse = ', ')}): {format(p_start, '%Y-%m-%d %H:%M')} to {format(p_end, '%Y-%m-%d %H:%M')} UTC.")
+in_per <- function(d) d[d$timestamp_start_utc >= p_start & d$timestamp_start_utc <= p_end, ]
+meas <- lapply(meas, in_per)
+tb <- lapply(meas, measured_time_base, mod = mod, era = era)
+for (r in refs) {
+  m <- meas[[r]]
+  ok <- !is.na(m$pblh_m)
+  pm <- tb[[r]]$mod$pblh_m[match(as.numeric(m$timestamp_start_utc[ok]), as.numeric(tb[[r]]$mod$timestamp_utc))]
+  cli::cli_inform("{aero_lab[[r]]} ({c(halfhour = 'half-hourly', hour = 'hourly')[[tb[[r]]$base]]} intervals): {nrow(m)}, valid {sum(ok)} (qc 0 {sum(m$qc_flag %in% 0L)}, qc 1 {sum(m$qc_flag %in% 1L)}); PBLHmod valid on {sum(!is.na(pm))} of the valid ones.")
+}
+
 era_c_in <- dplyr::rename(in_per(era$era5_blh_center), timestamp_utc = timestamp_start_utc)
 mod_h <- match_halfhours_to_hours(mod, era_c_in$timestamp_utc)
-pairs_def <- list(
-  `1_pblhmod_default_vs_chm15k` = list(x = tb_ch$mod, ref = exact_ref(tb_ch$meas), mid = 1800, cls = "parameterisation vs aerosol"),
-  `2_era5_center_vs_chm15k` = list(x = tb_ch$era$era5_blh_center, ref = exact_ref(tb_ch$meas), mid = 1800, cls = "cross-class: bulk Ri vs aerosol"),
-  `2b_era5_bilinear_vs_chm15k` = list(x = tb_ch$era$era5_blh_bilinear, ref = exact_ref(tb_ch$meas), mid = 1800, cls = "cross-class: bulk Ri vs aerosol"),
-  `3_pblhmod_default_vs_cl31` = list(x = tb_cl$mod, ref = exact_ref(tb_cl$meas), mid = 1800, cls = "parameterisation vs aerosol"),
-  `4_era5_center_vs_cl31` = list(x = tb_cl$era$era5_blh_center, ref = exact_ref(tb_cl$meas), mid = 1800, cls = "cross-class: bulk Ri vs aerosol"),
-  `4b_era5_bilinear_vs_cl31` = list(x = tb_cl$era$era5_blh_bilinear, ref = exact_ref(tb_cl$meas), mid = 1800, cls = "cross-class: bulk Ri vs aerosol"),
-  `5_cl31_vs_chm15k` = list(x = cl_on_ch, ref = exact_ref(tb_ch$meas), mid = 1800, cls = "aerosol vs aerosol (CABAM vs STRATfinder): definitional uncertainty"),
-  `6_pblhmod_default_vs_era5_center` = list(x = mod_h, ref = era_c_in, mid = 0, cls = "parameterisation vs model (record)")
-)
+# Pairs 1 / 2 / 2b (primary), 3 / 4 / 4b (second instrument), 5 second vs primary, 6 PBLHmod vs ERA5 (record).
+src_pairs <- function(r, k) {
+  t <- tb[[r]]
+  n <- c(paste0(k[1], "_pblhmod_default_vs_", aero_tag[[r]]), paste0(k[2], "_era5_center_vs_", aero_tag[[r]]),
+         paste0(k[2], "b_era5_bilinear_vs_", aero_tag[[r]]))
+  stats::setNames(list(
+    list(x = t$mod, ref = exact_ref(t$meas), mid = t$mid_s, cls = "parameterisation vs aerosol", reference = r),
+    list(x = t$era$era5_blh_center, ref = exact_ref(t$era_meas), mid = t$era_mid_s, cls = "cross-class: bulk Ri vs aerosol",
+         reference = r),
+    list(x = t$era$era5_blh_bilinear, ref = exact_ref(t$era_meas), mid = t$era_mid_s,
+         cls = "cross-class: bulk Ri vs aerosol", reference = r)
+  ), n)
+}
+pairs_def <- src_pairs(ref1, c("1", "2"))
+if (!is.null(ref2)) {
+  pairs_def <- c(pairs_def, src_pairs(ref2, c("3", "4")))
+  # second instrument on the primary intervals, with the PBLHmod regime of the interval (pair 5)
+  t1 <- tb[[ref1]]
+  x5 <- dplyr::tibble(timestamp_utc = t1$meas$timestamp_utc,
+                      pblh_m = meas[[ref2]]$pblh_m[match(as.numeric(t1$meas$timestamp_utc), as.numeric(meas[[ref2]]$timestamp_start_utc))],
+                      x_regime = t1$mod$x_regime[match(as.numeric(t1$meas$timestamp_utc), as.numeric(t1$mod$timestamp_utc))])
+  pairs_def[[paste0("5_", aero_tag[[ref2]], "_vs_", aero_tag[[ref1]])]] <-
+    list(x = x5, ref = exact_ref(t1$meas), mid = t1$mid_s, reference = ref1,
+         cls = "aerosol vs aerosol (CABAM vs STRATfinder): definitional uncertainty") # SIRTA CL31 vs CHM15k
+}
+pairs_def[["6_pblhmod_default_vs_era5_center"]] <- list(x = mod_h, ref = era_c_in, mid = 0, reference = "era5_blh_center",
+                                                         cls = "parameterisation vs model (record)")
 pairs <- lapply(names(pairs_def), function(p) add_time(pair_table(pairs_def[[p]]$x, pairs_def[[p]]$ref, p), pairs_def[[p]]$mid))
 names(pairs) <- names(pairs_def)
 cls <- vapply(pairs_def, `[[`, "", "cls")
+ref_of <- vapply(pairs_def, `[[`, "", "reference")
+p6 <- "6_pblhmod_default_vs_era5_center"
+
 
 # --- Metrics: window convective (primary), all convective hours (sensitivity); pair 6 also all regimes ---
 sets <- list(window_convective = function(pt) pt$regime %in% "convective" & pt$in_window,
@@ -246,47 +274,57 @@ metrics[[length(metrics) + 1]] <- dplyr::mutate(m6, stratum_set = "all_regimes",
 metrics <- dplyr::bind_rows(metrics)
 metrics$comparison_class <- cls[metrics$pair]
 metrics$distance_class <- ifelse(metrics$pair == "6_pblhmod_default_vs_era5_center", "tower (model vs model)", dclass)
-metrics$hour_note <- "hour_utc = start hour of the interval [h, h + 1 h) (pairs 1-5) or ERA5 hour (pair 6)"
+metrics$hour_note <- if (tb[[ref1]]$base == "hour") {
+  "hour_utc = start hour of the interval [h, h + 1 h) (pairs 1-5) or ERA5 hour (pair 6)"
+} else {
+  "hour_utc = hour of the half-hour start (pair 1, half-hours [t, t + 30 min)) or ERA5 hour (pairs 2, 2b, 6)"
+}
 metrics$fb_convention <- fb_note
-readr::write_csv(metrics, file.path(tables_dir, paste0("10_metrics_", site_id, ".csv")))
+write_tab(metrics, file.path(tables_dir, paste0("10_metrics_", site_id, ".csv")))
 
-# --- CL31 low-value cluster (G 2026-10-29: report, keep the values) ---
-p5 <- pairs[["5_cl31_vs_chm15k"]]
-p5w <- p5[sets$window_convective(p5), ]
-n_low <- sum(p5w$mod < 150 & p5w$ref > 300)
-cli::cli_inform("CL31 < 150 m while CHM15k > 300 m: {n_low} of {nrow(p5w)} window convective hours ({round(100 * n_low / nrow(p5w), 1)} %); all convective hours: {sum(p5$regime %in% 'convective' & p5$mod < 150 & p5$ref > 300)} of {sum(p5$regime %in% 'convective')}.")
-low <- p5w[p5w$mod < 150 & p5w$ref > 300, ]
-if (nrow(low) > 0) {
-  print_tbl(dplyr::count(dplyr::mutate(low, year = format(timestamp_utc, "%Y")), year, season))
+# --- CL31 low-value cluster at FR-Gri (G 2026-10-29: report, keep the values) ---
+p5n <- grep("^5_", names(pairs), value = TRUE)
+if (length(p5n) == 1) {
+  p5 <- pairs[[p5n]]
+  p5w <- p5[sets$window_convective(p5), ]
+  n_low <- sum(p5w$mod < 150 & p5w$ref > 300)
+  cli::cli_inform("{aero_lab[[ref2]]} < 150 m while {aero_lab[[ref1]]} > 300 m: {n_low} of {nrow(p5w)} window convective intervals ({round(100 * n_low / nrow(p5w), 1)} %); all convective: {sum(p5$regime %in% 'convective' & p5$mod < 150 & p5$ref > 300)} of {sum(p5$regime %in% 'convective')}.")
+  low <- p5w[p5w$mod < 150 & p5w$ref > 300, ]
+  if (nrow(low) > 0) {
+    print_tbl(dplyr::count(dplyr::mutate(low, year = format(timestamp_utc, "%Y")), year, season))
+  }
 }
 
 # --- Compression ---
 cli::cli_h2("Compression statistics")
-note <- "hourly means, not censored"
+note <- if (tb[[ref1]]$base == "hour") "hourly means, not censored" else
+  "half-hourly values (ERA5 pairs: means of the two half-hours around the ERA5 hour), not censored"
 comp <- list()
 for (p in names(pairs)) {
   for (s in names(sets)) comp[[length(comp) + 1]] <- compress_rows(pairs[[p]][sets[[s]](pairs[[p]]), ], p, s, note)
 }
 cb <- bind_comp(comp)
-cb$comp$reference <- ifelse(grepl("chm15k$", cb$comp$pair), "sirta_mlh_chm15k",
-                            ifelse(grepl("cl31$", cb$comp$pair), "sirta_mlh_cl31", "era5_blh_center"))
+cb$comp$reference <- unname(ref_of[cb$comp$pair])
 cb$comp$comparison_class <- cls[cb$comp$pair]
 comp <- cb$comp
-readr::write_csv(comp, file.path(tables_dir, paste0("10_compression_", site_id, ".csv")))
-readr::write_csv(cb$bins, file.path(tables_dir, paste0("10_bland_altman_bins_", site_id, ".csv")))
+write_tab(comp, file.path(tables_dir, paste0("10_compression_", site_id, ".csv")))
+write_tab(cb$bins, file.path(tables_dir, paste0("10_bland_altman_bins_", site_id, ".csv")))
 
-# --- Diurnal cycle (context; on the hours with a valid CHM15k value) ---
-use <- tb_ch$meas$timestamp_utc[!is.na(tb_ch$meas$pblh_m)]
+# --- Diurnal cycle (context; on the intervals with a valid primary value, in hour bins) ---
+# ERA5: hourly interval mean (mean of t and t + 1 h) of the hour containing the interval.
+t1 <- tb[[ref1]]
+use <- t1$meas$timestamp_utc[!is.na(t1$meas$pblh_m)]
 w <- dplyr::tibble(timestamp_utc = use)
-w$sirta_mlh_chm15k <- chm$pblh_m[match(use, chm$timestamp_start_utc)]
-w$sirta_mlh_cl31 <- cl$pblh_m[match(use, cl$timestamp_start_utc)]
-w$pblhmod_default <- tb_ch$mod$pblh_m[match(use, tb_ch$mod$timestamp_utc)]
-w$era5_blh_center <- tb_ch$era$era5_blh_center$pblh_m[match(use, tb_ch$era$era5_blh_center$timestamp_utc)]
+for (r in refs) w[[r]] <- meas[[r]]$pblh_m[match(as.numeric(use), as.numeric(meas[[r]]$timestamp_start_utc))]
+w$pblhmod_default <- t1$mod$pblh_m[match(as.numeric(use), as.numeric(t1$mod$timestamp_utc))]
+hr <- as.POSIXct(floor(as.numeric(use) / 3600) * 3600, origin = "1970-01-01", tz = "UTC")
+ei <- match_instants_to_intervals(era$era5_blh_center, hr) # full series: t + 1 h may fall after the period end
+w$era5_blh_center <- ei$pblh_m[match(as.numeric(hr), as.numeric(ei$timestamp_utc))]
 w$season <- season_of(w$timestamp_utc)
 w$hour_utc <- as.integer(format(w$timestamp_utc, "%H", tz = "UTC"))
-ds <- diurnal_summary(w, c("sirta_mlh_chm15k", "sirta_mlh_cl31", "pblhmod_default", "era5_blh_center"))
-ds$x_utc <- ds$hour_utc + 0.5 # interval midpoint
-readr::write_csv(ds, file.path(tables_dir, paste0("10_diurnal_", site_id, ".csv")))
+ds <- diurnal_summary(w, c(refs, "pblhmod_default", "era5_blh_center"))
+ds$x_utc <- ds$hour_utc + 0.5 # midpoint of the hour bin
+write_tab(ds, file.path(tables_dir, paste0("10_diurnal_", site_id, ".csv")))
 # Window and night per season in UTC: window = AST limits minus the median AST - UTC offset; sunrise/sunset =
 # median geometric times over the days of the season in the comparison period.
 days <- seq(as.Date(p_start), as.Date(p_end), by = "day")
@@ -295,8 +333,8 @@ h_of <- function(t) as.numeric(t - as.POSIXct(format(t, "%Y-%m-%d"), tz = "UTC")
 st$season <- season_of(as.POSIXct(st$date, tz = "UTC"))
 tt <- as.POSIXct(days, tz = "UTC") + 12 * 3600
 off <- dplyr::tibble(season = season_of(tt), d = apparent_solar_hour(tt, meta_site$lon) - 12)
-bands <- dplyr::summarise(dplyr::group_by(st, season), sunrise = stats::median(h_of(sunrise_utc)),
-                          sunset = stats::median(h_of(sunset_utc)), .groups = "drop")
+bands <- dplyr::summarise(dplyr::group_by(st, season), sunrise = stats::median(h_of(sunrise_utc), na.rm = TRUE),
+                          sunset = stats::median(h_of(sunset_utc), na.rm = TRUE), .groups = "drop")
 bands <- dplyr::left_join(bands, dplyr::summarise(dplyr::group_by(off, season), d = stats::median(d), .groups = "drop"),
                           by = "season")
 bands$win_start <- opts$aerosol_window[1] - bands$d
@@ -304,9 +342,13 @@ bands$win_end <- opts$aerosol_window[2] - bands$d
 
 # --- Figures (ERA5 tower cell only) ---
 cli::cli_h2("Figures")
-fig_pairs <- c(`1_pblhmod_default_vs_chm15k` = "1 PBLHmod vs CHM15k", `2_era5_center_vs_chm15k` = "2 ERA5 vs CHM15k",
-               `3_pblhmod_default_vs_cl31` = "3 PBLHmod vs CL31", `4_era5_center_vs_cl31` = "4 ERA5 vs CL31",
-               `5_cl31_vs_chm15k` = "5 CL31 vs CHM15k")
+fig_pairs <- c(stats::setNames(paste(c("1 PBLHmod vs", "2 ERA5 vs"), aero_lab[[ref1]]),
+                               paste0(c("1_pblhmod_default_vs_", "2_era5_center_vs_"), aero_tag[[ref1]])))
+if (!is.null(ref2)) {
+  fig_pairs <- c(fig_pairs, stats::setNames(c(paste(c("3 PBLHmod vs", "4 ERA5 vs"), aero_lab[[ref2]]),
+                                              paste("5", aero_lab[[ref2]], "vs", aero_lab[[ref1]])),
+                                            c(paste0(c("3_pblhmod_default_vs_", "4_era5_center_vs_"), aero_tag[[ref2]]), p5n)))
+}
 # all rows of each pair: the primary set (window, convective) is the comparable set, the rest drawn faded (spec 11 E)
 sc <- dplyr::bind_rows(lapply(names(fig_pairs), function(p) {
   x <- pairs[[p]]
@@ -317,12 +359,15 @@ sc <- dplyr::bind_rows(lapply(names(fig_pairs), function(p) {
 cs <- comp[comp$pair %in% names(fig_pairs) & comp$stratum_set == "window_convective", ]
 cs$panel <- unname(fig_pairs[cs$pair])
 win_pairs <- lapply(pairs, function(pt) dplyr::mutate(pt, comparable = sets$window_convective(pt)))
+# figure sizes [cm]: scatter width, height; Bland-Altman width, height (FR-Gri: five pairs; one source: two)
+nr <- if (length(fig_pairs) > 2) c(24, 17, 24, 15) else c(14, 19, 18, 12)
 figs <- list(
   list(plot_aerosol_diurnal(ds[c("season", "x_utc", "variable", "median")], bands), "10_diurnal_by_season", 17, 13),
-  list(plot_compression_scatter(sc, cs), "10_scatter", 24, 17),
+  list(plot_compression_scatter(sc, cs), "10_scatter", nr[1], nr[2]),
   list(ba_figure(win_pairs, cb, fig_pairs, "window_convective",
-                 sprintf("Window %g-%g h apparent solar time, PBLHmod convective; hourly means",
-                         opts$aerosol_window[1], opts$aerosol_window[2])), "10_bland_altman", 24, 15)
+                 sprintf("Window %g-%g h apparent solar time, PBLHmod convective; %s",
+                         opts$aerosol_window[1], opts$aerosol_window[2],
+                         if (tb[[ref1]]$base == "hour") "hourly means" else "half-hourly values")), "10_bland_altman", nr[3], nr[4])
 )
 for (fg in figs) {
   pth <- save_figure(fg[[1]], paste0(fg[[2]], "_", site_id), fg[[3]], fg[[4]])
@@ -354,7 +399,7 @@ print_tbl(get_m("6_pblhmod_default_vs_era5_center", "all_regimes",
                 c("all", "regime=convective", "regime=unstable_diag", "regime=mixed", "regime=stable")))
 cli::cli_h2("Compression: symmetric slope and Bland-Altman trend (day-block bootstrap 95 %); Theil-Sen diagnostics")
 print_tbl(dplyr::mutate(comp[comp_cols], dplyr::across(dplyr::where(is.double), ~ round(.x, 3))))
-cli::cli_h2("Diurnal medians [m], JJA and DJF (all hours with a CHM15k value; night = context only)")
+cli::cli_h2("Diurnal medians [m], JJA and DJF (hour bins of the intervals with a {aero_lab[[ref1]]} value; night = context only)")
 for (s in c("JJA", "DJF")) {
   cat("--", s, "\n")
   x <- ds[ds$season == s, ]

@@ -1,7 +1,12 @@
 # Stations with a primary measured source (config/measured_sites.csv), run with
 # scripts/run_site.R SITE --steps=meas_std,meas_cmp,08a (spec 09 amendment 2). FI-Hyy needs the Cloudnet files first
-# (scripts/07b_cloudnet_download.R). FI-Lom and DE-RuS (Cloudnet primary sources) follow once their files are
-# downloaded (spec 09 Part B step 5).
+# (scripts/07b_cloudnet_download.R). Spec 13 (G 2026-11-06): the five MeteoSwiss E-PROFILE stations (FI-Lom and DE-RuS
+# now with the MeteoSwiss MLH as primary source; their Cloudnet rows are inventory only).
 FI-Hyy
 FR-Gri
 CH-Dav
+DE-RuS
+DE-HoH
+FI-Lom
+FR-Fon
+FR-Lus

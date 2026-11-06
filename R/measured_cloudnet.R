@@ -15,7 +15,13 @@
 #'   `instruments`, `licence`, `url`, `notes` [-]; optional `z_min_agl_m` [m above ground,
 #'   fixed lowest reliable gate of the MLH retrieval; `NA` = per-file default]; optional `primary_source_id`
 #'   [standard source id of the site's primary measured source, used for the footprint `measured` case (spec 09 A5);
-#'   `NA` on the other rows].
+#'   `NA` on the other rows]. Optional (spec 13): `station_code`, `wigos_id` [-] (from the provider file),
+#'   `provider_alt_m` [m a.s.l.], `elevation_diff_m` [m, tower minus provider altitude], `distance_class` (must equal
+#'   [distance_class()] of `distance_km`), `status` (`used`, `inventory` = listed, no product used, `pending` = data
+#'   expected). At most one primary source per site, only on a `used` row. `borderline` [logical] (spec 13, G
+#'   2026-11-06): distance close to a class limit (DE-HoH 24.48 km, FR-Lus 24.87 km; class kept), carried into the
+#'   comparison tables so that results can be shown with and without these sites; `FALSE` when the column is
+#'   missing or empty.
 read_measured_sites <- function(file) {
   ms <- readr::read_csv(
     file,
@@ -23,10 +29,13 @@ read_measured_sites <- function(file) {
     col_types = readr::cols(
       provider_lat = readr::col_double(), provider_lon = readr::col_double(),
       distance_km = readr::col_double(), z_min_agl_m = readr::col_double(),
+      provider_alt_m = readr::col_double(), elevation_diff_m = readr::col_double(),
+      borderline = readr::col_logical(),
       .default = readr::col_character()
     ),
     progress = FALSE
   )
+  ms$borderline <- if ("borderline" %in% names(ms)) ms$borderline %in% TRUE else rep(FALSE, nrow(ms))
   need <- c("icos_site", "provider", "provider_site", "provider_lat", "provider_lon", "distance_km",
             "method_class", "instruments", "licence", "url", "notes")
   miss <- setdiff(need, names(ms))
@@ -35,6 +44,23 @@ read_measured_sites <- function(file) {
   if (anyDuplicated(key)) cli::cli_abort("{.path {file}}: duplicated icos_site x provider x provider_site.")
   bad <- is.na(ms$icos_site) | is.na(ms$provider) | is.na(ms$provider_site)
   if (any(bad)) cli::cli_abort("{.path {file}}: icos_site, provider and provider_site are required (rows {which(bad)}).")
+  if ("distance_class" %in% names(ms)) {
+    dc <- distance_class(ms$distance_km)
+    bad <- !is.na(ms$distance_class) & (is.na(dc) | ms$distance_class != dc)
+    if (any(bad)) cli::cli_abort("{.path {file}}: distance_class differs from the distance rule (rows {which(bad)}).")
+  }
+  if ("status" %in% names(ms)) {
+    bad <- !ms$status %in% c("used", "inventory", "pending")
+    if (any(bad)) cli::cli_abort("{.path {file}}: status must be used, inventory or pending (rows {which(bad)}).")
+  }
+  if ("primary_source_id" %in% names(ms)) {
+    p <- ms[!is.na(ms$primary_source_id), ]
+    dup <- unique(p$icos_site[duplicated(p$icos_site)])
+    if (length(dup) > 0) cli::cli_abort("{.path {file}}: more than one primary source at {.val {dup}}.")
+    if ("status" %in% names(p) && any(p$status != "used")) {
+      cli::cli_abort("{.path {file}}: primary source on a row that is not 'used' ({.val {p$icos_site[p$status != 'used']}}).")
+    }
+  }
   ms
 }
 
@@ -762,14 +788,17 @@ cloudnet_mlh_halfhour <- function(prof, opts) {
 #' @param utc_offset_h Site UTC offset [h].
 #' @param info List with `instrument` (name and PID), `citation`,
 #'   `processing_history`, `instrument_altitude_m` [m a.s.l.] [character/numeric].
+#' @param measured_exclusions Output of [read_measured_exclusions()] (spec 13); `NULL` = none (reported).
 #' @return List: `data` (standard table), `meta` (sidecar list).
-standardize_cloudnet_mlh <- function(hh, site_id, exclusions, utc_offset_h, info) {
+standardize_cloudnet_mlh <- function(hh, site_id, exclusions, utc_offset_h, info, measured_exclusions = NULL) {
   source_id <- "cloudnet_eps_mlh"
   d <- flag_exclusions(hh, site_id, exclusions, utc_offset_h, time_col = "timestamp_start_utc")
   ex <- drop_excluded_rows(d, source_id)
   d <- ex$data
   d$excl_flag <- NULL
   d$excl_reason <- NULL
+  mx <- apply_measured_exclusions(d, site_id, source_id, measured_exclusions)
+  d <- mx$data
   data <- dplyr::bind_cols(
     dplyr::tibble(timestamp_start_utc = d$timestamp_start_utc, timestamp_end_utc = d$timestamp_end_utc,
                   pblh_m = d$pblh_m, source_id = source_id, qc_flag = d$qc_flag, uncertainty_m = NA_real_,
@@ -797,7 +826,7 @@ standardize_cloudnet_mlh <- function(hh, site_id, exclusions, utc_offset_h, info
                                        "missing gate (low SNR); MLH possibly a lower bound"),
                            `NA` = "coverage below min_coverage, or no valid profile"),
     processing_history = paste0(info$processing_history, " Rows in exclusion periods dropped (", ex$n_excluded,
-                                "); standardized by standardize_cloudnet_mlh() (spec 07)."),
+                                "); ", mx$history, "; standardized by standardize_cloudnet_mlh() (spec 07)."),
     licence = "CC BY 4.0 (ACTRIS/Cloudnet)",
     citation = info$citation
   )

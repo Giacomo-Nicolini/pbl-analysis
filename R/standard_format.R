@@ -30,17 +30,25 @@ standard_optional_fields <- function() {
   )
 }
 
+#' Additional sidecar fields, not counted in `metadata_completeness`
+#'
+#' Spec 13 (G 2026-11-06): the data owner (instrument operator) and the processor (who derived the product, with
+#' method and version) as separate fields, and the provider's known limitations. Written only when given.
+#'
+#' @return Character vector of field names.
+standard_extra_fields <- function() c("data_owner", "processor", "known_limitations")
+
 #' Build a standard sidecar
 #'
 #' @param site_id Station code [character].
 #' @param source_id Source identifier, e.g. `"era5_blh_center"` [character].
 #' @param method_class One of [standard_method_classes()].
 #' @param ... Optional fields of [standard_optional_fields()]; missing ones are
-#'   set to `"unknown"`. Unknown names abort.
+#'   set to `"unknown"`. Fields of [standard_extra_fields()] are kept when given. Unknown names abort.
 #' @return Named list (sidecar without the automatic fields).
 standard_meta <- function(site_id, source_id, method_class, ...) {
   opt <- list(...)
-  bad <- setdiff(names(opt), standard_optional_fields())
+  bad <- setdiff(names(opt), c(standard_optional_fields(), standard_extra_fields()))
   if (length(bad) > 0) {
     cli::cli_abort("Unknown sidecar field{?s}: {.field {bad}}.")
   }
@@ -48,6 +56,7 @@ standard_meta <- function(site_id, source_id, method_class, ...) {
   for (f in standard_optional_fields()) {
     meta[[f]] <- if (is.null(opt[[f]])) "unknown" else opt[[f]]
   }
+  for (f in standard_extra_fields()) if (!is.null(opt[[f]])) meta[[f]] <- opt[[f]]
   meta
 }
 

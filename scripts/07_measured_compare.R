@@ -29,6 +29,8 @@ ms <- ms[ms$provider == "cloudnet" & ms$icos_site == site_id, ]
 if (nrow(ms) != 1) cli::cli_abort("{site_id}: no (or more than one) Cloudnet pairing in {.file measured_sites.csv}.")
 dclass <- distance_class(ms$distance_km)
 if (dclass == "not_used") cli::cli_abort("{site_id}: measurement {ms$distance_km} km away: not used (distance rule).")
+# Tables carry the pairing distance and the borderline flag (spec 13, G 2026-11-06)
+write_tab <- function(x, path) readr::write_csv(tag_measured_pairing(x, site_id, ms), path)
 std_dir <- file.path(resolve_path(cfg$standard_dir), site_id)
 tables_dir <- file.path(resolve_path(cfg$output_dir, must_exist = FALSE), "tables")
 dir.create(tables_dir, recursive = TRUE, showWarnings = FALSE)
@@ -88,7 +90,7 @@ metrics <- dplyr::bind_rows(pblh_metrics_long(pairs), pblh_metrics_long(p4))
 cls <- c(vapply(sources, `[[`, "", "cls"), `4_pblhmod_default_vs_era5_center` = "parameterisation vs model")
 metrics$comparison_class <- cls[metrics$pair]
 metrics$distance_class <- dclass
-readr::write_csv(metrics, file.path(tables_dir, paste0("07_metrics_", site_id, ".csv")))
+write_tab(metrics, file.path(tables_dir, paste0("07_metrics_", site_id, ".csv")))
 
 # --- Lower bounds (qc 3) and censored below z_min (qc 1) ---
 lb <- list()
@@ -118,7 +120,7 @@ for (p in names(sources)) {
 }
 lb <- dplyr::bind_rows(lb)
 cb <- dplyr::bind_rows(cb)
-readr::write_csv(lb, file.path(tables_dir, paste0("07_lower_bound_", site_id, ".csv")))
+write_tab(lb, file.path(tables_dir, paste0("07_lower_bound_", site_id, ".csv")))
 cens_meas <- dplyr::summarise(
   dplyr::group_by(dplyr::mutate(mh, season = as.character(season_of(timestamp_utc)),
                                 hour_utc = hour_bin_centred(timestamp_utc + 900)), season, hour_utc),
@@ -130,7 +132,7 @@ w <- cb[!is.na(cb$hour_utc), c("pair", "season", "hour_utc", "frac_mod_below_zmi
 w$frac_mod_below_zmin <- round(w$frac_mod_below_zmin, 3)
 w <- stats::reshape(as.data.frame(w), idvar = c("season", "hour_utc"), timevar = "pair", direction = "wide")
 cens_tab <- dplyr::left_join(cens_meas, w, by = c("season", "hour_utc"))
-readr::write_csv(cens_tab, file.path(tables_dir, paste0("07_censoring_", site_id, ".csv")))
+write_tab(cens_tab, file.path(tables_dir, paste0("07_censoring_", site_id, ".csv")))
 
 # "Shallow too deep / deep too shallow" (G 2026-10-23): where the measured MLH is censored below z_min (qc 1), share
 # of source values <= z_min; where it is a lower bound (qc 3), share of source values below the bound. By season and
@@ -154,7 +156,7 @@ sd_tab <- dplyr::bind_rows(lapply(c("1_pblhmod_default_vs_measured", "2_era5_cen
     }))
   }))
 }))
-readr::write_csv(sd_tab, file.path(tables_dir, paste0("07_shallow_deep_", site_id, ".csv")))
+write_tab(sd_tab, file.path(tables_dir, paste0("07_shallow_deep_", site_id, ".csv")))
 
 # --- Diurnal cycles (on the measured usable half-hours / hours) ---
 mh$season <- season_of(mh$timestamp_utc)
@@ -175,7 +177,7 @@ w_h$season <- season_of(w_h$timestamp_utc)
 w_h$hour_utc <- hour_bin_centred(w_h$timestamp_utc)
 ds <- dplyr::bind_rows(diurnal_summary(w_hh, "pblhmod_default"),
                        diurnal_summary(w_h, c("era5_blh_center", "era5_blh_bilinear")))
-readr::write_csv(dplyr::bind_rows(
+write_tab(dplyr::bind_rows(
   dplyr::transmute(dm, season, hour_utc, variable = "cloudnet_eps_mlh_censored", median = median_censored, n),
   dplyr::transmute(dm, season, hour_utc, variable = "cloudnet_eps_mlh_qc02", median = median_exact, n = n_exact),
   ds[c("season", "hour_utc", "variable", "median", "n")]

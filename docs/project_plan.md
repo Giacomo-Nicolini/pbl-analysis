@@ -41,6 +41,9 @@ Status: agreed design, v0.1 (2026-10-08). Living document: update as decisions c
 standard files (Cloudnet, SIRTA ReOBS, MeteoSwiss STRATfinder, PI data). The release contains code, PBLHmod outputs
 and results; for each measured source it cites the DOIs / references and the acknowledgement text, case by case
 (licences differ: e.g. CC BY 4.0 for Cloudnet, CC BY-NC 4.0 for MeteoSwiss).
+**E-PROFILE files processed by MeteoSwiss (spec 13; DE-RuS, DE-HoH, FI-Lom, FR-Fon, FR-Lus): licence to be confirmed.
+Internal use only; contact the provider before sharing any result (figures, statistics, talks, drafts) derived from
+them** (MeteoSwiss condition, 2026-11-06; the instrument owners are named in the files' `data_owner`).
 
 ## Phase 1: PBLHmod v2
 
@@ -262,6 +265,15 @@ too shallow when deep") is a **hypothesis under test**.
   2021-07 → 2026-10 aggregated to half-hours (quality level 0 only), CH-Dav–DAV 0.98 km (47 m lower than the tower);
   licence CC BY-NC 4.0; primary comparison set the daytime window (night values sit on a floor, not stable-layer
   depths), pair `MeteoSwiss` in `config/measured_sites.csv`.
+- Measured PBLH, aerosol-based (spec 13, 2026-11-06): MeteoSwiss E-PROFILE client files, licence to be confirmed
+  (internal use only, see "Data release"): STRATfinder CHM15k at DE-RuS–Jülich JUE (5.30 km, daytime convective;
+  2021-03 → 2026-11, gap 2025-11-19 → 2026-06-17) and DE-HoH–Magdeburg MAG (24.48 km, borderline, daytime convective;
+  2021-01 → 2026-11); CABAM CL31 (`meteoswiss_cabam_mlh`) at FI-Lom–Kenttärova KEN (1.80 km, all regimes, 100 m above
+  the mire; 2021-01 → 2024-05, no polar night), FR-Fon–Melun MEL (16.64 km; dirty-window months) and FR-Lus–Poitiers
+  POI (24.87 km, borderline). Primary measured source at all five (the Cloudnet rows of FI-Lom and DE-RuS are
+  inventory only). CZ-Lnz: Lanzhot CL61 BL-View L3 (~3 km), pending (data expected 2026-11).
+  Measured sites (8 with a primary source): FI-Hyy (Cloudnet ε), FR-Gri (SIRTA), CH-Dav, DE-RuS, DE-HoH, FI-Lom,
+  FR-Fon, FR-Lus (MeteoSwiss); pending CZ-Lnz.
 - ERA5 (0.25°, tower cell + 8 neighbours, 2020-01-01 → 2026-10-07; formats and conventions in `CLAUDE.md`):
   - hourly `boundary_layer_height` (instantaneous; bulk Richardson diagnostic, Ri_c = 0.25), `cloud_base_height`,
     `surface_sensible_heat_flux` (hourly accumulation, J m-2, positive downward);
@@ -275,6 +287,9 @@ too shallow when deep") is a **hypothesis under test**.
 - **Exclusions** (must be applied by every reader/analysis step, never silently skipped):
   - `config/exclusion_periods.csv`: hard, date-based exclusions (`site_id, date_start, date_end, scope, reason`).
     Currently: SE-Nor 2022-10-01 → 2023-04-20 (clearcut, tower lowered 36 → 12 m).
+  - `config/measured_exclusions.csv` (spec 13): periods removed from one measured source only (`site_id, source_id,
+    date_start, date_end, reason`, UTC dates), applied by the measured standard-file builders; the ICOS records stay.
+    Currently: FR-Fon Melun six dirty-window months, FR-Lus Poitiers 2021-02 → 2021-10.
   - Tall canopy relative to zm (e.g. IT-BCi maize seasons): **phases 1–4** keep the data but add a per-half-hour flag
     and the ratio hc/zm as a covariate in the error analysis; **phase 5** applies the FFP validity criteria.
   - FFP validity criteria (Kljun et al. 2015): implemented with **configurable thresholds**, as the sets `kljun`
@@ -289,6 +304,15 @@ too shallow when deep") is a **hypothesis under test**.
 
 ## Open points
 
+- Spec 13 (2026-11-06): (a) measured-source exclusions decided (G 2026-11-06) and applied through
+  `config/measured_exclusions.csv` (FR-Fon Melun 2023-05/06, 2025-09, 2026-08/09/10; FR-Lus Poitiers 2021-02 →
+  2021-10; dirty window); (b) DE-HoH (24.48 km, coordinates rounded to 0.01°) and FR-Lus (24.87 km) are within 0.5 km
+  of the 25 km limit: class kept, `borderline` flag in `measured_sites.csv` and in the comparison tables (results with
+  and without them); DE-RuS JUE (5.30 km) is 0.3 km above the 5 km limit, not flagged (G to say); (c) FI-Lom: Kenttärova 100 m above the tower,
+  record ends 2024-05 (no footprints in the reference year 2025); (d) Jülich night MLH without a temperature overlap
+  model (bit 8192, until 2025-11) differs from the later unit (night p90 1.4 km vs 0.6 km): outside the daytime
+  comparable set, keep in mind for any night use; (e) CZ-Lnz BL-View: time zone, hourly convention and quality index
+  to confirm.
 - Phase 5a (spec 08, 2026-10-27):
   - EBImage check on the cluster (installed there): `ffp_smooth()` vs the code's `EBImage::filter2()` smoothing
     (`scripts/08v_ffp_verify.R` runs it when EBImage is available); on the PC it is verified only against an FFT

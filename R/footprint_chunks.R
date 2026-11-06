@@ -77,6 +77,32 @@ footprint_task <- function(inp, case, part, start, end, sets = c("kljun", "kljun
   list(site_id = inp$site_id, case = case, part = part, rows = rows, grp = grp)
 }
 
+#' Fixed settings of the footprint chunk runs
+#'
+#' Shared by `scripts/08b_footprint_run.R` and the pending list of `scripts/08c_make_chunks.R`, so both compute the
+#' same chunk hash ([footprint_task_hash()]).
+#'
+#' @return List: `r_levels` (source-area levels [-]), `block` (storage block, cells; c5, G 2026-10-28).
+ffp_run_settings <- function() list(r_levels = c(0.5, 0.7, 0.8, 0.9), block = 5L)
+
+#' Inputs hash of a footprint chunk
+#'
+#' The hash that 08b stores in the chunk's `_meta.rds`: a chunk whose stored hash equals it is skipped. Covers the
+#' rows and climatology groups of the task (so a new `measured` case changes the `common_pme` groups of the
+#' `pblhmod`, `pblhmod_clim` and `era5` chunks in the months with measured values), the FFP code, the source-area
+#' levels, the grid, the number of target-area cells and the storage block.
+#'
+#' @param tk Task ([footprint_task()]).
+#' @param ffp_md5 MD5 sums of the two FFP code files [character].
+#' @param r_levels Source-area levels [-].
+#' @param grid Grid ([ffp_grid()]).
+#' @param mask Target-area mask on the grid (logical).
+#' @param block Storage block size [cells].
+#' @return Character (digest).
+footprint_task_hash <- function(tk, ffp_md5, r_levels, grid, mask, block) {
+  digest::digest(list(tk$rows, tk$grp, ffp_md5, r_levels, grid$domain, grid$dx, sum(mask), block, "v4"))
+}
+
 #' Chunk list with duration estimates
 #'
 #' One chunk per case x month of the year; a month whose estimated duration exceeds `target_min` is split into two

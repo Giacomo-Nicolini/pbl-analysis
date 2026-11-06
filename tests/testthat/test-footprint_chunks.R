@@ -222,3 +222,16 @@ test_that("config/reference_years.csv: one approved year for every run site", {
   expect_setequal(ry$site_id, runs)
   expect_true(all(ry$year >= 2020 & ry$year <= 2026))
 })
+
+test_that("footprint_task_hash: as 08b, changes with the climatology groups (spec 13 pending list)", {
+  rs <- ffp_run_settings()
+  expect_equal(rs$r_levels, c(0.5, 0.7, 0.8, 0.9))
+  expect_equal(rs$block, 5L)
+  grid <- list(domain = c(-1000, 1000, -1000, 1000), dx = 1)
+  mask <- c(TRUE, FALSE, TRUE)
+  tk <- list(rows = data.frame(h = c(500, 600)), grp = list(`kljun|valid|day|own` = c(TRUE, FALSE)))
+  h1 <- footprint_task_hash(tk, c("a", "b"), rs$r_levels, grid, mask, rs$block)
+  expect_identical(h1, digest::digest(list(tk$rows, tk$grp, c("a", "b"), rs$r_levels, grid$domain, grid$dx, 2L, 5L, "v4")))
+  tk$grp[["kljun|valid|day|common_pme"]] <- c(TRUE, FALSE) # a measured case adds common_pme groups
+  expect_false(identical(footprint_task_hash(tk, c("a", "b"), rs$r_levels, grid, mask, rs$block), h1))
+})

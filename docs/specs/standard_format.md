@@ -39,6 +39,10 @@ Optional (value or `unknown`), 12 fields: `instrument`, `retrieval_algorithm`, `
 `instrument_altitude_m`, `time_reference`, `original_resolution`, `original_qc`, `qc_flag_meaning` (map
 flag → meaning), `processing_history`, `contact`, `licence`, `citation`.
 
+Additional fields (spec 13, `standard_extra_fields()`; written only when given, not counted in the completeness):
+`data_owner` (instrument operator / owner of the data), `processor` (who derived the product, method and version),
+`known_limitations` (provider text).
+
 Added automatically on write:
 - `metadata_completeness` = fraction of the **12 optional fields** that are not `unknown` (a field is unknown if
   absent, empty, `NA` or the string `unknown`, case-insensitive). `created_utc` and `code_version` are excluded
@@ -122,3 +126,26 @@ Not censored. `x_` columns: `x_coverage` (`n_samples` / 30), `x_ablh_m` (median 
 instrument segment), `x_n_profiles` (all profiles). Comparisons (`measured_time_base()`, half-hourly base without
 censoring): PBLHmod on the same half-hours; ERA5 hours against the mean of the two adjacent half-hours (both
 required); qc is a coverage flag, not a censoring code.
+
+Spec 13: the same source at the E-PROFILE stations Jülich (DE-RuS) and Magdeburg (DE-HoH); `x_share_no_temp_overlap`
+(share of level-0 profiles with bit 8192, no temperature-dependent overlap model; informational) added for all.
+
+## Example of an aerosol-based source from 15-min means: `meteoswiss_cabam_mlh` (spec 13)
+
+CABAM mixed-layer height of the Vaisala CL31 at the E-PROFILE stations Kenttärova (FI-Lom), Melun (FR-Fon) and
+Poitiers (FR-Lus), delivered by MeteoSwiss as 15-min means (`time` = interval centre, `time_bnds` = [start, end) on
+the quarter hour), heights tilt-corrected, above ground. Aggregated by `cabam_halfhour()` (`scripts/11b_meteoswiss_mlh.R`)
+to half-hourly interval values (`interval_mean`, UTC [start, start + 30 min) = the steps starting at start and
+start + 15 min), `method_class = aerosol`, `height_reference = agl`. `pblh_m` = mean of the quality-level-0 steps;
+`n_samples` = number of level-0 steps (0–2); `uncertainty_m` = `NA`.
+
+| `qc_flag` | `pblh_m` | Meaning |
+|---|---|---|
+| 0 | value | both 15-min steps level 0 (their mean) |
+| 1 | value | one step level 0 (its value) |
+| `NA` | `NA` | no level-0 step |
+
+`x_` columns: `x_coverage` (`n_samples` / 2), `x_dlh_m` (mean CABAM disconnected-layer height of the steps with one),
+`x_share_lowest` (bit 8 among the level-0 steps), `x_segment`, `x_n_steps` (steps in the file), `x_n_profiles` (raw
+profiles of the level-0 steps), `x_tilt_deg`. Sidecar `licence`: to be confirmed, internal use only; `data_owner`,
+`processor`, `known_limitations` filled. Comparisons as for `meteoswiss_stratfinder_mlh`.

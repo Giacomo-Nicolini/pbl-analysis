@@ -22,9 +22,10 @@ pipeline_steps <- function() {
                 oper = TRUE),
     # measured sites only (config/measured_sites.csv, primary source; spec 09 amendment 2): standard files of the
     # primary measured source, then the per-site comparison; scripts chosen by measured_site_scripts()
-    meas_std = list(script = "scripts/09m_measured.R", upstream = character(), inputs = "measured_raw", oper = FALSE,
+    # measured_config: pairing table and measured-source exclusions (spec 13), so an edit of either reruns the steps
+    meas_std = list(script = "scripts/09m_measured.R", upstream = character(), inputs = c("measured_raw", "measured_config"), oper = FALSE,
                     args = function(site_id, cfg) "--part=standard", extra_scripts = measured_site_scripts()$standard),
-    meas_cmp = list(script = "scripts/09m_measured.R", upstream = c("04", "meas_std"), inputs = "measured_std",
+    meas_cmp = list(script = "scripts/09m_measured.R", upstream = c("04", "meas_std"), inputs = c("measured_std", "measured_config"),
                     oper = FALSE, args = function(site_id, cfg) "--part=compare",
                     extra_scripts = unlist(measured_site_scripts()$compare)),
     `08a` = list(script = "scripts/08a_footprint_flags.R", upstream = "04", inputs = c("l2", "bif", "measured_std"),
@@ -38,8 +39,9 @@ pipeline_steps <- function() {
 #' Scripts of the measured steps per provider
 #'
 #' Spec 09 amendment 2: provider of the site's primary measured source (`config/measured_sites.csv`) -> script that
-#' writes its standard files (`meas_std`) and per-site comparison scripts (`meas_cmp`). MeteoSwiss (CH-Dav) has no
-#' per-site comparison script: it is compared in the multi-site `scripts/11_gamma_evaluation.R` (spec 11 D).
+#' writes its standard files (`meas_std`) and per-site comparison scripts (`meas_cmp`). MeteoSwiss: the generic
+#' spec-10 comparison (spec 13, G 2026-11-06: the E-PROFILE stations; CH-Dav also keeps the multi-site
+#' `scripts/11_gamma_evaluation.R`, spec 11 D).
 #'
 #' @param provider Provider (`cloudnet`, `SIRTA-ReOBS`, `MeteoSwiss`); `NULL` = the whole table.
 #' @return List `standard` (named character, one script per provider) and `compare` (named list of character
@@ -48,7 +50,7 @@ measured_site_scripts <- function(provider = NULL) {
   standard <- c(cloudnet = "scripts/07c_cloudnet_mlh.R", `SIRTA-ReOBS` = "scripts/10a_sirta_reobs.R",
                 MeteoSwiss = "scripts/11b_meteoswiss_mlh.R")
   compare <- list(cloudnet = c("scripts/07_measured_compare.R", "scripts/10_measured_compare.R"),
-                  `SIRTA-ReOBS` = "scripts/10_measured_compare.R", MeteoSwiss = character())
+                  `SIRTA-ReOBS` = "scripts/10_measured_compare.R", MeteoSwiss = "scripts/10_measured_compare.R")
   if (is.null(provider)) return(list(standard = standard, compare = compare))
   if (!provider %in% names(standard)) cli::cli_abort("No measured scripts for provider {.val {provider}}.")
   list(standard = unname(standard[provider]), compare = compare[[provider]])
@@ -77,6 +79,7 @@ reference_year_of <- function(site_id, cfg) {
 #' @param groups Input groups: `l2` (ICOS L2 folder), `bif` (ONEFlux BIF), `era5_sl`, `era5_pl` (ERA5 folders),
 #'   `era5_static` (static files of the site), `measured_raw` (Cloudnet files and
 #'   PI / provider files of the site, `cloudnet_dir`, `measured_dir`), `measured_std` (standard files of measured sources),
+#'   `measured_config` (`measured_sites_file`, `measured_exclusions_file`; spec 13),
 #'   `gamma_network` (network gamma table, [gamma_network_path()]; spec 09 amendment 3), `chunks`
 #'   (footprint chunk meta files of the site).
 #' @return Tibble: `group`, `path`, `size` [bytes], `mtime` [character, UTC]; a group whose folder is not configured
@@ -105,6 +108,8 @@ site_input_files <- function(site_id, cfg, groups) {
            measured_raw = c(in_dir("cloudnet_dir"),
                             safe(list.files(resolve_path(cfg$measured_dir, site = site_id, must_exist = FALSE),
                                             recursive = TRUE, full.names = TRUE))),
+           measured_config = safe(Filter(file.exists, vapply(c(cfg$measured_sites_file, cfg$measured_exclusions_file),
+                                                             resolve_path, character(1), must_exist = FALSE))),
            gamma_network = safe(Filter(file.exists, gamma_network_path(cfg))),
            chunks = safe(list.files(file.path(resolve_path(cfg$derived_dir, must_exist = FALSE), "footprint", site_id,
                                               "chunks"), pattern = "_meta\\.rds$", full.names = TRUE)),
