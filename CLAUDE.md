@@ -146,7 +146,10 @@ so code must be reproducible, documented and traceable to references.
   queried one year at a time; `/sites`; `/files` also filters by `instrumentPid=` (full handle URL), and
   `/instrument-pids` maps instrument `uuid` → `pid`, checked 2026-10-29); file metadata: `uuid`, `checksum` (SHA-256), `size`, `downloadUrl`,
   `instrument` (`name`, `pid`), `volatile` (no file PID/version yet), `legacy`. No citation endpoint. Pairs ICOS site ×
-  Cloudnet site: `config/measured_sites.csv` (`distance_km` from the API coordinates; optional `z_min_agl_m`).
+  Cloudnet site: `config/measured_sites.csv` (`distance_km` from the API coordinates; optional `z_min_agl_m`; spec 13
+  columns `station_code`, `wigos_id`, `provider_alt_m`, `elevation_diff_m`, `distance_class` (checked on read),
+  `status` used / inventory / pending, one primary source per site on a `used` row; `borderline` (G 2026-11-06:
+  DE-HoH, FR-Lus, class kept), carried into every 07 / 10 comparison table by `tag_measured_pairing()`).
   Files under `cloudnet_dir` (`data/raw/cloudnet/{site}`; cluster `"LOCAL"`), with a provenance table
   `cloudnet_files_provenance_<product>.csv` written by `scripts/07b_cloudnet_download.R`.
   - `epsilon-lidar` (daily NetCDF4, one file per instrument): `epsilon` [m2 s-3] (height × time; missing where the
@@ -191,13 +194,32 @@ so code must be reproducible, documented and traceable to references.
   - Standard source `meteoswiss_stratfinder_mlh` (`scripts/11b_meteoswiss_mlh.R`): half-hourly median of the
     quality-0 values, `n_samples` = distinct minutes, qc 0 if ≥ 75 % of 30 min, 1 if ≥ 50 %, else NA; `x_ablh_m`,
     `x_share_lowest`, `x_segment`. Primary comparison set: daytime window, PBLHmod convective (G 2026-10-30).
-- **Lanzhot BL-View (spec 10 Part B)**: only two sample days in `data/raw/measured/CZ-Lnz/samples/` (2026-10-29);
-  not implemented.
+- **MeteoSwiss E-PROFILE files (spec 13; checked 2026-11-06).** `<measured_dir>` folders DE-RuS (Jülich JUE,
+  STRATfinder CHM15k), DE-HoH (Magdeburg MAG, STRATfinder), FI-Lom (Kenttärova KEN, CABAM CL31), FR-Fon (Melun MEL,
+  CABAM), FR-Lus (Poitiers POI, CABAM); `_shared/meteoswiss_eprofile_2026-11-05/` (README, `qc_events_stratfinder.csv`,
+  `qc_summary.json`). Product 1.0 (2026-11-05), Davos layout. **Licence to be confirmed: internal use only; contact the
+  provider before sharing any result from them** (MeteoSwiss condition, 2026-11-06). Owners in the attribute
+  `data_owner` (Univ. Cologne, DWD, FMI, Météo-France); processor MeteoSwiss (sidecar fields `data_owner`, `processor`).
+  - STRATfinder files: as Davos, plus bit 8192 `no_temperature_overlap_model` (informational; JUE 2021-03 → 2026-01)
+    and no maintenance log (bit 4 = window transmission < 60 %, daily median; days listed in `instrument_events` and
+    `qc_events_stratfinder.csv`). JUE no data 2025-11-19 → 2026-06-17.
+  - CABAM files: 15-min steps, `time` = interval centre, `time_bnds` = [start, end) on the quarter hour (checked by the
+    reader); heights tilt-corrected, agl; no ABLH (`dlh` kept as `x_dlh_m`, `alh` not read); bit 2 dirty window (value
+    removed), 16384 incomplete interval (quality 1). Standard source `meteoswiss_cabam_mlh`: mean of the quality-0 steps
+    of the half-hour, qc 0 both, 1 one, else NA. KEN: no polar night, record ends 2024-05-16.
+  - Every qc bit must be in `meteoswiss_qc_bits()`: a new bit aborts the reader (review it first).
+- **Lanzhot BL-View (spec 13 item 5, pending)**: two sample days in `data/raw/measured/CZ-Lnz/samples/`; data expected
+  2026-11. L3 `mean_mixing_layer_height` / `mean_mixing_layer_quality` (1–3) hourly, repeated on every ~1-min profile
+  (`time_aerosol`); prototype `read_blview_l3(path, time_offset_h)` (no default offset: time zone to be confirmed; the
+  files carry `time_zone` = 2 and coordinates 0). No standard file yet.
 - Site metadata: `config/sites.csv` (lat, lon, altitude, UTC offset, zm, canopy height, d, z0...).
   Missing values allowed; functions must fail with an informative error only when a *required* value is missing.
   Time-varying zm / canopy height: `config/sites_timevarying.csv` (derived from `config/sites_H_EC_canopy_formBIF.csv`).
 - **Exclusions**: `config/exclusion_periods.csv` lists periods that must be removed for a site (e.g. SE-Nor clearcut).
   Every pipeline step must apply them and report how many records were excluded. Never skip this silently.
+  Periods of one measured source only (the ICOS records stay): `config/measured_exclusions.csv` (spec 13, G
+  2026-11-06; `site_id, source_id, date_start, date_end, reason`, UTC dates, end inclusive), applied and counted by the
+  measured standard-file builders (`apply_measured_exclusions()`); FR-Fon Melun dirty-window months, FR-Lus 2021-02 → 10.
 
 ## PBLHmod variants and γ (spec 11; G 2026-10-30)
 
@@ -259,10 +281,10 @@ so code must be reproducible, documented and traceable to references.
   `<derived_dir>/run_status/`. A step whose last status is "ok" with the same inputs hash (step script, all `R/`
   files, configuration, the site's raw inputs, arguments, upstream hashes) is skipped unless `--force`; any code
   change in `R/` therefore reruns every step. The first failing step stops the site.
-- **Measured steps (spec 09 amendment 2)**: at the sites with a primary measured source (`config/measured_run_sites.txt`:
-  FI-Hyy, FR-Gri, CH-Dav), `--steps=meas_std,meas_cmp` (`scripts/09m_measured.R`; scripts per provider from
-  `measured_site_scripts()`: standard files 07c / 10a / 11b, comparison 07 + 10 / 10 / none, CH-Dav in
-  `11_gamma_evaluation.R`), then `08a` again (it hashes the measured standard files, so `n_measured` enters the
+- **Measured steps (spec 09 amendment 2, spec 13)**: at the sites with a primary measured source
+  (`config/measured_run_sites.txt`: FI-Hyy, FR-Gri, CH-Dav, DE-RuS, DE-HoH, FI-Lom, FR-Fon, FR-Lus),
+  `--steps=meas_std,meas_cmp` (`scripts/09m_measured.R`; scripts per provider from `measured_site_scripts()`: standard
+  files 07c / 10a / 11b, comparison 07 + 10 / 10 / 10; CH-Dav also in `11_gamma_evaluation.R`), then `08a` again (it hashes the measured standard files, so `n_measured` enters the
   reference-year proposal). Cloudnet files are downloaded first with `07b` (size report, `--confirm`, re-check).
 - **SLURM**: `scripts/slurm_submit.R --what=sites|chunks [--dry-run]` renders `slurm/sites_array.sbatch` (one task per
   row of `config/run_sites.txt`) or `slurm/footprint_chunks.sbatch` (one task per chunk) with `slurm/local.env`.
@@ -277,6 +299,9 @@ so code must be reproducible, documented and traceable to references.
   `scripts/08c_make_chunks.R` writes `<derived_dir>/footprint/chunk_list.csv` (site × case × month, half-months above
   `chunk_target_min`); each array task runs `08b --chunk-list --chunk-row` with the job's CPUs as workers (result
   independent of the worker count); then step `08` (`run_site.R SITE --steps=08`, reference year) and `09_collect.R`.
+  After a change of inputs (e.g. a new measured case, spec 13), `08c --pending` (no sites) also writes
+  `chunk_list_pending.csv`: only the new chunks and those whose hash (`footprint_task_hash()`, as 08b) changed; adding
+  `measured` changes the `pblhmod`, `pblhmod_clim`, `era5` chunks of the months with measured values (`common_pme`).
 - **Collection**: `scripts/09_collect.R` reads only the per-site tables (`01_inputs_`, `02_cases_`, `02_regimes_`,
   `11a_gamma_summary_`, `04_metrics_`, `08_coverage_`, `08_year_counts_`, `08_nee_qc_`) and writes `09_network_*.csv`.
   Network figure (G 2026-11-03): PBLHmod median ln(PBLHmod / ERA5) as filled dots with a p25–p75 bar

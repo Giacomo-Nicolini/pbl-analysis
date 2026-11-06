@@ -61,6 +61,7 @@ test_that("read_measured_sites validates the pairing table", {
   # distance_km consistent with the coordinates in sites.csv
   sites <- read_sites(here::here("config", "sites.csv"))
   m <- merge(ms, sites, by.x = "icos_site", by.y = "site_id")
+  m <- m[!is.na(m$provider_lat), ] # CZ-Lnz pending (spec 13): distance from the site, no coordinates yet
   expect_equal(m$distance_km, round(haversine_km(m$lat, m$lon, m$provider_lat, m$provider_lon), 2), tolerance = 1e-9)
 
   tmp <- withr::local_tempfile(fileext = ".csv")

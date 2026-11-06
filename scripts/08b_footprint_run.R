@@ -34,8 +34,8 @@ with_oper <- "--with-oper" %in% args
 workers <- as.integer(opt("workers", "4"))
 limit <- as.integer(opt("limit", NA)) # testing only: at most this many half-hours per chunk
 sets <- strsplit(opt("set", "kljun,kljun_norsl,etc,none"), ",")[[1]]
-r_levels <- c(0.5, 0.7, 0.8, 0.9)
-block <- 5L # storage c5 (G 2026-10-28)
+r_levels <- ffp_run_settings()$r_levels
+block <- ffp_run_settings()$block # storage c5 (G 2026-10-28)
 cfg <- get_cfg()
 sites <- read_sites(resolve_path(cfg$sites_file))
 extra_sites <- footprint_extra_sites(resolve_path(cfg$footprint_extra_sites_file))
@@ -105,7 +105,7 @@ tasks <- list()
 for (j in seq_len(nrow(todo))) {
   tk <- footprint_task(inp, todo$case[j], todo$part[j], todo$start[j], todo$end[j], sets, limit)
   if (is.null(tk)) next
-  tk$hash <- digest::digest(list(tk$rows, tk$grp, ffp_md5, r_levels, grid$domain, grid$dx, sum(mask), block, "v4"))
+  tk$hash <- footprint_task_hash(tk, ffp_md5, r_levels, grid, mask, block)
   tk$chunk_dir <- chunk_dir_of(tk$case)
   tasks[[length(tasks) + 1]] <- tk
 }

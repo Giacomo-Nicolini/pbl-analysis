@@ -127,17 +127,19 @@ test_that("measured steps (spec 09 amendment 2): registered, scripts by provider
   }
   expect_equal(measured_site_scripts("cloudnet")$standard, "scripts/07c_cloudnet_mlh.R")
   expect_equal(measured_site_scripts("SIRTA-ReOBS")$compare, "scripts/10_measured_compare.R")
-  expect_length(measured_site_scripts("MeteoSwiss")$compare, 0)
+  expect_equal(measured_site_scripts("MeteoSwiss")$compare, "scripts/10_measured_compare.R") # spec 13
   expect_error(measured_site_scripts("none"), "provider")
-  # primary providers of the committed pairings
+  # primary providers of the committed pairings (spec 13: MeteoSwiss E-PROFILE at five more stations)
   ms <- read_measured_sites(here::here("config", "measured_sites.csv"))
-  expect_equal(vapply(c("FI-Hyy", "FR-Gri", "CH-Dav"), function(s) measured_primary_provider(ms, s), ""),
-               c(`FI-Hyy` = "cloudnet", `FR-Gri` = "SIRTA-ReOBS", `CH-Dav` = "MeteoSwiss"))
+  run <- c("FI-Hyy", "FR-Gri", "CH-Dav", "DE-RuS", "DE-HoH", "FI-Lom", "FR-Fon", "FR-Lus")
+  expect_equal(vapply(run, function(s) measured_primary_provider(ms, s), ""),
+               stats::setNames(c("cloudnet", "SIRTA-ReOBS", rep("MeteoSwiss", 6)), run))
   expect_error(measured_primary_provider(ms, "BE-Bra"), "0 primary")
-  # config/measured_run_sites.txt: stations with a primary measured source (FI-Lom, DE-RuS later: Cloudnet not yet downloaded)
+  expect_error(measured_primary_provider(ms, "CZ-Lnz"), "0 primary") # pending: no primary yet
+  # config/measured_run_sites.txt: stations with a primary measured source
   ids <- trimws(readLines(here::here("config", "measured_run_sites.txt"), warn = FALSE))
   ids <- ids[nzchar(ids) & !startsWith(ids, "#")]
-  expect_equal(ids, c("FI-Hyy", "FR-Gri", "CH-Dav"))
+  expect_equal(ids, run)
   expect_true(all(ids %in% ms$icos_site[!is.na(ms$primary_source_id)]))
 
   cfg <- local_pipeline_cfg()
@@ -160,4 +162,13 @@ test_that("measured steps (spec 09 amendment 2): registered, scripts by provider
   h1 <- step_inputs_hash("meas_std", "XX-Tst", cfg, root = root, input_files = inp)
   writeLines("y", file.path(root, "scripts/11b_meteoswiss_mlh.R"))
   expect_false(identical(h1, step_inputs_hash("meas_std", "XX-Tst", cfg, root = root, input_files = inp)))
+  # spec 13: the pairing table and the measured-source exclusions are inputs of meas_std and meas_cmp
+  expect_true("measured_config" %in% reg$meas_std$inputs)
+  expect_true("measured_config" %in% reg$meas_cmp$inputs)
+  cf <- file.path(dirname(cfg$derived_dir), c("ms.csv", "mex.csv"))
+  for (p in cf) writeLines("a", p)
+  cfg$measured_sites_file <- cf[1]
+  cfg$measured_exclusions_file <- cf[2]
+  mc <- site_input_files("XX-Tst", cfg, "measured_config")
+  expect_equal(sort(basename(mc$path)), c("mex.csv", "ms.csv"))
 })

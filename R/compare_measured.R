@@ -264,3 +264,23 @@ measured_time_base <- function(meas, mod, era) {
 keep_regime_by_distance <- function(regime, dclass) {
   if (dclass == "all_regimes") rep(TRUE, length(regime)) else regime %in% "convective"
 }
+
+#' Pairing columns for the measured comparison tables
+#'
+#' Spec 13 (G 2026-11-06): every per-site comparison table carries the pairing distance and the `borderline` flag of
+#' `config/measured_sites.csv`, so that network results can be shown with and without the borderline pairings
+#' (DE-HoH, FR-Lus).
+#'
+#' @param x Table to be written.
+#' @param site_id ICOS station [character].
+#' @param ms_row The pairing row of [read_measured_sites()] used by the comparison (one row).
+#' @return `x` with `site_id` (first, if absent), `measured_provider_site` [-], `measured_distance_km` [km] and
+#'   `borderline` [logical] added.
+tag_measured_pairing <- function(x, site_id, ms_row) {
+  if (nrow(ms_row) != 1) cli::cli_abort("{site_id}: need exactly one pairing row (got {nrow(ms_row)}).")
+  if (!"site_id" %in% names(x)) x <- dplyr::mutate(x, site_id = site_id, .before = 1)
+  x$measured_provider_site <- rep(ms_row$provider_site, nrow(x))
+  x$measured_distance_km <- rep(ms_row$distance_km, nrow(x))
+  x$borderline <- rep(ms_row$borderline %in% TRUE, nrow(x))
+  x
+}

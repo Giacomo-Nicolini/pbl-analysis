@@ -107,19 +107,25 @@ plot_measured_logratio <- function(pt) {
 # --- Spec 10: aerosol-based references (hourly interval means) ---
 
 # Colours and labels of the spec-10 figures: the sources plotted there (pblh_sources_style).
-aerosol_palette <- function() style_of(c("sirta_mlh_chm15k", "sirta_mlh_cl31", "pblhmod_default", "era5_blh_center"))
-aerosol_labels <- function() style_of(names(aerosol_palette()), "label")
+aerosol_palette <- function(ids = c("sirta_mlh_chm15k", "sirta_mlh_cl31", "pblhmod_default", "era5_blh_center")) {
+  style_of(ids)
+}
+aerosol_labels <- function(ids = names(aerosol_palette())) style_of(ids, "label")
 
 #' Diurnal cycle by season with an aerosol-based reference, window marked
 #'
 #' Spec 11 E: the hours outside the aerosol window (the comparable set) are drawn faded.
 #'
 #' @param ds Long tibble: `season`, `x_utc` [h, interval midpoint or instant], `variable` (names of
-#'   `aerosol_palette()`), `median` [m].
+#'   [pblh_sources_style] ids: measured sources, `pblhmod_default`, `era5_blh_center`), `median` [m].
 #' @param bands Tibble per season: `season`, `win_start`, `win_end` [h UTC, aerosol window].
 #' @return ggplot object.
 plot_aerosol_diurnal <- function(ds, bands) {
-  pal <- aerosol_palette()
+  ids <- unique(as.character(ds$variable))
+  mods <- intersect(c("pblhmod_default", "era5_blh_center"), ids)
+  meas <- setdiff(ids, mods)
+  meas <- meas[order(style_of(meas, "order"))] # measured sources first, in style order, then PBLHmod and ERA5
+  pal <- aerosol_palette(c(meas, mods))
   ds$variable <- factor(ds$variable, levels = intersect(names(pal), unique(ds$variable)))
   b <- bands[match(as.character(ds$season), as.character(bands$season)), ]
   ds$comparable <- ds$x_utc >= b$win_start & ds$x_utc < b$win_end
@@ -128,9 +134,9 @@ plot_aerosol_diurnal <- function(ds, bands) {
                        fill = style_of("aerosol_window", "colour", "element"), alpha = 0.25, inherit.aes = FALSE) +
     geom_line_comparable(ds, ggplot2::aes(x_utc, median, colour = variable), c("season", "variable"), "x_utc") +
     ggplot2::facet_wrap(~season, nrow = 2) +
-    ggplot2::scale_colour_manual(values = pal, labels = aerosol_labels(), name = NULL) +
+    ggplot2::scale_colour_manual(values = pal, labels = aerosol_labels(names(pal)), name = NULL) +
     ggplot2::scale_x_continuous(breaks = seq(0, 24, 6), limits = c(0, 24), expand = c(0, 0)) +
-    ggplot2::labs(x = "Hour [UTC, hourly interval means at the midpoint; ERA5 = mean of t and t + 1 h]",
+    ggplot2::labs(x = "Hour [UTC, hour bins at their midpoint; ERA5 = mean of t and t + 1 h]",
                   y = "Median PBLH / MLH [m]") +
     theme_pblh() +
     ggplot2::guides(colour = ggplot2::guide_legend(nrow = 2))
@@ -217,4 +223,49 @@ plot_bland_altman <- function(pt, bins, band, cs, subtitle = NULL) {
                   subtitle = subtitle) +
     theme_pblh() +
     ggplot2::theme(legend.position = "right")
+}
+
+# --- Spec 13: internal QC report of the MeteoSwiss E-PROFILE files ---
+
+#' Month x hour heat map of a MeteoSwiss QC statistic
+#'
+#' @param mh Output of [qc_month_hour()].
+#' @param col Column to show (e.g. `median_good_m`, `share_good`, `share_lowest_good`) [character].
+#' @param label Legend title [character].
+#' @param title Plot title [character].
+#' @return ggplot object.
+plot_qc_month_hour <- function(mh, col, label, title = NULL) {
+  mh$value <- mh[[col]]
+  ggplot2::ggplot(mh, ggplot2::aes(hour_utc + 0.5, month, fill = value)) +
+    ggplot2::geom_tile() +
+    ggplot2::scale_fill_viridis_c(name = label, na.value = style_of("box_fill", "colour", "element")) +
+    ggplot2::scale_x_continuous(breaks = seq(0, 24, 3), expand = c(0, 0)) +
+    ggplot2::scale_y_reverse(breaks = 1:12, expand = c(0, 0)) +
+    ggplot2::labs(x = "Hour [UTC]", y = "Month", title = title) +
+    theme_pblh() +
+    ggplot2::theme(legend.position = "right")
+}
+
+#' Monthly series of a MeteoSwiss QC report: shares and medians
+#'
+#' @param mon Output of [qc_monthly()].
+#' @param breaks Breakpoint dates drawn as vertical lines [Date] (may be empty).
+#' @param title Plot title [character].
+#' @return ggplot object (two panels: shares, medians).
+plot_qc_monthly <- function(mon, breaks = as.Date(character()), title = NULL) {
+  d <- as.Date(paste0(mon$year_month, "-15"))
+  ids <- c(share_good = "qc_good", share_window = "qc_window", median_midday_m = "qc_midday", median_night_m = "qc_night")
+  long <- dplyr::bind_rows(lapply(names(ids), function(k) {
+    dplyr::tibble(date = d, value = mon[[k]], id = ids[[k]],
+                  panel = if (startsWith(k, "share")) "Share of the steps [-]" else "Median good MLH [m agl]")
+  }))
+  pal <- style_of(unname(ids), "colour", "element")
+  ggplot2::ggplot(long, ggplot2::aes(date, value, colour = id)) +
+    ggplot2::geom_vline(xintercept = breaks, colour = style_of("reference_line", "colour", "element"), linetype = "dashed") +
+    ggplot2::geom_line() +
+    ggplot2::geom_point(size = 0.8) +
+    ggplot2::facet_wrap(~panel, ncol = 1, scales = "free_y") +
+    ggplot2::scale_colour_manual(values = pal, labels = style_of(unname(ids), "label", "element"), name = NULL) +
+    ggplot2::labs(x = NULL, y = NULL, title = title) +
+    theme_pblh()
 }

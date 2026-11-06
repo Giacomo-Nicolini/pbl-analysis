@@ -18,6 +18,7 @@ site_id <- commandArgs(trailingOnly = TRUE)
 if (length(site_id) != 1) cli::cli_abort("Pass exactly one ICOS station code, e.g. {.val FR-Gri}.")
 sites <- read_sites(resolve_path(cfg$sites_file))
 exclusions <- read_exclusions(resolve_path(cfg$exclusions_file))
+meas_excl <- read_measured_exclusions(resolve_path(cfg$measured_exclusions_file)) # spec 13
 ms <- read_measured_sites(resolve_path(cfg$measured_sites_file))
 ms <- ms[ms$provider == "SIRTA-ReOBS" & ms$icos_site == site_id, ]
 if (nrow(ms) != 1) cli::cli_abort("{site_id}: no (or more than one) SIRTA-ReOBS pairing in {.file measured_sites.csv}.")
@@ -45,10 +46,10 @@ if (abs(d_km - ms$distance_km) > 0.05) {
 }
 
 for (inst in c("chm15k", "cl31")) {
-  std <- standardize_reobs_mlh(r, inst, site_id, exclusions, meta_site$utc_offset_h)
+  std <- standardize_reobs_mlh(r, inst, site_id, exclusions, meta_site$utc_offset_h, meas_excl)
   p <- write_standard_pblh(std$data, std$meta, std_dir)
   d <- std$data
-  cli::cli_h2("{std$meta$source_id}: {nrow(d)} hours, {sum(!is.na(d$pblh_m))} with a value; excluded {std$n_excluded}")
+  cli::cli_h2("{std$meta$source_id}: {nrow(d)} hours, {sum(!is.na(d$pblh_m))} with a value; excluded {std$n_excluded} (site periods), {std$n_excluded_measured} (measured-source periods)")
   cli::cli_inform("qc 0: {sum(d$qc_flag %in% 0L)}, qc 1: {sum(d$qc_flag %in% 1L)}; value in ReOBS but nb < 50 %: {sum(is.na(d$qc_flag) & !is.na(r[[paste0('mlh_', inst)]][match(d$timestamp_start_utc, r$timestamp_start_utc)]))}; NaN value with nb > 0: {sum(is.na(r[[paste0('mlh_', inst)]]) & !is.na(r[[paste0('mlh_', inst, '_nb')]]))}.")
   y <- format(d$timestamp_start_utc, "%Y", tz = "UTC")
   print_tbl(dplyr::summarise(dplyr::group_by(dplyr::tibble(year = y, ok = !is.na(d$pblh_m)), year),

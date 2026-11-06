@@ -9,7 +9,8 @@
 #           08_target_area_<site><period>.csv        target-area fraction (p10/median/p90, % of the full footprint) by
 #                                                    stability class, difference to PBLHmod [pp], 90 % region at the edge
 #           08_rebmann_<site><period>.csv            ICOS target-area criteria (Rebmann et al. 2018) per case
-#           08_anchor_<site><period>.csv             +-20 % h vs Kljun et al. (2015) Table 5
+#           08_anchor_<site><period>.csv             +-20 % h vs Kljun et al. (2015) Table 5 (extra sites; elsewhere
+#                                                    one `note` row: no anchor cases)
 #   figures 08_coverage_<site>, 08_dx80_by_zmh_<site><period>, 08_dx80_diurnal_<site><period>,
 #           08_clim_contours_<site><period>, 08_topaffected_<site><period>
 # ERA5 tower cell only in figures; era5_bilinear in the tables.
@@ -50,7 +51,7 @@ if (!is.null(opt("year"))) {
 extra <- site_id %in% footprint_extra_sites(resolve_path(cfg$footprint_extra_sites_file))
 mask <- readRDS(file.path(fp_dir, paste0(site_id, "_target_area_mask.rds")))
 grid <- ffp_grid(c(-1000, 1000, -1000, 1000), 1)
-print_tbl <- function(x) print(as.data.frame(x), row.names = FALSE, digits = 3)
+print_tbl <- function(x) if (nrow(x)) print(as.data.frame(x), row.names = FALSE, digits = 3) else cli::cli_inform("(no rows)")
 cli::cli_h1("Footprint comparison: {label}")
 
 # ---- Chunks ----
@@ -271,10 +272,17 @@ for (cs in intersect(c("pblhmod_x0.8", "pblhmod_x1.2"), cases)) for (s in sets) 
       median_dfymax_pct = stats::median(pc$dfymax_pct[i]))
   }
 }
-an <- dplyr::left_join(dplyr::bind_rows(an), kljun2015_table5_h20(), by = "zl_class")
-readr::write_csv(an, file.path(tables_dir, paste0("08_anchor_", site_id, per, ".csv")))
 cli::cli_h2("Anchor: h x 0.8 / x 1.2 vs Kljun et al. (2015) Table 5 (|change| for h +-20 %)")
-print_tbl(an[an$set == "none", ])
+if (length(an)) {
+  an <- dplyr::left_join(dplyr::bind_rows(an), kljun2015_table5_h20(), by = "zl_class")
+  print_tbl(an[an$set == "none", ])
+} else {
+  # The +-20 % anchor cases run at the extra sites only (spec 09 A5): no comparison here, said in the log and the table
+  an <- dplyr::tibble(note = paste("no anchor comparison: the +-20 % h cases (pblhmod_x0.8, pblhmod_x1.2) run at the",
+                                   "extra sites only (config/footprint_extra_sites.txt, spec 09 A5)"))
+  cli::cli_inform("Skipped: {an$note}.")
+}
+readr::write_csv(an, file.path(tables_dir, paste0("08_anchor_", site_id, per, ".csv")))
 
 # ---- Figures ----
 # Colours and labels from pblh_sources_style (group footprint_case); main figures: PBLHmod, PBLHmod-clim, ERA5,
