@@ -211,14 +211,43 @@ ref2 <- if (ms$provider == "SIRTA-ReOBS") "sirta_mlh_cl31" else NULL
 if (!all(c(ref1, ref2) %in% names(aero_tag))) cli::cli_abort("{site_id}: aerosol source {.val {ref1}} not supported.")
 refs <- c(ref1, ref2)
 meas <- lapply(stats::setNames(refs, refs), rd)
-v_rng <- function(d) range(d$timestamp_start_utc[!is.na(d$pblh_m)])
-p_start <- do.call(max, lapply(c(list(mod), meas), function(d) v_rng(d)[1]))
-p_end <- do.call(min, lapply(c(list(mod), meas), function(d) v_rng(d)[2]))
-if (p_start >= p_end) cli::cli_abort("{site_id}: no common period of PBLHmod and {paste(refs, collapse = ', ')}.")
+step_s <- vapply(meas, measured_step_s, numeric(1)) # on the full files: the period cut may leave no row
+cp <- do.call(comparison_period, c(list(pblhmod_default = mod), meas))
+cli::cli_inform("Valid records of the inputs:")
+print(as.data.frame(dplyr::mutate(cp$ranges, dplyr::across(c(first_valid_utc, last_valid_utc),
+                                                           ~ format(.x, "%Y-%m-%d %H:%M", tz = "UTC")))), row.names = FALSE)
+if (!cp$ok) {
+  # Empty or inverted overlap (FI-Lom: EC record from 2024-11, Kenttärova CABAM ends 2024-05; G 2026-11-11): the
+  # metrics table gets one row per pair x set with n = 0 and the reason; no other table or figure.
+  pn <- c(paste0(c("1_pblhmod_default_vs_", "2_era5_center_vs_", "2b_era5_bilinear_vs_"), aero_tag[[ref1]]),
+          if (!is.null(ref2)) c(paste0(c("3_pblhmod_default_vs_", "4_era5_center_vs_", "4b_era5_bilinear_vs_"), aero_tag[[ref2]]),
+                                paste0("5_", aero_tag[[ref2]], "_vs_", aero_tag[[ref1]])))
+  cli::cli_alert_warning("{site_id}: {cp$reason}; metrics rows with n = 0 written, no other table or figure.")
+  empty_pt_10 <- dplyr::tibble(timestamp_utc = as.POSIXct(character(), tz = "UTC"), mod = numeric(), ref = numeric())
+  mt <- dplyr::bind_rows(
+    lapply(pn, function(p) dplyr::bind_rows(lapply(c("window_convective", "convective"), function(s) {
+      dplyr::mutate(pblh_metrics_long_set(empty_pt_10, p, empty_reason = cp$reason), stratum_set = s, .after = "pair")
+    }))),
+    dplyr::mutate(pblh_metrics_long_set(empty_pt_10, "6_pblhmod_default_vs_era5_center", empty_reason = cp$reason),
+                  stratum_set = "all_regimes", .after = "pair"))
+  mt$comparison_class <- ifelse(startsWith(mt$pair, "1_") | startsWith(mt$pair, "3_"), "parameterisation vs aerosol",
+                         ifelse(startsWith(mt$pair, "5_"), "aerosol vs aerosol (CABAM vs STRATfinder): definitional uncertainty",
+                         ifelse(startsWith(mt$pair, "6_"), "parameterisation vs model (record)",
+                                "cross-class: bulk Ri vs aerosol")))
+  mt$distance_class <- ifelse(mt$pair == "6_pblhmod_default_vs_era5_center", "tower (model vs model)", dclass)
+  mt$hour_note <- NA_character_
+  mt$fb_convention <- fb_note
+  write_tab(mt, file.path(tables_dir, paste0("10_metrics_", site_id, ".csv")))
+  cli::cli_inform("Run time: {format(round(difftime(Sys.time(), t0, units = 'mins'), 1))}.")
+  quit(save = "no")
+}
+p_start <- cp$start
+p_end <- cp$end
 cli::cli_inform("Comparison period (valid PBLHmod and {paste(aero_lab[refs], collapse = ', ')}): {format(p_start, '%Y-%m-%d %H:%M')} to {format(p_end, '%Y-%m-%d %H:%M')} UTC.")
 in_per <- function(d) d[d$timestamp_start_utc >= p_start & d$timestamp_start_utc <= p_end, ]
 meas <- lapply(meas, in_per)
-tb <- lapply(meas, measured_time_base, mod = mod, era = era)
+tb <- lapply(refs, function(r) measured_time_base(meas[[r]], mod, era, step_s = step_s[[r]]))
+names(tb) <- refs
 for (r in refs) {
   m <- meas[[r]]
   ok <- !is.na(m$pblh_m)

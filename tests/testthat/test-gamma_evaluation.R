@@ -57,6 +57,46 @@ test_that("measured_reference() on config/measured_sites.csv gives the four-site
   expect_false(measured_reference(ms, "DE-RuS")$borderline)
 })
 
+std_rows <- function(from, n, step = 1800, pblh = 500) {
+  t <- as.POSIXct(from, tz = "UTC") + step * (seq_len(n) - 1)
+  dplyr::tibble(timestamp_start_utc = t, timestamp_end_utc = t + step, pblh_m = rep(pblh, n))
+}
+
+test_that("comparison_period() reports an inverted overlap instead of returning it (FI-Lom)", {
+  # FI-Lom on the cluster: PBLHmod valid from 2024-11-04 22:00, CABAM valid until 2024-05-15 19:30
+  mod <- std_rows("2023-12-31 22:00", 48 * 900)
+  mod$pblh_m[mod$timestamp_start_utc < as.POSIXct("2024-11-04 22:00", tz = "UTC")] <- NA
+  cab <- std_rows("2024-01-01 00:00", 48 * 135)
+  cp <- comparison_period(pblhmod_default = mod, meteoswiss_cabam_mlh = cab)
+  expect_false(cp$ok)
+  expect_true(is.na(cp$start) && is.na(cp$end))
+  expect_match(cp$reason, "no common period")
+  expect_match(cp$reason, "pblhmod_default 2024-11-04 22:00 to")
+  expect_equal(cp$ranges$first_valid_utc[1], as.POSIXct("2024-11-04 22:00", tz = "UTC"))
+  expect_equal(cp$ranges$n_valid[2], 48 * 135)
+  # an input without any valid value
+  cab$pblh_m <- NA
+  cp0 <- comparison_period(pblhmod_default = mod, meteoswiss_cabam_mlh = cab)
+  expect_false(cp0$ok)
+  expect_match(cp0$reason, "no valid value in meteoswiss_cabam_mlh")
+  # a normal overlap: the range of the old scripts (max of the first, min of the last valid time)
+  ok <- comparison_period(a = std_rows("2024-01-01", 100), b = std_rows("2024-01-01 10:00", 100))
+  expect_true(ok$ok)
+  expect_equal(ok$start, as.POSIXct("2024-01-01 10:00", tz = "UTC"))
+  expect_equal(ok$end, as.POSIXct("2024-01-01", tz = "UTC") + 1800 * 99)
+  expect_true(is.na(ok$reason))
+  expect_error(comparison_period(std_rows("2024-01-01", 2)), "named")
+})
+
+test_that("measured_step_s() detects the step and refuses an empty table with a clear error", {
+  expect_equal(measured_step_s(std_rows("2024-01-01", 10)), 1800)
+  expect_equal(measured_step_s(std_rows("2024-01-01", 10, step = 3600)), 3600)
+  expect_error(measured_step_s(std_rows("2024-01-01", 10)[0, ]), "cannot be detected")
+  # the old failure: "missing value where TRUE/FALSE needed" in measured_time_base() on an empty cut
+  expect_error(measured_time_base(std_rows("2024-01-01", 10)[0, ], NULL, NULL), "cannot be detected")
+  expect_error(measured_time_base(std_rows("2024-01-01", 10)[0, ], NULL, NULL, step_s = 900), "not supported")
+})
+
 pair_rows <- function(n, regime = "convective") {
   t <- as.POSIXct("2024-04-01 10:00", tz = "UTC") + 1800 * seq_len(n)
   pair_table(dplyr::tibble(timestamp_utc = t, pblh_m = seq(300, by = 50, length.out = n), x_regime = regime),

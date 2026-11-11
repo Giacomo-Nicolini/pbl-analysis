@@ -158,6 +158,20 @@ Branch `spec-11-gamma-network`. Evidence for spec 09 decision point 3b (value of
   window, window × convective, convective). No threshold changed. Overlap of the KEN CABAM record with the FI-Lom
   reference period: 2024-01-01 → 2024-05-15, 4,170 valid half-hours, 1,042 in the window on 103 days (PC, standard
   file); the PBLHmod-convective part is known only on the cluster.
+- **Part B, correction (2026-11-11, after G's cluster run of script 11).** There is **no overlap at FI-Lom**: the
+  FLUXES file starts 2023-12-31 22:00 UTC (1 January local), but its EC values (USTAR, MO_LENGTH, H) and so PBLHmod
+  start 2024-11-04 22:00 UTC; the KEN CABAM record ends 2024-05-16. Script 11 printed an inverted period and failed
+  in `measured_time_base()` (`if (step == 1800)`: the step of an empty table is `NA`). The 2026-11-06 `meas_cmp`
+  failure was very probably the abort "no common period" of script 10, not the empty set (that fix stays useful).
+  No PBLHmod case file is truncated: the valid counts are equal in every γ case at all 39 sites
+  (`09_network_regimes`), and the late start of the EC values is common (PC: BE-Bra from 2020-10-26, FI-Hyy from
+  2018-11-06 local). Fix (branch `fix-11-empty-overlap`): `comparison_period()` reports an empty or inverted
+  overlap with the valid range of every input; `measured_step_s()` detects the step on the full file (clear error on
+  an empty one; `measured_time_base(step_s =)`); script 11 runs each site inside an error handler (status `ok`,
+  `era5_only`, `no_overlap` with n = 0 rows, `error` without metric rows, `error_growth` with metrics kept; columns
+  `status`, `no_data_reason` of `11_gamma_decision.csv`) and prints the valid range of every input; it ends with
+  exit status 1 if any site is `error` / `error_growth` (after writing every output; G 2026-11-11), else 0; script 10 writes
+  `10_metrics_<site>.csv` with n = 0 rows and the reason instead of aborting.
 - **Cost of a change of the default** (report, `docs/local/cluster_commands_gamma_eval.md`): `pblh_gamma_default` is
   part of every step's inputs hash (whole `cfg`), so every requested step reruns. Results change in 02, 04, 08a (h
   enters the validity tests), `meas_cmp`, 08 and the collection; `gamma001` keeps 0.01 (`pblh_options(gamma =
