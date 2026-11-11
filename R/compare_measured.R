@@ -284,3 +284,42 @@ tag_measured_pairing <- function(x, site_id, ms_row) {
   x$borderline <- rep(ms_row$borderline %in% TRUE, nrow(x))
   x
 }
+
+#' Measured reference of a site
+#'
+#' Spec 11 amendment 1 (G 2026-11-11): the reference of a site in the gamma evaluation is its primary measured source
+#' (`primary_source_id` of `config/measured_sites.csv`), as in `scripts/10_measured_compare.R`. Aerosol sources are
+#' compared on the window set (apparent solar time window, PBLHmod convective), turbulence sources (Cloudnet only) on
+#' the convective set, plus all regimes where the distance class allows it ([keep_regime_by_distance()]).
+#'
+#' @param ms Output of [read_measured_sites()].
+#' @param site_id ICOS station [character].
+#' @return `NULL` when the site has no primary measured source (e.g. BE-Bra: ERA5 only); else a list: `src`
+#'   (standard source id), `type` (`aerosol` / `turbulence`), `provider`, `provider_site`, `distance_km` [km],
+#'   `distance_class` ([distance_class()]), `borderline` [logical], `sets` (stratum sets, primary first),
+#'   `primary_set`, `row` (the pairing row, for [tag_measured_pairing()]). Aborts on more than one primary source, an
+#'   unsupported method class, a turbulence source not from Cloudnet, or a distance class `not_used`.
+measured_reference <- function(ms, site_id) {
+  r <- ms[ms$icos_site == site_id & !is.na(ms$primary_source_id), ]
+  if (nrow(r) == 0) return(NULL)
+  if (nrow(r) > 1) cli::cli_abort("{site_id}: {nrow(r)} primary measured sources in {.file measured_sites.csv} (need 1).")
+  type <- r$method_class
+  if (!isTRUE(type %in% c("aerosol", "turbulence"))) {
+    cli::cli_abort("{site_id}: method_class {.val {type}} not supported (aerosol or turbulence).")
+  }
+  if (type == "turbulence" && r$provider != "cloudnet") cli::cli_abort("{site_id}: turbulence references only from Cloudnet.")
+  dclass <- distance_class(r$distance_km)
+  if (is.na(dclass) || dclass == "not_used") {
+    cli::cli_abort("{site_id}: measurement {r$distance_km} km away: not used (distance rule).")
+  }
+  sets <- if (type == "aerosol") {
+    c("window_convective", "convective")
+  } else if (dclass == "all_regimes") {
+    c("convective", "all_regimes")
+  } else {
+    "convective"
+  }
+  list(src = r$primary_source_id, type = type, provider = r$provider, provider_site = r$provider_site,
+       distance_km = r$distance_km, distance_class = dclass, borderline = r$borderline %in% TRUE, sets = sets,
+       primary_set = sets[1], row = r)
+}

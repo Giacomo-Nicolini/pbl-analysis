@@ -238,6 +238,11 @@ so code must be reproducible, documented and traceable to references.
   for reference; `<derived_dir>/gamma/network_gamma.csv`, written by `09_collect.R` once every site has its 11a
   table; step 02 skips the case while it is missing); `gamma_site` = the site's median daily ERA5 γ. Step 04 pairs 7 and 8 vs ERA5;
   supplementary figure `09_network_logratio_supp`. Paper: recommended constant and/or γ tables as a side result.
+- **Evaluation for decision 3b** (spec 11 amendment 1, G 2026-11-11; evidence only): `scripts/11_gamma_evaluation.R`
+  (one cluster job) at BE-Bra (ERA5 only) and the sites of `config/measured_run_sites.txt`, reference = the site's
+  primary source (`measured_reference()`), cases `default`, `clim`, `gamma_med`, `gamma_site`, `gamma0025`;
+  `11_gamma_decision.csv` (one row per site), `11_gamma_cases_season.csv`, figure `11_gamma_decision`. `low_n` =
+  fewer than 10 days in the bootstrap (no earlier minimum; flagged).
 - **Figures**: main figures show PBLHmod, PBLHmod-clim, ERA5 and the measurement; reference γ values in
   supplementary figures with the same layout, labelled "reference γ values"; other γ cases in tables only.
 
@@ -364,3 +369,5 @@ output/       figures/, tables/ (gitignored)
 
 Summarise: what was implemented, files touched, tests run and results, assumptions made,
 open questions/flags for the scientist. Update `docs/project_plan.md` "Open points" if relevant.
+Any spec that adds or changes an output table (name, columns, grain), a figure or a stored footprint group also
+updates `docs/figure_inventory.md` in the same branch.

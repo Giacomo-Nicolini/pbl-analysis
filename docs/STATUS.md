@@ -261,18 +261,23 @@ measured MLH) done; 4–6 not started.
 6. After spec 07: the other Cloudnet sites (FI-Lom, DE-RuS, FR-Gri; on the cluster), PI data into the standard
    format, ETC QC report. Before paper results: re-check the volatile Cloudnet files and create a Cloudnet collection
    (open point in `project_plan.md`).
-7. Spec 13 (2026-11-06, `spec-13-eprofile`, to review): cluster runs (meas_std / meas_cmp at the five E-PROFILE sites,
+7. Spec 13 (2026-11-06, merged `main`, 90c1da8): cluster runs (meas_std / meas_cmp at the five E-PROFILE sites,
    08a, `08c --pending`, pending chunks, step 08 at all 39 sites after the anchor fix, collection); measured-source
    exclusions approved and applied (G 2026-11-06, `config/measured_exclusions.csv`: Melun six dirty-window months,
    Poitiers 2021-02 → 2021-10); borderline flag (DE-HoH, FR-Lus) in the comparison tables; ask MeteoSwiss / the owners before sharing
    any result from these files. CZ-Lnz: BL-View data expected the week of 2026-11-09 (time zone, hourly convention and
    quality index to confirm with the site).
-8. Spec 08 amendment 2 (2026-11-10, `spec08-m-override`, to review): ETC z0 multiplier override m = 4.1 at DE-Tha
+8. Spec 08 amendment 2 (2026-11-10, merged `main`, 7fc99a6): ETC z0 multiplier override m = 4.1 at DE-Tha
    (`config/etc_z0_multiplier.csv`; loop value 4.6 rejects every row from 2024-06-11), `m_loop` / `m_used` /
    `m_source` in the 08a table and `09_network_etc_multiplier.csv`; DE-Tha reference year 2025 (overlap with the
    requested TU Dresden SkyVUE ceilometer data). Cluster: 08a at DE-Tha, check 2025 ≥ 9 usable months, then
    `08c --pending`, the DE-Tha 2025 chunks, step 08 at DE-Tha, collection (`docs/local/cluster_commands_detha_m.md`).
    Methods note in `project_plan.md` (phase 5).
+9. Spec 11 amendment 1 (2026-11-11, `spec-11-gamma-network`, to review): γ evaluation at the 8 measured sites +
+   BE-Bra for decision 3b (cases `default`, `clim`, `gamma_med`, `gamma_site`, `gamma0025`; decision table and
+   figure; evidence only, default stays 0.01); FI-Lom `meas_cmp` failure (empty stratum set) fixed: empty sets write
+   `n = 0` with `no_data_reason`. Cluster: one job for the evaluation, `meas_cmp` at FI-Lom
+   (`docs/local/cluster_commands_gamma_eval.md`); then G and Cowork decide 3b.
 
 
 ## Data
