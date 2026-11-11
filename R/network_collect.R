@@ -276,3 +276,33 @@ network_logratio_table <- function(met, regimes = c("all", "stable", "unstable_d
                 median = get("median_log_ratio"), p25 = get("p25_log_ratio"), p75 = get("p75_log_ratio"),
                 n_log = get("n_log"))
 }
+
+#' Network table of the ETC z0 multiplier
+#'
+#' Spec 08 amendment 2: per site the loop value, the value used and its source (`loop` or `override`,
+#' `config/etc_z0_multiplier.csv`), from the 08a tables `08_etc_multiplier_<site>.csv`. Tables written before the
+#' amendment have only `m_etc` (always the loop value then): `m_loop = m_used = m_etc`, `m_source = "loop"`.
+#'
+#' @param x Bound 08a tables ([bind_site_tables()]).
+#' @param ref_years Optional approved reference years ([read_reference_years()]): adds `reference_year`.
+#' @return Tibble `site_id`, `m_loop`, `m_used` [-], `m_source`, `n_rows`, `n_rejected` (with `m_used`),
+#'   `n_rejected_loop` [-], `zm_over_z0_median`, `zm_over_z0_min` [-], `override_reason`, `reference_year`.
+network_etc_multiplier <- function(x, ref_years = NULL) {
+  if (!nrow(x)) return(dplyr::tibble())
+  fill <- function(k, v) if (k %in% names(x)) x[[k]] else rep(v, nrow(x))
+  m_loop <- fill("m_loop", NA_real_)
+  old <- is.na(m_loop)
+  m_loop[old] <- x$m_etc[old]
+  m_used <- fill("m_used", NA_real_)
+  m_used[is.na(m_used)] <- x$m_etc[is.na(m_used)]
+  src <- fill("m_source", NA_character_)
+  src[is.na(src)] <- "loop"
+  nrl <- fill("n_rejected_loop", NA_real_)
+  nrl[old] <- x$n_rejected[old]
+  out <- dplyr::tibble(site_id = x$site_id, m_loop = m_loop, m_used = m_used, m_source = src, n_rows = x$n_rows,
+                       n_rejected = x$n_rejected, n_rejected_loop = nrl, zm_over_z0_median = x$zm_over_z0_median,
+                       zm_over_z0_min = fill("zm_over_z0_min", NA_real_),
+                       override_reason = fill("override_reason", NA_character_))
+  out$reference_year <- if (is.null(ref_years)) NA_integer_ else ref_years$year[match(out$site_id, ref_years$site_id)]
+  out
+}
