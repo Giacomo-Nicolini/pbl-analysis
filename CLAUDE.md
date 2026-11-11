@@ -227,14 +227,14 @@ so code must be reproducible, documented and traceable to references.
 ## PBLHmod variants and γ (spec 11; G 2026-10-30)
 
 - **PBLHmod** (`pblhmod_default`, case `default`): the code default, EC data only, constant γ (`gamma_source =
-  "constant"`, γ = `pblh_gamma_default` in `config.yml`, now 0.01 K m-1 until the network revision, spec 09 decision
-  point 3b; scripts build options with `pblh_options_cfg(cfg, ...)`, every case except the reference γ values). Never
+  "constant"`, γ = `pblh_gamma_default` in `config.yml` = 0.01 K m-1, kept by spec 09 decision 3b (G 2026-11-11;
+  named "PBLHmod (literature γ)"); scripts build options with `pblh_options_cfg(cfg, ...)`, every case except the reference γ values). Never
   make the default depend on external data.
 - **PBLHmod-clim** (`pblhmod_clim`, case `clim`): `gamma_source = "era5_clim"`, site × month ERA5 γ climatology from
   `scripts/11a_gamma_era5.R` (`<derived_dir>/gamma/`); a month without a value uses the constant (flagged in
   `gamma_source_used = "constant_fallback"`). Written by scripts 02/04 at every site.
 - **Reference γ values** (supplement only): `pblhmod_gamma001` (0.01, Batchvarova & Gryning 1991 as cited by Kljun
-  et al. 2015; equal to the default for now, keep both names) and `pblhmod_gamma0025` (0.0025, legacy ETC code).
+  et al. 2015; equal to the default, keep both names) and `pblhmod_gamma0025` (0.0025, legacy ETC code).
 - **Side-result constants** (spec 09 amendment 3, G 2026-11-04; step 02 only, **no footprints**, no standard files):
   `gamma_med` = one constant for all stations, median of the site medians of the daily ERA5 γ (pooled median kept
   for reference; `<derived_dir>/gamma/network_gamma.csv`, written by `09_collect.R` once every site has its 11a
@@ -244,7 +244,9 @@ so code must be reproducible, documented and traceable to references.
   (one cluster job) at BE-Bra (ERA5 only) and the sites of `config/measured_run_sites.txt`, reference = the site's
   primary source (`measured_reference()`), cases `default`, `clim`, `gamma_med`, `gamma_site`, `gamma0025`;
   `11_gamma_decision.csv` (one row per site), `11_gamma_cases_season.csv`, figure `11_gamma_decision`. `low_n` =
-  fewer than 10 days in the bootstrap (no earlier minimum; flagged).
+  fewer than 10 days in the bootstrap (no earlier minimum; flagged). **Decided (G 2026-11-11)**: default stays 0.01
+  (no rerun); PBLHmod-clim = realistic-γ variant in the main figures; `gamma_med` = 0.004572 K m-1 = recommended
+  operational EC-only value (paper and ETC), side result (cluster job 18120; spec 09 Part B 3b).
 - **Figures**: main figures show PBLHmod, PBLHmod-clim, ERA5 and the measurement; reference γ values in
   supplementary figures with the same layout, labelled "reference γ values"; other γ cases in tables only.
 

@@ -74,24 +74,27 @@ them** (MeteoSwiss condition, 2026-11-06; the instrument owners are named in the
     constant γ (now 0.01 K m-1). **PBLHmod-clim** (`pblhmod_clim`): the site × month ERA5 γ climatology (option 2),
     the improved option for users who can compute a γ climatology. Rationale: PBLHmod must be computable from EC
     data alone; PBLHmod-clim removes most of the convective deficit where a measured MLH exists (spec 11). A month
-    without a climatology value falls back to the constant (flagged); no network fallback in the code. The EC-only
-    constant is revised after the network γ climatology (cluster, spec 09 decision point 3b), with the value then
-    recommended for ICOS stations. Reference γ values kept as named standard sources for the supplement:
+    without a climatology value falls back to the constant (flagged); no network fallback in the code.
+    **Decision 3b (G 2026-11-11, spec 09):** the EC-only constant stays 0.01 K m-1 (`pblhmod_default`, named
+    "PBLHmod (literature γ)"; no rerun); PBLHmod-clim is the realistic-γ variant in the main figures; `gamma_med` =
+    0.004572 K m-1 is the recommended operational EC-only value for ICOS stations (paper and ETC), reported as a side
+    result. Reference γ values kept as named standard sources for the supplement:
     `pblhmod_gamma001` (0.01 K m-1, Batchvarova & Gryning 1991 as cited by Kljun et al. 2015; equal to
-    `pblhmod_default` until the constant is revised) and `pblhmod_gamma0025` (0.0025 K m-1, the legacy ETC code; no
+    `pblhmod_default`, both names kept) and `pblhmod_gamma0025` (0.0025 K m-1, the legacy ETC code; no
     literature source found in our collection or in a web search, 2026-10-30). The γ tables of all sites (site ×
     month, ERA5-derived) are a deliverable, released with the Copernicus/ERA5 attribution.
     **Figures (G 2026-10-30, spec 11 and from now on):** main figures show PBLHmod, PBLHmod-clim, ERA5 and the
     measurement; other γ cases in tables only; the reference γ values in supplementary figures with the same layout,
     labelled "reference γ values".
-    **γ strategy (confirmed by G 2026-11-04, spec 09 amendment 3):** default = constant 0.01 K m-1 (EC only; the value
-    stays open until decision point 3b); PBLHmod-clim = ERA5 site × month climatology; both get footprints. Side
+    **γ strategy (confirmed by G 2026-11-04, spec 09 amendment 3):** default = constant 0.01 K m-1 (EC only; kept by
+    decision 3b, G 2026-11-11); PBLHmod-clim = ERA5 site × month climatology; both get footprints. Side
     results, step 02 only (no footprints): `gamma_med`, one constant for all stations = median of the site medians
     of the daily ERA5 γ (pooled median kept for reference; computed by `09_collect.R` from the 11a tables, read by
     step 02 at the next run), and
     `gamma_site`, one constant per site = the site's median daily ERA5 γ; compared with ERA5 in step 04 and shown in
     the supplementary network figure `09_network_logratio_supp` (PBLHmod, PBLHmod-clim, `gamma_med`, `gamma_site`).
-    Paper: publish a recommended constant and/or the γ tables of the ICOS stations as a side result.
+    Paper: publish a recommended constant and/or the γ tables of the ICOS stations as a side result (recommended
+    constant: `gamma_med` = 0.004572 K m-1, decision 3b).
   - convective trigger: H > 0 vs 1/L class (must be consistent);
   - H forcing: `H_F_MDS` (gap-filled, default; values with `H_F_MDS_QC` above a threshold, default > 1, treated as
     missing because poor gap-filling can be very bad) vs `H` (FLUXES) vs `H_CORR` (energy-balance corrected,
@@ -447,11 +450,14 @@ too shallow when deep") is a **hypothesis under test**.
   stable-formula issue (B1), not γ (G 2026-10-30). It lies at the deep end, PBLHmod below the lidar lower bound on
   43 % vs ≤ 30 % under scatter alone, the same in every γ case; at the shallow end the stable set is consistent
   (32 % vs ≥ 27 %). The shallow end that remains too deep is the convective set: PBLHmod ≤ 105 m where the lidar
-  MLH is < 105 m on 13 % vs ≥ 16 % (PBLHmod-clim; default 14 % vs ≥ 23 %, γ 0.0025 12 % vs ≥ 13 %); (c) the EC-only constant to be revised after the network γ (side results `gamma_med`, `gamma_site`: spec 09 amendment 3)
-  climatology (cluster, spec 09 decision point 3b), and the value then recommended for ICOS stations; evidence table
-  `11_gamma_decision.csv` at the 8 measured sites + BE-Bra (spec 11 amendment 1, cluster run pending; `low_n` = fewer
-  than 10 bootstrap days, a new threshold to confirm); (d) γ tables
-  of all sites as a deliverable (ERA5 attribution).
+  MLH is < 105 m on 13 % vs ≥ 16 % (PBLHmod-clim; default 14 % vs ≥ 23 %, γ 0.0025 12 % vs ≥ 13 %); (c) **closed (decision 3b, G 2026-11-11):** the EC-only constant stays 0.01 K m-1 (`pblhmod_default`, "PBLHmod
+  (literature γ)", no rerun); PBLHmod-clim is the realistic-γ variant in the main figures; `gamma_med` = 0.004572 K
+  m-1 is the recommended operational EC-only value (paper and ETC), a side result. Evidence: `11_gamma_decision.csv`
+  (cluster job 18120, spec 11 amendment 1): median |ln ratio| at the six aerosol sites 0.43 (default) → 0.20
+  (`gamma_med`; `clim`, `gamma_site` within 0.02), overshoot ≈ +0.2 at DE-HoH and FR-Fon; vs ERA5 across the
+  network −0.13 → +0.15. (`low_n` = fewer than 10 bootstrap days: a new threshold, still to confirm); (d) γ tables
+  of all sites as a deliverable (ERA5 attribution); (e) **new, for later:** does the residual site spread of the ERA5
+  γ cases (crop / grass too shallow, forest fine or too deep) follow the energy-balance ratio?
 - Timing of EC vs ERA5 sensible heat (evaluation; possible error driver for the evening transition). EC timestamps
   are correct (SW_IN_POT and EC H centred on solar noon within 4 min, Cowork 2026-10-23). With every value at its
   interval midpoint (EC start + 15 min, ERA5 accumulation timestamp − 30 min), ERA5 H is earlier than EC H:
