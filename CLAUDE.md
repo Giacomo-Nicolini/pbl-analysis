@@ -55,7 +55,8 @@ so code must be reproducible, documented and traceable to references.
   `reference_years_file`, `sites_not_run_file` (stations kept in `sites.csv` but not run, with the reason; spec 09
   amendment 1: IT-SR2, no L2 data; `09_collect.R` lists them as "not run"), `reference_year_exceptions_file`
   (spec 09 amendment 2: stations whose reference year may follow the `coverage` rule when the standard rule finds no
-  year; GL-ZaF, G 2026-11-03).
+  year; GL-ZaF, G 2026-11-03), `etc_z0_multiplier_file` (spec 08 amendment 2: per-site override of the ETC z0
+  multiplier; DE-Tha 4.1, G 2026-11-10).
 
 ## Input data (facts; do not guess beyond these)
 
@@ -252,6 +253,9 @@ so code must be reproducible, documented and traceable to references.
 - **Validity sets** (`footprint_validity()`; thresholds in `docs/project_plan.md`, phase 5): `kljun` (Kljun et al.
   2015, Eq. 27), `kljun_norsl` (Eq. 27 without 20 z0 < zm), `etc` (ETC operational), `none`; each also includes the
   FFP code's own checks and zm < h. `kljun` keeps no row at forest sites (BE-Bra, FI-Hyy): a result, not a bug.
+  ETC multiplier m (`etc` roughness test zm ≥ m z0): the loop of `etc_z0_multiplier()` once per site, unless the site
+  has a row in `config/etc_z0_multiplier.csv` (spec 08 amendment 2: DE-Tha 4.1, loop 4.6); 08a reports `m_loop`,
+  `m_used`, `m_source`; the 08a hash includes only the site's own row (`site_config_row()`).
 - **Subsets** (`footprint_subsets()`): `valid`; `valid_qc` (FLUXES `NEE_DATA_FLAG == 0`); `valid_qc_used` (and FLUXNET
   `NEE_VUT_REF_QC == 0`: removes the u*-filtered rows, ONEFlux VUT thresholds from the BIF file, and the other FLUXNET
   NEE removals; **if `NEE_VUT_REF_QC` is entirely missing at a site, `NEE_CUT_REF_QC == 0` instead**, `nee_ref_qc()`,

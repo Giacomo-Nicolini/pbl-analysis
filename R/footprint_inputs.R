@@ -141,6 +141,53 @@ etc_z0_multiplier <- function(zm, z0) {
   m
 }
 
+#' Per-site overrides of the ETC z0 multiplier
+#'
+#' Reads `config/etc_z0_multiplier.csv` (spec 08 amendment 2, G 2026-11-10): columns `site_id`, `z0_multiplier`,
+#' `decided_by`, `date`, `reason`. A documented exception to [etc_z0_multiplier()], which tests whole height periods
+#' at once (the roughness test depends only on hc and the EC height). Validation: every field required, `site_id`
+#' among `known_sites`, 2 <= `z0_multiplier` <= 5 (the range of the loop), at most one row per site.
+#'
+#' @param file Path to the file (`etc_z0_multiplier_file` in `config.yml`).
+#' @param known_sites Station codes allowed (`config/sites.csv`) [character].
+#' @return Tibble `site_id`, `z0_multiplier` [-], `decided_by`, `date` [Date], `reason`.
+read_etc_z0_multiplier <- function(file, known_sites) {
+  x <- readr::read_csv(file, na = c("NA", ""),
+                       col_types = readr::cols(z0_multiplier = readr::col_double(),
+                                               date = readr::col_date(format = "%Y-%m-%d"),
+                                               .default = readr::col_character()),
+                       progress = FALSE)
+  need <- c("site_id", "z0_multiplier", "decided_by", "date", "reason")
+  miss <- setdiff(need, names(x))
+  if (length(miss)) cli::cli_abort("{.path {file}}: missing column{?s} {.field {miss}}.")
+  bad <- which(!stats::complete.cases(x[need]) | !nzchar(trimws(x$reason)) | !nzchar(trimws(x$decided_by)))
+  if (length(bad)) cli::cli_abort("{.path {file}}: every field is required (rows {bad}).")
+  bad <- which(!x$site_id %in% known_sites)
+  if (length(bad)) cli::cli_abort("{.path {file}}: unknown site{?s} {.val {x$site_id[bad]}} (rows {bad}).")
+  bad <- which(x$z0_multiplier < 2 | x$z0_multiplier > 5)
+  if (length(bad)) cli::cli_abort("{.path {file}}: z0_multiplier must be between 2 and 5 (rows {bad}).")
+  dup <- unique(x$site_id[duplicated(x$site_id)])
+  if (length(dup)) cli::cli_abort("{.path {file}}: more than one row for {.val {dup}}.")
+  x[need]
+}
+
+#' ETC z0 multiplier of a site: loop value, override, value used
+#'
+#' The loop [etc_z0_multiplier()] is always computed; a row of [read_etc_z0_multiplier()] for the site replaces it
+#' (spec 08 amendment 2). Without a row the loop value is used unchanged.
+#'
+#' @param zm,z0 Measurement height above d and roughness length [m].
+#' @param site_id Station code [character].
+#' @param overrides Output of [read_etc_z0_multiplier()] or `NULL` (no overrides).
+#' @return List: `m_loop`, `m_used` [-], `m_source` (`"loop"` or `"override"`), `override` (the site's row, or
+#'   `NULL`).
+etc_z0_multiplier_site <- function(zm, z0, site_id, overrides = NULL) {
+  m_loop <- etc_z0_multiplier(zm, z0)
+  r <- if (is.null(overrides)) NULL else overrides[overrides$site_id == site_id, ]
+  if (is.null(r) || nrow(r) == 0) return(list(m_loop = m_loop, m_used = m_loop, m_source = "loop", override = NULL))
+  list(m_loop = m_loop, m_used = r$z0_multiplier, m_source = "override", override = r)
+}
+
 #' Footprint validity flags per condition and set
 #'
 #' One logical column per condition (`TRUE` = condition met) and one per set.

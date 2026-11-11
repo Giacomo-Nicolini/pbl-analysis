@@ -11,7 +11,8 @@
 # in FLUXES), valid_qc_used (and NEE not gap-filled in FLUXNET: NEE_VUT_REF_QC == 0, or NEE_CUT_REF_QC == 0 where VUT
 # is entirely missing at the site, spec 09 amendment 2), valid_qc_h (valid and H measured and QC-good).
 # Output: <derived_dir>/footprint/<site>/<site>_footprint_inputs[_<period>].rds (input table + flags, for 08b)
-#         <output_dir>/tables/08_coverage_<site>[_<period>].csv, 08_etc_multiplier_<site>.csv,
+#         <output_dir>/tables/08_coverage_<site>[_<period>].csv, 08_etc_multiplier_<site>.csv (m_loop, m_used,
+#         m_source loop / override: config/etc_z0_multiplier.csv, spec 08 amendment 2),
 #         08_ustar_check_<site>.csv (ONEFlux VUT thresholds vs FLUXNET NEE QC), 08_nee_qc_<site>.csv (FLUXNET
 #         NEE QC source VUT / CUT / none and status behind valid_qc_used, whole period and per year; amendment 2)
 #
@@ -73,13 +74,24 @@ cases <- footprint_h_cases(d$timestamp_start_utc, rd("pblhmod_default"), rd("era
 cli::cli_inform("Cases: {paste(names(cases), collapse = ', ')}{if (extra) ' (extra site)' else ''}; measured: {if (is.null(meas)) 'none' else paste0(ms$source_id, ' (', ms$type, ')')}.")
 tab <- footprint_input_table(d, pm, cases)
 
-# ETC multiplier: once per site, full period, rows with zm and z0 (independent of h and of the requested period)
-m_etc <- etc_z0_multiplier(tab$zm_m, tab$z0_m)
-mt <- dplyr::tibble(site_id = site_id, m_etc = m_etc, n_rows = sum(!is.na(tab$zm_m) & !is.na(tab$z0_m)),
+# ETC multiplier: once per site, full period, rows with zm and z0 (independent of h and of the requested period).
+# The loop is always computed; a row of config/etc_z0_multiplier.csv replaces it (spec 08 amendment 2, DE-Tha).
+m_ovr <- read_etc_z0_multiplier(resolve_path(cfg$etc_z0_multiplier_file), sites$site_id)
+ms_etc <- etc_z0_multiplier_site(tab$zm_m, tab$z0_m, site_id, m_ovr)
+m_etc <- ms_etc$m_used
+mt <- dplyr::tibble(site_id = site_id, m_etc = m_etc, m_loop = ms_etc$m_loop, m_used = ms_etc$m_used,
+                    m_source = ms_etc$m_source, n_rows = sum(!is.na(tab$zm_m) & !is.na(tab$z0_m)),
                     zm_over_z0_median = stats::median(tab$zm_m / tab$z0_m, na.rm = TRUE),
-                    n_rejected = sum(tab$zm_m < m_etc * tab$z0_m, na.rm = TRUE))
+                    zm_over_z0_min = suppressWarnings(min(tab$zm_m / tab$z0_m, na.rm = TRUE)),
+                    n_rejected = sum(tab$zm_m < m_etc * tab$z0_m, na.rm = TRUE),
+                    n_rejected_loop = sum(tab$zm_m < ms_etc$m_loop * tab$z0_m, na.rm = TRUE),
+                    override_reason = if (is.null(ms_etc$override)) NA_character_ else
+                      paste0(ms_etc$override$reason, " (", ms_etc$override$decided_by, " ", ms_etc$override$date, ")"))
 readr::write_csv(mt, file.path(tables_dir, paste0("08_etc_multiplier_", site_id, ".csv")))
-cli::cli_inform("ETC roughness multiplier m = {m_etc} (zm/z0 median {round(mt$zm_over_z0_median, 2)}; {mt$n_rejected} of {mt$n_rows} rows rejected).")
+cli::cli_inform(paste0("ETC roughness multiplier: m_used = {mt$m_used} ({mt$m_source}), m_loop = {mt$m_loop}; zm/z0 median ",
+                       "{round(mt$zm_over_z0_median, 2)}, min {round(mt$zm_over_z0_min, 2)}; rejected {mt$n_rejected} of ",
+                       "{mt$n_rows} rows with m_used, {mt$n_rejected_loop} with m_loop."))
+if (ms_etc$m_source == "override") cli::cli_alert_info("Override (config/etc_z0_multiplier.csv): {mt$override_reason}.")
 
 # Period
 t0 <- as.POSIXct(opt("start", format(min(tab$timestamp_start_utc), "%Y-%m-%d")), tz = "UTC")

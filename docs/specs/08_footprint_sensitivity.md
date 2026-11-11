@@ -61,6 +61,13 @@ meaning, and `rslayer`.
 | friction velocity | u* > 0.1 m s⁻¹ | u* ≥ 0.2 m s⁻¹ |
 | inputs | missing → invalid | missing → invalid |
 
+**u* conditions (wording clarified in amendment 2, G 2026-11-10):** the `etc` set always contains u* ≥ 0.2 m s⁻¹,
+as legacy `FFP.invalid.cond.flag` (`legacy/FFP_analysis_dev.R` line 1094: `USTAR < 0.2` → invalid). This condition
+does not depend on the legacy switch `DO.ustar.filter`, which is not used here (the optional u* threshold of the ETC
+footprint script, see the subsets below). Independently of the set, the spec-05 u* plausibility rule
+(`flag_ustar_implausible` of PBLHmod) marks rows as invalid inputs in every set, `none` included, and the FFP code's
+own u* ≥ 0.1 m s⁻¹ check applies to every set.
+
 **Stability (G, 2026-10-26):** zm is the height above the displacement height, zm = EC height − d with d = 2/3 hc, so
 zm/L = (z − d)/L (Kljun's definition, confirmed by N. Kljun to G). One stability test for all sets, computed from this
 zm and L2 `MO_LENGTH`. L2 `ZL` is **not** used: its implied z − d differs from the ICOS heights (BE-Bra 17–18 m vs
@@ -210,3 +217,60 @@ anything unexpected.
    measurement (p. 487).
 6. **Production run.** One reference year per station on the cluster (selection rule in the cluster spec). The
    EBImage check of the smoothing is done there.
+
+## Amendment 2 (G, 2026-11-10): per-site override of the ETC z0 multiplier (DE-Tha), DE-Tha reference year 2025
+
+Branch `spec08-m-override`.
+
+**Why.** The roughness test of the `etc` set (zm ≥ m·z0, d = 2/3 hc, z0 = 0.15 hc, zm = EC height − d) depends only on
+hc and the EC height, so it passes or fails whole height periods. The multiplier loop (section 2: m from 5 down by
+0.1 until rejected ≤ 0.5 × retained, minimum 2, once per site over all rows with zm and z0) cannot keep a period that
+holds about a third of the rows or less. At DE-Tha (EC height 42 m) hc rises from 27.74 m (2020-10-26) through
+30.60 m (2024-04-15) to 32.59 m (2025-03-05; linear in between, constant after), so zm/z0 falls from 5.65 to 4.15.
+The loop stops at **m = 4.6** (38,932 of 116,880 rows rejected, 0.499 × retained): every half-hour from 2024-06-11
+on fails, and 2025 has 0 usable half-hours. (The amendment text said m = 5; the cluster table of 2026-11-04 and a
+height-only recomputation on the PC both give 4.6, with the same 38,932 rows. The decision does not change: 4.6
+still rejects all of 2025.)
+
+**Decisions (G, 2026-11-10).**
+- The heights in `config/sites_timevarying.csv` are correct and stay (the DE-Tha BIF is being checked by a
+  colleague).
+- **m = 4.1 at DE-Tha**, a documented per-site override: `config/etc_z0_multiplier.csv` (`etc_z0_multiplier_file` in
+  `config.yml`), columns `site_id, z0_multiplier, decided_by, date, reason`; read by `read_etc_z0_multiplier()`
+  (every field required, `site_id` in `config/sites.csv`, 2 ≤ value ≤ 5, one row per site). With 4.1 no DE-Tha row
+  fails (minimum zm/z0 4.148); no row of 2020–2023 fails at 4.6 or at 4.1 (height-only check on the PC).
+- The loop stays the default everywhere else, and is always computed: `etc_z0_multiplier_site()` returns `m_loop`,
+  `m_used` and `m_source` (`loop` / `override`); 08a writes them to `08_etc_multiplier_<site>.csv` (also
+  `n_rejected` with m_used, `n_rejected_loop`, `zm_over_z0_min`, `override_reason`) and prints them in its log;
+  `09_collect.R` writes `09_network_etc_multiplier.csv` (tables written before the amendment: m_loop = m_used = m_etc,
+  source loop). The proper fix, m per height period, belongs to the ETC pipeline (G's item 15 of
+  `docs/local/etc_qc_report.md`) and is not done here.
+- No change to the other validity conditions (u* wording clarified in section 2).
+- **DE-Tha reference year 2025** (was 2023) in `config/reference_years.csv`, approved G 2026-11-10, so that the
+  footprint year overlaps the ceilometer data requested from the site (TU Dresden SkyVUE raw files, later). The
+  cluster checks the 9-month usable rule after the 08a re-run.
+
+**Inputs hash.** `reference_years.csv` was never hashed as a file: only step 08 depends on it, through its argument
+`--year=<the site's year>` (`pipeline_steps()`), which is part of its hash; so the DE-Tha change reruns step 08 at
+DE-Tha only. Nothing changed there. 08a now hashes the site's own row of `etc_z0_multiplier.csv`
+(`config_rows`, `site_config_row()`), added to the hash only when the site has a row: the hash of a site without a
+row is computed exactly as before, and an edit of the DE-Tha row changes no other site's hash (tested). The chunk
+hash of 08b / `08c --pending` (`footprint_task_hash()`) depends on the rows and groups of each chunk, not on these
+files. As for every code change, the new code in `R/` changes every step's hash once (any step run again is
+recomputed, with identical results where nothing else changed); finished footprint chunks of the other sites stay
+valid (their task hashes do not change).
+
+**Roughness condition of the `kljun` set.** zm > 20 z0 (Kljun et al. 2015, Eq. 27) fails at essentially every forest
+site (zm/z0 well below 20 with d = 2/3 hc and z0 = 0.15 hc; medians BE-Bra 12.2, FI-Hyy 3.8, DE-Tha 4.9, range
+4.1–5.7 at DE-Tha; six of the 39 run sites have a loop multiplier below 5): this is why
+`kljun_norsl` (Eq. 27 without the roughness condition) exists. The ETC relaxation (m ≤ 5) is the same compromise.
+
+**Collection.** `09_collect.R` reads only the per-site 08a tables (`08_coverage_<site>.csv`, full period,
+`08_year_counts_`, `08_nee_qc_`, `08_etc_multiplier_`), never the step-08 outputs of a year
+(`08_*_<site>_<year>.csv`, figures), so the DE-Tha 2023 outputs of the earlier step-08 run are not picked up. The
+reference-year proposal `08_reference_years.csv` now shows the approved year next to it (`approved_year`), and
+`09_network_etc_multiplier.csv` carries `reference_year` (approved).
+
+**Methods note (paper).** The ETC roughness test removes whole height periods, because zm/z0 depends only on the
+canopy and EC heights; the data-dependent multiplier is reported per site (loop value and value used), and the one
+per-site override (DE-Tha, m = 4.1) is listed with its reason.

@@ -10,7 +10,7 @@ CZ-Lnz,2024,"most usable half-hours (within 2 %), most recent",G 2026-11-04
 DE-Geb,2022,most usable half-hours,G 2026-11-04
 DE-HoH,2023,most usable half-hours,G 2026-11-04
 DE-RuS,2022,most usable half-hours,G 2026-11-04
-DE-Tha,2023,most usable half-hours,G 2026-11-04
+DE-Tha,2025,"overlap with requested ceilometer data (TU Dresden SkyVUE); m override 4.1",G 2026-11-10
 DK-Sor,2022,most usable half-hours,G 2026-11-04
 FI-Hyy,2022,"overlapping the measured source: most measured half-hours (1200), usable 88 % of the best year (>= 80 %)",G 2026-11-04
 FI-Lom,2025,most usable half-hours,G 2026-11-04

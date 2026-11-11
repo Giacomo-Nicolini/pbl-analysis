@@ -231,6 +231,13 @@ too shallow when deep") is a **hypothesis under test**.
   wind direction in [0, 360]), zm < h (needed by the FFP scaling, not enforced by the climatology code), inputs
   present, the exclusion periods and the spec-05 u* plausibility rule. `kljun` keeps no row at BE-Bra or FI-Hyy (20 z0 < zm never holds over forest):
   this resolves the open point on the published vs relaxed thresholds.
+  **Methods note (spec 08 amendment 2, G 2026-11-10):** the `etc` roughness test depends only on the canopy and EC
+  heights, so it keeps or removes whole height periods; the loop multiplier cannot keep a period with about a third
+  of the rows or less. The multiplier is reported per site (`m_loop`, `m_used`, `m_source`;
+  `09_network_etc_multiplier.csv`), and per-site overrides are listed with their reason
+  (`config/etc_z0_multiplier.csv`; only DE-Tha, m = 4.1 instead of the loop's 4.6, so that its rows from 2024-06 on,
+  hc ≥ 31 m, are kept). The u* ≥ 0.2 m s⁻¹ condition of `etc` is legacy `FFP.invalid.cond.flag`, independent of the
+  legacy `DO.ustar.filter` switch (not used).
 - **Production run (cluster):** one reference year per station (G, 2026-10-27; selection rule in spec 09 A5). Monthly
   chunks keep the unsmoothed summed fields and counts per group, so annual climatologies are built by summing months
   and smoothing at the end. Runtime ≈ 2 s per FFP half-hour (single core).

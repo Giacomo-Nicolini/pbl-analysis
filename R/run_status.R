@@ -11,6 +11,9 @@
 #'   reads), `inputs` (raw input groups hashed, see [site_input_files()]), `oper` (logical: accepts `--with-oper`),
 #'   optional `args` (function `(site_id, cfg)` returning extra arguments, e.g. the reference year).
 #'   optional `extra_scripts` (scripts run by the step script, included in the inputs hash; the measured steps).
+#'   optional `config_rows` (function `(site_id, cfg)` returning the site's own rows of per-site configuration
+#'   tables, hashed only when not `NULL`; 08a: `config/etc_z0_multiplier.csv`, spec 08 amendment 2). The reference
+#'   year enters the hash of step 08 only as its argument `--year=` (the site's year, not the whole file).
 pipeline_steps <- function() {
   list(
     `01` = list(script = "scripts/01_check_inputs.R", upstream = character(), inputs = c("l2", "era5_sl"), oper = FALSE),
@@ -28,8 +31,11 @@ pipeline_steps <- function() {
     meas_cmp = list(script = "scripts/09m_measured.R", upstream = c("04", "meas_std"), inputs = c("measured_std", "measured_config"),
                     oper = FALSE, args = function(site_id, cfg) "--part=compare",
                     extra_scripts = unlist(measured_site_scripts()$compare)),
+    # config_rows: only the site's own row of config/etc_z0_multiplier.csv (spec 08 amendment 2), so an override
+    # edit reruns 08a at that site only
     `08a` = list(script = "scripts/08a_footprint_flags.R", upstream = "04", inputs = c("l2", "bif", "measured_std"),
-                 oper = TRUE),
+                 oper = TRUE,
+                 config_rows = function(site_id, cfg) site_config_row(cfg$etc_z0_multiplier_file, site_id)),
     # after the footprint chunks of the site (array of scripts/08c_make_chunks.R): reference-year analysis
     `08` = list(script = "scripts/08_footprint_compare.R", upstream = "08a", inputs = "chunks", oper = FALSE,
                 args = function(site_id, cfg) paste0("--year=", reference_year_of(site_id, cfg)))
@@ -141,11 +147,36 @@ step_inputs_hash <- function(step, site_id, cfg, upstream_hash = character(), ar
   if (is.null(st)) cli::cli_abort("Unknown step {.val {step}}.")
   if (is.null(input_files)) input_files <- site_input_files(site_id, cfg, st$inputs)
   code <- c(file.path(root, c(st$script, st$extra_scripts)), sort(list.files(file.path(root, "R"), pattern = "\\.R$", full.names = TRUE)))
-  digest::digest(list(
+  x <- list(
     step = step, site = site_id, code = unname(tools::md5sum(code)),
     cfg = cfg[sort(names(cfg))], inputs = as.data.frame(input_files[c("path", "size", "mtime")]),
     upstream = upstream_hash[sort(names(upstream_hash))], args = sort(args)
-  ), algo = "md5")
+  )
+  # Per-site configuration rows (spec 08 amendment 2): added only when the site has one, so the hash of a site
+  # without a row is computed exactly as before
+  rows <- if (is.null(st$config_rows)) NULL else st$config_rows(site_id, cfg)
+  if (length(rows)) x$config_rows <- rows
+  digest::digest(x, algo = "md5")
+}
+
+#' A site's row of a small per-site configuration table
+#'
+#' For the inputs hash (spec 08 amendment 2): the row of `site_id` (column `site_id`) as a named character vector,
+#' read as text (no type conversion, so the hash follows the file's content). Other sites' rows are not read into
+#' the result.
+#'
+#' @param path Configured path (relative to the project root or absolute); `NULL` or a missing file = no row.
+#' @param site_id Station code [character].
+#' @return Named character vector, or `NULL` when the site has no row.
+site_config_row <- function(path, site_id) {
+  if (is.null(path)) return(NULL)
+  p <- tryCatch(resolve_path(path, must_exist = FALSE), error = function(e) NA_character_)
+  if (is.na(p) || !file.exists(p)) return(NULL)
+  x <- readr::read_csv(p, col_types = readr::cols(.default = "c"), na = character(), progress = FALSE)
+  r <- x[x$site_id == site_id, ]
+  if (nrow(r) == 0) return(NULL)
+  if (nrow(r) > 1) cli::cli_abort("{.path {p}}: more than one row for {.val {site_id}}.")
+  unlist(r[1, ])
 }
 
 #' Run-status file path

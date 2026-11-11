@@ -11,7 +11,10 @@
 #   09_network_era5_cells.csv      ERA5 cell distance and orography
 #   09_network_footprint_coverage.csv  footprint coverage per case x set (08a, full period, stratum all)
 #   09_network_nee_qc.csv          FLUXNET NEE QC source (VUT / CUT / none) and status per site and year (08a; amendment 2)
-#   08_reference_years.csv         reference-year proposal (spec 09 A5): review, then commit config/reference_years.csv
+#   09_network_etc_multiplier.csv  ETC z0 multiplier per site: m_loop, m_used, m_source loop / override, approved
+#                                  reference year (08a; spec 08 amendment 2)
+#   08_reference_years.csv         reference-year proposal (spec 09 A5), with the approved year (approved_year): review,
+#                                  then commit config/reference_years.csv
 #                                  (exceptions: config/reference_year_exceptions.csv, rule coverage; amendment 2)
 #   09_network_run_status.csv      last status per site x step; 09_network_flags.csv sites with problems and the
 #                                  stations not run (config/sites_not_run.csv: flag "not_run", spec 09 amendment 1)
@@ -129,6 +132,17 @@ if (nrow(cov)) write_tab(cov[cov$stratum == "all", ], "09_network_footprint_cove
 nq <- bind_site_tables(per_site("08_nee_qc_%s.csv"))
 if (nrow(nq)) write_tab(nq, "09_network_nee_qc.csv")
 yc <- bind_site_tables(per_site("08_year_counts_%s.csv"))
+# Approved reference years (config/reference_years.csv), if committed; the step-08 outputs of a year are not read here
+ry_path <- resolve_path(cfg$reference_years_file, must_exist = FALSE)
+ry_ok <- if (file.exists(ry_path)) read_reference_years(ry_path) else NULL
+# ETC z0 multiplier per site: loop value, value used, loop / override (spec 08 amendment 2)
+em <- network_etc_multiplier(bind_site_tables(per_site("08_etc_multiplier_%s.csv")), ry_ok)
+if (nrow(em)) {
+  write_tab(em, "09_network_etc_multiplier.csv")
+  for (i in which(em$m_source == "override")) {
+    cli::cli_inform("{em$site_id[i]}: ETC multiplier override m_used = {em$m_used[i]} (m_loop = {em$m_loop[i]}).")
+  }
+}
 # Exceptions to the reference-year rule (spec 09 amendment 2): used only when the standard rule finds no year
 rex <- read_reference_year_exceptions(if (is.null(cfg$reference_year_exceptions_file)) NULL else
   resolve_path(cfg$reference_year_exceptions_file, must_exist = FALSE))
@@ -138,6 +152,8 @@ if (nrow(yc)) {
     p <- if (nrow(e)) propose_reference_year(x, rule = e$rule, rule_reason = e$reason) else propose_reference_year(x)
     dplyr::bind_cols(dplyr::tibble(site_id = x$site_id[1]), p)
   }))
+  # approved year next to the proposal (config/reference_years.csv; e.g. DE-Tha 2025, spec 08 amendment 2)
+  ry$approved_year <- if (is.null(ry_ok)) NA_integer_ else ry_ok$year[match(ry$site_id, ry_ok$site_id)]
   write_tab(ry, "08_reference_years.csv")
   cli::cli_inform("Reference-year proposal: review {.path {file.path(tdir, '08_reference_years.csv')}}, then commit the approved list as {.file config/reference_years.csv} (site_id, year, reason).")
 }

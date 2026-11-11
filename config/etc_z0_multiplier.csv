@@ -1,0 +1,2 @@
+site_id,z0_multiplier,decided_by,date,reason
+DE-Tha,4.1,G,2026-11-10,"hc rises 27.74 -> 32.59 m (interpolated between the measurements); the loop stops at m = 4.6 and rejects every row from about 2024-07 (zm/z0 down to 4.15)"
