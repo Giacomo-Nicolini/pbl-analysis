@@ -131,6 +131,16 @@ annual = sum of months) — reuse spec-08 tests where they exist.
    Set `pblh_gamma_default`, commit `config/gamma_era5_clim.csv` (site × month), rerun step 02 and 04 at all sites
    (cheap; γ = 0.01 and 0.0025 stay as the reference sources `pblhmod_gamma001` / `pblhmod_gamma0025`), collect
    again.
+   **Decided (G, 2026-11-11): the EC-only constant stays γ = 0.01 K m⁻¹** (`pblhmod_default`, named "PBLHmod
+   (literature γ)"; `pblh_gamma_default` unchanged, **no rerun**). PBLHmod-clim (`pblhmod_clim`) is the
+   realistic-γ variant in the main figures. `gamma_med` = 0.004572 K m⁻¹ (median of the site medians of the daily
+   ERA5 γ, 39 stations) is the **recommended operational EC-only value** (paper and ETC), reported as a side result.
+   Evidence: cluster run of `scripts/11_gamma_evaluation.R` (job 18120; spec 11 amendment 1): median |ln(PBLHmod /
+   measured)| on the primary set at the six aerosol sites 0.43 (`default`) → 0.20 (`gamma_med`; `clim` and
+   `gamma_site` within 0.02 of it); overshoot ≈ +0.2 at DE-HoH and FR-Fon; against ERA5 across the network
+   (convective, median of the site medians) −0.13 → +0.15. The γ tables to publish (ERA5-derived, Copernicus
+   attribution) are still to be chosen. Open question for later: does the residual site spread (crop / grass too
+   shallow, forest fine or too deep) follow the energy-balance ratio?
 4. Footprint chunks (array) on the reference years, then per-site compare and collection.
 5. Measured (after spec 10 is merged, which generalises the comparison code): Cloudnet for FI-Lom, DE-RuS, FR-Gri
    (07b download on the login node, size first; 07c; comparison), FI-Hyy Cloudnet re-downloaded on the cluster
@@ -221,7 +231,8 @@ C. **Measured data on the cluster.** New `run_site.R` steps `meas_std` (standard
 2. **Footprint cases.** `pblhmod_clim` was already a case at every site (spec 09 A5: 08a builds it from the standard
    file written by step 04, 08c takes every case of the input table), next to `pblhmod` (γ 0.01) and `era5`.
    Decision point 3b stays open: if the EC-only constant changes, the `pblhmod` chunks rerun (`pblhmod_clim` only in
-   months that use the fallback constant). Estimate for the 39 proposed reference years of job 11546 (spec-08 timing
+   months that use the fallback constant). (Decided 2026-11-11: the constant stays 0.01, no chunk reruns; see
+   Part B, 3b.) Estimate for the 39 proposed reference years of job 11546 (spec-08 timing
    2 s per FFP half-hour, 2 CPUs per chunk; half-hours = `n_valid` of set `none`, full period, scaled to one year):
    ≈ 1,840 chunks (12 per site × case; no month exceeds the 120 min split threshold, the largest ≈ 1,650 half-hours
    ≈ 28 min), ≈ 1.87 M FFP half-hours, ≈ 1,040 CPU-hours: `pblhmod`, `pblhmod_clim`, `era5` ≈ 470 chunks and

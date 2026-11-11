@@ -6,7 +6,7 @@ Last update: 2026-11-03. Read this first in a new session, then `docs/project_pl
 
 | Source | `source_id` | What it is | Class |
 |---|---|---|---|
-| PBLHmod v2 ("PBLHmod") | `pblhmod_default` | Our EC-based model (Kljun et al. 2015 App. B): stable B1 Nieuwstadt, neutral B2/B3 auto, convective B5 Batchvarova–Gryning slab daily cycle. `run_pblh_model()`, `R/pblh_*.R`; EC data only, constant γ (0.01 K/m until the network revision, spec 09 3b) | parameterisation |
+| PBLHmod v2 ("PBLHmod") | `pblhmod_default` | Our EC-based model (Kljun et al. 2015 App. B): stable B1 Nieuwstadt, neutral B2/B3 auto, convective B5 Batchvarova–Gryning slab daily cycle. `run_pblh_model()`, `R/pblh_*.R`; EC data only, constant γ 0.01 K/m ("PBLHmod (literature γ)"; kept by decision 3b, G 2026-11-11) | parameterisation |
 | PBLHmod-clim | `pblhmod_clim` | PBLHmod with the site × month ERA5 γ climatology (`gamma_source = "era5_clim"`, spec 11; G 2026-10-30); constant γ where a month has no value (flagged) | parameterisation |
 | PBLHmod, reference γ values (supplement) | `pblhmod_gamma001`, `pblhmod_gamma0025` | γ = 0.01 K/m (Batchvarova & Gryning 1991 as cited by Kljun et al. 2015; = `pblhmod_default` for now) and 0.0025 K/m (legacy ETC code); tables and supplementary figures only | parameterisation |
 | ERA5 BLH | `era5_blh_center`, `era5_blh_bilinear` | ECMWF reanalysis diagnostic (bulk Ri = 0.25, IFS Cy41r2 §3.10.1); tower cell, or bilinear to the tower from 4 cells | model |
@@ -279,10 +279,17 @@ measured MLH) done; 4–6 not started.
    `n = 0` with `no_data_reason`. Cluster: one job for the evaluation, `meas_cmp` at FI-Lom
    (`docs/local/cluster_commands_gamma_eval.md`); then G and Cowork decide 3b. Merged; the cluster run stopped at
    FI-Lom: **no overlap** (EC values from 2024-11-04 22:00 UTC, KEN CABAM ends 2024-05-16).
-10. Follow-up fix (2026-11-11, `fix-11-empty-overlap`, to review): an empty or inverted overlap gives n = 0 rows
-   with the reason (scripts 10 and 11); in script 11, one site never stops the job (`status`, `no_data_reason` in
-   `11_gamma_decision.csv`). Cluster: range check of every PBLHmod case file, rerun of script 11 and of FI-Lom
-   `meas_cmp` (`docs/local/cluster_commands_filom_overlap.md`).
+10. Follow-up fix (2026-11-11, `fix-11-empty-overlap`, merged `main`, 63450a8): an empty or inverted overlap gives
+   n = 0 rows with the reason (scripts 10 and 11); in script 11, one site never stops the job (`status`,
+   `no_data_reason` in `11_gamma_decision.csv`; exit 1 if any site is `error` / `error_growth`). Cluster: range check
+   of every PBLHmod case file, rerun of script 11 and of FI-Lom `meas_cmp`
+   (`docs/local/cluster_commands_filom_overlap.md`).
+11. **Decision 3b (G, 2026-11-11; spec 09 Part B 3b):** the EC-only constant stays γ = 0.01 K m⁻¹
+   (`pblhmod_default`, "PBLHmod (literature γ)"; no rerun); PBLHmod-clim is the realistic-γ variant in the main
+   figures; `gamma_med` = 0.004572 K m⁻¹ is the recommended operational EC-only value (paper and ETC), a side result.
+   Evidence: script 11 on the cluster (job 18120): median |ln ratio| at the six aerosol sites 0.43 (default) → 0.20
+   (`gamma_med`; `clim`, `gamma_site` within 0.02), overshoot ≈ +0.2 at DE-HoH and FR-Fon; vs ERA5 across the
+   network −0.13 → +0.15. Open for later: does the residual site spread follow the energy-balance ratio?
 
 
 ## Data
@@ -317,8 +324,10 @@ collected for the ETC QC report in `docs/local/etc_qc_report.md` (local working 
 - γ (spec 11, G 2026-10-30): PBLHmod (EC-only, constant γ) and PBLHmod-clim (ERA5 γ climatology). Open: residual
   −0.20 of PBLHmod-clim at FR-Gri (crop site; candidates: mechanical term, entrainment constants of B5); FI-Hyy
   night-time discrepancy = stable formula, not γ (deep end: below the lidar lower bound 43 % vs ≤ 30 %, every γ
-  case; the shallow end is too deep in the convective set, 13 % vs ≥ 16 % with PBLHmod-clim); EC-only constant to be revised after the network γ
-  climatology (spec 09 3b); γ tables of all sites as a deliverable (ERA5 attribution).
+  case; the shallow end is too deep in the convective set, 13 % vs ≥ 16 % with PBLHmod-clim); EC-only constant:
+  decided (3b, G 2026-11-11: stays 0.01; recommended operational value `gamma_med` = 0.004572 K m⁻¹, side result);
+  γ tables of all sites as a deliverable (ERA5 attribution). New: does the residual site spread (crop / grass too
+  shallow, forest fine or too deep) follow the energy-balance ratio?
 
 ## Local setup notes
 
