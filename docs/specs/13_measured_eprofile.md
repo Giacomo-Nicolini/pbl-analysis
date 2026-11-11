@@ -79,6 +79,8 @@ Tables and figures per site under `output/` (`13_qc_*`). Findings (2026-11-06):
   Good values ≤ 100 m 7 %, minimum 39 m. Share good drops from 0.75 after sunrise to 0.64 around sunset. Record ends
   2024-05-16: **no overlap with the reference year 2025** (no measured footprints). The FI-Lom ICOS record starts
   2024-01, so the comparison covers only 2024-01 → 2024-05-16 (winter and spring, few convective hours).
+  **Correction (2026-11-11): no overlap at all.** The FLUXES rows start 2024-01, but the EC values (and PBLHmod) start
+  2024-11-04 22:00 UTC; see spec 11, amendment 1, Part B correction.
 - **MEL (FR-Fon)**: window flag 10.8 %; ≥ 30 % in 2023-05, 2023-06, 2025-09, 2026-08, 2026-09, 2026-10. In those
   months the remaining midday median is 1,414 m vs 1,012 m elsewhere (night 512 vs 384 m): consistent with spurious
   deep layers. Breakpoint 2025-12-16 (firmware 321, new corrections): no step in the 60-day medians.

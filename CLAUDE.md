@@ -67,7 +67,9 @@ so code must be reproducible, documented and traceable to references.
     may cover a different range (e.g. FI-Hyy FLUXNET 2018–2026, BE-Bra 2020–2026): rows outside the FLUXES range are
     dropped. Inside it, the forcing takes `TA_F`/`PA_F`/`H_F_MDS` from FLUXNET where FLUXNET covers the row, and
     METEO `TA`/`PA` after the end of FLUXNET (at BE-Bra: from 2026-08-22 23:00 UTC). Comparisons with other sources
-    use the overlap with this period (ERA5 starts 2020-01-01).
+    use the overlap with this period (ERA5 starts 2020-01-01). The FLUXES rows start on 1 January (local), but the EC
+    values can start months later (BE-Bra 2020-10-26, FI-Hyy 2018-11-06, FI-Lom 2024-11-05, local time): overlaps
+    with other sources come from valid values (`comparison_period()`), never from the row range.
   - **BE-Bra FLUXNET (G, 2026-10-26)**: `ICOSETC_BE-Bra_FLUXNET_FLUXMET_HH_2020-2026_v1.3_r1.zip`, a new ONEFlux run
     matching the BIF file. It replaced `..._HH_2020-2025_v1.3_r1.zip` (kept in `data/archive/`, outside `data/raw/`,
     not read by the pipeline): 2026 now comes from FLUXNET, not METEO; 2020–2025 differs only on gap-filled values.

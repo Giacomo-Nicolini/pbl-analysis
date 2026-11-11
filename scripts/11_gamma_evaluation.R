@@ -28,6 +28,11 @@
 # 11_gamma_cases_<site>.png, 11_growth_clearday_<site>.png (main: PBLHmod, PBLHmod-clim, ERA5, measured) and
 # 11s_ref_gamma_cases_<site>.png, 11s_ref_growth_clearday_<site>.png (supplement: gamma_med, gamma_site and the
 # reference gamma values; G 2026-10-30, 2026-11-11).
+# Robustness (2026-11-11, FI-Lom): one site never stops the job. Each site runs inside an error handler; the
+# comparison period is the overlap of the valid PBLHmod default and measured records (comparison_period()), and an
+# empty or inverted overlap writes rows with n = 0; the status and reason of each site are columns of
+# 11_gamma_decision.csv and printed at the end; the log lists the valid range of every input. Exit status 1 if any
+# site has status error / error_growth (after writing every output), else 0.
 # With the sites and cases of spec 11 D (FR-Gri FI-Hyy CH-Dav BE-Bra, --cases=default,clim,gamma001,gamma0025,
 # gamma_era5daily,gamma_era5clim_zmin1000,gamma_era5clim_bgonly) the tables of spec 11 D are unchanged.
 #
@@ -103,14 +108,26 @@ metric_row <- function(pt, site_id, case, reference, set) {
                    cs[c("slope_sym", "slope_sym_lo", "slope_sym_hi", "ba_slope", "ba_slope_lo", "ba_slope_hi")])
 }
 
-wide <- list()
-wide_em <- list() # ERA5 tower cell vs the measurement (decision and season tables only)
-nulls <- list()
-reg_h <- list()
-periods <- list()
-for (site_id in site_ids) {
-  cli::cli_h1("Gamma cases: {site_id}")
+na_t <- as.POSIXct(NA_real_, tz = "UTC")
+empty_pt <- dplyr::tibble(timestamp_utc = na_t[0], mod = numeric(), ref = numeric())
+fmt_t <- function(t) ifelse(is.na(t), "none", format(t, "%Y-%m-%d %H:%M", tz = "UTC"))
+
+# One site: its rows of every table, in the environment o of the caller (wide, wide_em = ERA5 tower cell vs the
+# measurement for the decision and season tables only, nulls, reg_h, period, status, reason, stage). Status "ok",
+# "era5_only" (no primary measured source), "no_overlap" (empty or inverted overlap of the valid PBLHmod and measured
+# records: rows with n = 0 and the reason). Errors are caught by the loop below, which still sees o: one site never
+# stops the job (G 2026-11-11).
+eval_site <- function(site_id, o) {
+  o$wide <- list()
+  o$wide_em <- list()
+  o$nulls <- list()
+  o$reg_h <- list()
+  o$period <- NULL
+  o$status <- "ok"
+  o$reason <- NA_character_
+  push <- function(what, x) o[[what]][[length(o[[what]]) + 1]] <- x
   meta <- sites[sites$site_id == site_id, ]
+  if (nrow(meta) != 1) cli::cli_abort("{site_id}: {nrow(meta)} rows in the site table.")
   std_dir <- file.path(resolve_path(cfg$standard_dir), site_id)
   rd <- function(src) read_standard_pblh(file.path(std_dir, paste0(site_id, "__", src, ".csv.gz")))
   raw <- list()
@@ -129,14 +146,14 @@ for (site_id in site_ids) {
   # --- regime shares and stable / neutral heights (bgonly vs clim vs default; gamma_med, gamma_site) ---
   for (k in intersect(c("default", "clim", "gamma0025", "gamma_era5clim_bgonly", "gamma_med", "gamma_site"), cases)) {
     d <- raw[[k]]
-    reg_h[[length(reg_h) + 1]] <- dplyr::bind_rows(lapply(c("stable", "unstable_diag", "convective"), function(r) {
+    push("reg_h", dplyr::bind_rows(lapply(c("stable", "unstable_diag", "convective"), function(r) {
       i <- d$regime %in% r & !is.na(d$pblh_m)
       dplyr::tibble(site_id = site_id, case = k, regime = r, share = mean(d$regime %in% r), n = sum(i),
                     share_B2 = mean(d$method[i] %in% "B2"), share_B3 = mean(d$method[i] %in% "B3"),
                     p25_m = stats::quantile(d$pblh_m[i], 0.25, names = FALSE), median_m = stats::median(d$pblh_m[i]),
                     p75_m = stats::quantile(d$pblh_m[i], 0.75, names = FALSE),
                     median_gamma_bg = stats::median(d$gamma_used[i]), median_gamma_n = stats::median(d$gamma_n_used[i]))
-    }))
+    })))
   }
 
   # --- PBLHmod vs ERA5 tower cell (ERA5 hours), every case ---
@@ -144,12 +161,11 @@ for (site_id in site_ids) {
   for (k in cases) {
     pt <- pair_table(match_halfhours_to_hours(std[[k]], era_c$timestamp_utc), era_c, k)
     x <- pt[pt$regime %in% "convective", ]
-    wide[[length(wide) + 1]] <- metric_row(x, site_id, k, "era5_blh_center", "convective")
+    push("wide", metric_row(x, site_id, k, "era5_blh_center", "convective"))
     for (se in levels(x$season)) {
-      wide[[length(wide) + 1]] <- metric_row(x[x$season %in% se, ], site_id, k, "era5_blh_center",
-                                             paste0("convective:", se))
+      push("wide", metric_row(x[x$season %in% se, ], site_id, k, "era5_blh_center", paste0("convective:", se)))
     }
-    wide[[length(wide) + 1]] <- metric_row(pt, site_id, k, "era5_blh_center", "all_regimes")
+    push("wide", metric_row(pt, site_id, k, "era5_blh_center", "all_regimes"))
   }
   cli::cli_inform("PBLHmod vs ERA5 done ({format(round(difftime(Sys.time(), t0, units = 'mins'), 1))}).")
 
@@ -157,22 +173,41 @@ for (site_id in site_ids) {
   rf <- refs[[site_id]]
   if (is.null(rf)) {
     cli::cli_inform("{site_id}: no primary measured source in {.file measured_sites.csv}: ERA5 only.")
-    next
+    o$status <- "era5_only"
+    return(o)
   }
-  meas <- rd(rf$src)
-  v_rng <- function(d) range(d$timestamp_start_utc[!is.na(d$pblh_m)])
-  p_start <- max(v_rng(std$default)[1], v_rng(meas)[1])
-  p_end <- min(v_rng(std$default)[2], v_rng(meas)[2])
-  periods[[site_id]] <- dplyr::tibble(site_id = site_id, period_start_utc = p_start, period_end_utc = p_end)
-  meas <- meas[meas$timestamp_start_utc >= p_start & meas$timestamp_start_utc <= p_end, ]
-  cli::cli_inform("{style_of(rf$src, 'label')} ({rf$provider_site}, {rf$distance_km} km, {rf$distance_class}{if (rf$borderline) ', borderline' else ''}): comparison period {format(p_start, '%Y-%m-%d %H:%M')} to {format(p_end, '%Y-%m-%d %H:%M')} UTC.")
+  meas_all <- rd(rf$src)
+  # time step on the full file: the period cut below may leave no row
+  step_s <- measured_step_s(meas_all)
+  # valid record of every input (log only; the period is the overlap of PBLHmod default and the measurement)
+  rng_in <- c(stats::setNames(std, cases), list(era5_blh_center = era$era5_blh_center), stats::setNames(list(meas_all), rf$src))
+  cp_all <- do.call(comparison_period, rng_in)
+  cli::cli_inform("Valid records of the inputs:")
+  print(as.data.frame(dplyr::mutate(cp_all$ranges, first_valid_utc = fmt_t(first_valid_utc),
+                                    last_valid_utc = fmt_t(last_valid_utc))), row.names = FALSE)
+  cp <- do.call(comparison_period, stats::setNames(list(std$default, meas_all), c("pblhmod_default", rf$src)))
+  o$period <- dplyr::tibble(site_id = site_id, period_start_utc = cp$start, period_end_utc = cp$end)
   set_fun <- list(window_convective = function(pt) pt$regime %in% "convective" & pt$in_window,
                   convective = function(pt) pt$regime %in% "convective",
                   all_regimes = function(pt) rep(TRUE, nrow(pt)))
   sets <- set_fun[rf$sets]
+  if (!cp$ok) {
+    # empty or inverted overlap (FI-Lom: EC record from 2024-11, CABAM record ends 2024-05): one row per case x set
+    # with n = 0 (no season rows), ERA5 vs measured likewise; the reason goes to the decision table
+    cli::cli_alert_warning("{site_id}: {cp$reason}; rows with n = 0 written, no growth curve.")
+    for (k in cases) for (s in names(sets)) push("wide", metric_row(empty_pt, site_id, k, rf$src, s))
+    for (s in names(sets)) push("wide_em", metric_row(empty_pt, site_id, "era5_blh_center", rf$src, s))
+    o$status <- "no_overlap"
+    o$reason <- cp$reason
+    return(o)
+  }
+  p_start <- cp$start
+  p_end <- cp$end
+  meas <- meas_all[meas_all$timestamp_start_utc >= p_start & meas_all$timestamp_start_utc <= p_end, ]
+  cli::cli_inform("{style_of(rf$src, 'label')} ({rf$provider_site}, {rf$distance_km} km, {rf$distance_class}{if (rf$borderline) ', borderline' else ''}): comparison period {format(p_start, '%Y-%m-%d %H:%M')} to {format(p_end, '%Y-%m-%d %H:%M')} UTC.")
   tbs <- list()
   for (k in cases) {
-    tb <- measured_time_base(meas, std[[k]], era)
+    tb <- measured_time_base(meas, std[[k]], era, step_s = step_s)
     tbs[[k]] <- tb
     pt <- pair_table(tb$mod, exact_ref(tb$meas), k)
     a <- apparent_solar_hour(pt$timestamp_utc + tb$mid_s, meta$lon)
@@ -180,9 +215,9 @@ for (site_id in site_ids) {
     for (s in names(sets)) {
       x <- pt[sets[[s]](pt), ]
       if (nrow(x) == 0) cli::cli_alert_warning("{site_id} {k} [{s}]: no pair; row with n = 0 written.")
-      wide[[length(wide) + 1]] <- metric_row(x, site_id, k, rf$src, s)
+      push("wide", metric_row(x, site_id, k, rf$src, s))
       for (se in levels(x$season)) {
-        wide[[length(wide) + 1]] <- metric_row(x[x$season %in% se, ], site_id, k, rf$src, paste0(s, ":", se))
+        push("wide", metric_row(x[x$season %in% se, ], site_id, k, rf$src, paste0(s, ":", se)))
       }
     }
     if (k == "default") {
@@ -193,10 +228,9 @@ for (site_id in site_ids) {
       pe$in_window <- a >= opts$aerosol_window[1] & a < opts$aerosol_window[2]
       for (s in names(sets)) {
         x <- pe[sets[[s]](pe), ]
-        wide_em[[length(wide_em) + 1]] <- metric_row(x, site_id, "era5_blh_center", rf$src, s)
+        push("wide_em", metric_row(x, site_id, "era5_blh_center", rf$src, s))
         for (se in levels(x$season)) {
-          wide_em[[length(wide_em) + 1]] <- metric_row(x[x$season %in% se, ], site_id, "era5_blh_center", rf$src,
-                                                       paste0(s, ":", se))
+          push("wide_em", metric_row(x[x$season %in% se, ], site_id, "era5_blh_center", rf$src, paste0(s, ":", se)))
         }
       }
     }
@@ -208,15 +242,16 @@ for (site_id in site_ids) {
       nd <- nd[!is.na(nd$mod) & !is.na(nd$kind), ]
       for (s in c("all_regimes", "convective", "stable")) {
         x <- if (s == "all_regimes") nd else nd[nd$regime %in% s, ]
-        nulls[[length(nulls) + 1]] <- dplyr::bind_cols(dplyr::tibble(site_id = site_id, case = k, regime_set = s),
-                                                       censored_tail_null(x, opts))
+        push("nulls", dplyr::bind_cols(dplyr::tibble(site_id = site_id, case = k, regime_set = s),
+                                       censored_tail_null(x, opts)))
       }
     }
   }
   cli::cli_inform("Measured comparison done ({format(round(difftime(Sys.time(), t0, units = 'mins'), 1))}).")
 
   # --- clear-day growth curves, every case ---
-  icos <- suppressMessages(suppressWarnings(read_icos_site(site_id, cfg, sites, sites_tv, exclusions)))
+  o$stage <- "growth"
+  icos <-suppressMessages(suppressWarnings(read_icos_site(site_id, cfg, sites, sites_tv, exclusions)))
   d0 <- raw$default
   t_d0 <- as.numeric(as_utc_time(d0$timestamp_start_utc))
   day_of <- as.Date(d0$day_id)[match(as.numeric(icos$timestamp_start_utc), t_d0)]
@@ -233,9 +268,9 @@ for (site_id in site_ids) {
   g_clear <- g[g$day_id %in% clear, ]
   g_ok <- stats::complete.cases(g_clear[vars])
   if (!any(g_ok)) {
-    # e.g. a short overlap in the polar winter (FI-Lom): no growth curve, no table, no figure
+    # e.g. a short overlap in the polar winter: no growth curve, no table, no figure
     cli::cli_alert_warning("{site_id}: {length(clear)} clear day{?s}, no hour with every value valid: growth curves skipped.")
-    next
+    return(o)
   }
   gc <- growth_curves(g_clear, vars, meta$lon, mid_s = tb$mid_s)
   readr::write_csv(dplyr::mutate(gc$summary, site_id = site_id, reference = rf$src, .before = 1),
@@ -244,7 +279,7 @@ for (site_id in site_ids) {
   gp <- gc$summary[gc$summary$n >= 10, ]
   if (nrow(gp) == 0) {
     cli::cli_alert_warning("{site_id}: no apparent solar hour with n >= 10: growth figures skipped.")
-    next
+    return(o)
   }
   gp$x <- gp$ast_hour + 0.5
   gp$comparable <- if (rf$type == "aerosol") gp$x >= opts$aerosol_window[1] & gp$x < opts$aerosol_window[2] else TRUE
@@ -273,7 +308,45 @@ for (site_id in site_ids) {
     pth <- save_figure(fig, paste0(fs$prefix, "growth_clearday_", site_id), 19, 15)
     cli::cli_alert_success("{.path {pth[['png']]}}")
   }
+  o
 }
+
+wide <- list()
+wide_em <- list()
+nulls <- list()
+reg_h <- list()
+periods <- list()
+site_status <- list()
+for (site_id in site_ids) {
+  cli::cli_h1("Gamma cases: {site_id}")
+  o <- new.env()
+  o$stage <- "metrics"
+  res <- tryCatch(eval_site(site_id, o), error = function(e) e)
+  if (inherits(res, "error")) {
+    msg <- gsub("\\s+", " ", paste(conditionMessage(res), collapse = " "))
+    if (identical(o$stage, "growth")) {
+      # the metrics of the site are complete: keep them, report the growth-curve error
+      cli::cli_alert_danger("{site_id}: error in the clear-day growth curves (metrics kept): {msg}")
+      o$status <- "error_growth"
+      o$reason <- paste("growth curves:", msg)
+    } else {
+      # partial metrics would be inconsistent between cases: the site gets no metric rows, only its status
+      cli::cli_alert_danger("{site_id}: error, site skipped (no metric rows): {msg}")
+      o$wide <- o$wide_em <- o$nulls <- o$reg_h <- list()
+      o$period <- NULL
+      o$status <- "error"
+      o$reason <- msg
+    }
+  }
+  wide <- c(wide, o$wide)
+  wide_em <- c(wide_em, o$wide_em)
+  nulls <- c(nulls, o$nulls)
+  reg_h <- c(reg_h, o$reg_h)
+  if (!is.null(o$period)) periods[[site_id]] <- o$period
+  site_status[[site_id]] <- dplyr::tibble(site_id = site_id, status = o$status, no_data_reason = o$reason)
+}
+site_status <- dplyr::bind_rows(site_status)
+if (all(site_status$status == "error")) cli::cli_abort("Every site failed: nothing to write.")
 
 # --- tables ---
 wide <- dplyr::bind_rows(wide)
@@ -305,12 +378,15 @@ per <- dplyr::bind_rows(c(list(dplyr::tibble(site_id = character(), period_start
                                              period_end_utc = as.POSIXct(character(), tz = "UTC"))), periods))
 decision <- dplyr::left_join(decision, per, by = "site_id")
 decision <- dplyr::relocate(decision, period_start_utc, period_end_utc, .after = borderline)
+decision <- dplyr::left_join(decision, site_status, by = "site_id")
+decision <- dplyr::relocate(decision, status, no_data_reason, .after = period_end_utc)
 decision$note <- paste("mlr = median ln(PBLHmod case / measured) on the primary set (aerosol: window",
                        paste(opts$aerosol_window, collapse = "-"), "h apparent solar time and PBLHmod convective;",
                        "turbulence: convective, exact values), day-block bootstrap 95 %; era5_blh_center = ERA5 tower",
                        "cell vs measured; season_max = season with the largest |mlr| among seasons with >=", min_days,
                        "days; era5_mlr = median ln(PBLHmod case / ERA5 tower cell), convective; low_n: fewer than",
-                       min_days, "days")
+                       min_days, "days; status: ok, era5_only, no_overlap (n = 0, reason in no_data_reason), error",
+                       "(no metric rows), error_growth (metrics kept)")
 readr::write_csv(decision, file.path(tables_dir, "11_gamma_decision.csv"))
 reg_h <- dplyr::bind_rows(reg_h)
 readr::write_csv(reg_h, file.path(tables_dir, "11_gamma_regime_heights.csv"))
@@ -321,8 +397,13 @@ if (length(nulls) > 0) {
 
 # --- gamma diagnostics: daily vs climatology, by month ---
 gd <- dplyr::bind_rows(lapply(site_ids, function(s) {
-  d <- readr::read_csv(file.path(g_dir, paste0(s, "_daily.csv")), show_col_types = FALSE)
-  cl <- readr::read_csv(file.path(g_dir, paste0(s, "_monthly.csv")), show_col_types = FALSE)
+  f <- file.path(g_dir, paste0(s, c("_daily.csv", "_monthly.csv")))
+  if (!all(file.exists(f))) {
+    cli::cli_alert_warning("{s}: gamma table{?s} {.path {basename(f[!file.exists(f)])}} missing (script 11a): no gamma diagnostics.")
+    return(NULL)
+  }
+  d <- readr::read_csv(f[1], show_col_types = FALSE)
+  cl <- readr::read_csv(f[2], show_col_types = FALSE)
   d$month <- as.integer(format(d$date, "%m"))
   d$clim <- cl$median[match(d$month, cl$month)]
   dplyr::mutate(d, site_id = s)
@@ -349,6 +430,7 @@ cli::cli_alert_success("{.path {pth[['png']]}}")
 for (s in site_ids) {
   for (fs in fig_sets) {
     w <- wide[wide$site_id == s & wide$case %in% fs$cases & !grepl(":", wide$stratum_set, fixed = TRUE), ]
+    if (nrow(w) == 0) next # site with an error: no rows
     w$panel <- paste0(ifelse(w$reference == "era5_blh_center", "vs ERA5 tower cell", paste("vs", w$reference)), ", ",
                       w$stratum_set)
     w$case <- factor(w$case, levels = fs$cases)
@@ -362,8 +444,12 @@ for (s in site_ids) {
       ggplot2::labs(x = NULL, y = "Median ln(PBLHmod / reference) [-] (day-block bootstrap 95 %)", title = fs$title,
                     subtitle = s) +
       theme_pblh()
-    pth <- save_figure(fig_c, paste0(fs$prefix, "gamma_cases_", s), 19, 13)
-    cli::cli_alert_success("{.path {pth[['png']]}}")
+    # a figure of one site never stops the job (the tables are already written)
+    pth <- tryCatch(save_figure(fig_c, paste0(fs$prefix, "gamma_cases_", s), 19, 13), error = function(e) {
+      cli::cli_alert_danger("{s}: case figure {fs$prefix} not written: {conditionMessage(e)}")
+      NULL
+    })
+    if (!is.null(pth)) cli::cli_alert_success("{.path {pth[['png']]}}")
   }
 }
 
@@ -379,8 +465,9 @@ if (nrow(dm) > 0) {
   lab_site <- vapply(ms_sites, function(s) {
     rf <- refs[[s]]
     nd <- decision$n_days_default[decision$site_id == s]
+    st <- site_status$status[site_status$site_id == s]
     paste0(s, " (", unname(style_of(rf$src, "label")), ")", if (rf$borderline) " [borderline]" else "",
-           if (isTRUE(nd < min_days)) paste0(" [low n: ", nd, " d]") else "")
+           if (identical(st, "no_overlap")) " [no overlap]" else if (isTRUE(nd < min_days)) paste0(" [low n: ", nd, " d]") else "")
   }, "")
   dm$site <- factor(lab_site[dm$site_id], levels = rev(lab_site))
   dm$low_n <- ifelse(is.na(dm$n_days) | dm$n_days < min_days, "low n", "ok")
@@ -431,4 +518,11 @@ if (is.data.frame(nulls)) {
 }
 cli::cli_h2("gamma: daily vs climatology")
 print_tbl(dvc)
+cli::cli_h2("Site status (also in 11_gamma_decision.csv)")
+print(as.data.frame(site_status), row.names = FALSE)
+n_err <- sum(startsWith(site_status$status, "error"))
+if (n_err > 0) cli::cli_alert_danger("{n_err} site{?s} with an error: see the status table above and the log.")
 cli::cli_inform("Run time: {format(round(difftime(Sys.time(), t0, units = 'mins'), 1))}.")
+# Exit status (G 2026-11-11): 1 if any site has status error / error_growth (all tables and figures are written
+# first), so that sacct shows FAILED; 0 otherwise (no_overlap and era5_only are not errors).
+if (n_err > 0) quit(save = "no", status = 1)

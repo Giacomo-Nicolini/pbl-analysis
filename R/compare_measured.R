@@ -200,6 +200,53 @@ measured_values <- function(meas) {
                                  qc_flag = meas$qc_flag, z_min = z), iv[c("left", "right", "kind")])
 }
 
+#' Interval length of a measured standard table
+#'
+#' @param meas Measured standard table (`timestamp_start_utc`, `timestamp_end_utc`).
+#' @return Median interval length [s]. Aborts with an informative error when no row has both time stamps (e.g. a
+#'   table cut to an empty comparison period), instead of returning `NA`.
+measured_step_s <- function(meas) {
+  d <- as.numeric(meas$timestamp_end_utc) - as.numeric(meas$timestamp_start_utc)
+  d <- d[is.finite(d)]
+  if (length(d) == 0) {
+    cli::cli_abort(c("Measured source: time step cannot be detected ({nrow(meas)} row{?s} with start and end).",
+                     i = "Detect it on the full standard file ({.fn measured_step_s}) before cutting it to a period."))
+  }
+  stats::median(d)
+}
+
+#' Comparison period of PBLHmod and measured sources
+#'
+#' Overlap of the valid (non-missing `pblh_m`) records. Spec 11 amendment 1 follow-up (G 2026-11-11): an empty or
+#' inverted overlap is reported, not an error (FI-Lom: EC record from 2024-11, Kenttärova CABAM ends 2024-05).
+#'
+#' @param ... Named standard tables (`timestamp_start_utc`, `pblh_m`), e.g. `default = mod, cabam = meas`.
+#' @return List: `start`, `end` [POSIXct UTC, `NA` without overlap]; `ok` [logical, at least one common time stamp];
+#'   `ranges` (tibble: `input`, `n_valid`, `first_valid_utc`, `last_valid_utc`); `reason` (`NA` if `ok`, else the
+#'   inputs and their valid ranges).
+comparison_period <- function(...) {
+  x <- list(...)
+  if (length(x) == 0 || is.null(names(x)) || any(names(x) == "")) cli::cli_abort("Pass named standard tables.")
+  na_t <- as.POSIXct(NA_real_, tz = "UTC")
+  ranges <- dplyr::bind_rows(lapply(names(x), function(k) {
+    t <- x[[k]]$timestamp_start_utc[!is.na(x[[k]]$pblh_m)]
+    dplyr::tibble(input = k, n_valid = length(t), first_valid_utc = if (length(t) > 0) min(t) else na_t,
+                  last_valid_utc = if (length(t) > 0) max(t) else na_t)
+  }))
+  fmt <- function(t) ifelse(is.na(t), "none", format(t, "%Y-%m-%d %H:%M", tz = "UTC"))
+  if (any(ranges$n_valid == 0)) {
+    return(list(start = na_t, end = na_t, ok = FALSE, ranges = ranges,
+                reason = paste0("no valid value in ", paste(ranges$input[ranges$n_valid == 0], collapse = ", "))))
+  }
+  p_start <- max(ranges$first_valid_utc)
+  p_end <- min(ranges$last_valid_utc)
+  ok <- p_start <= p_end
+  list(start = if (ok) p_start else na_t, end = if (ok) p_end else na_t, ok = ok, ranges = ranges,
+       reason = if (ok) NA_character_ else paste0("no common period of the valid records: ",
+                                                  paste0(ranges$input, " ", fmt(ranges$first_valid_utc), " to ",
+                                                         fmt(ranges$last_valid_utc), collapse = "; "), " UTC"))
+}
+
 #' Model and reanalysis series on the time base of a measured source
 #'
 #' Generalises the matching of spec 07 (spec 10 A5). Half-hourly measured source (spec 07): PBLHmod on the
@@ -212,12 +259,15 @@ measured_values <- function(meas) {
 #' @param meas Measured standard table (half-hourly or hourly interval means).
 #' @param mod PBLHmod standard table (half-hourly, with `x_regime`).
 #' @param era Named list of ERA5 standard tables (instantaneous, hourly, same times).
+#' @param step_s Interval length of the measured source [s] (1800 or 3600). `NULL` (default): median of
+#'   `timestamp_end_utc - timestamp_start_utc` over the rows of `meas`. Pass it when `meas` has been cut to a
+#'   comparison period that may be empty (detect it on the full file with [measured_step_s()]).
 #' @return List: `base` (`"halfhour"` or `"hour"`); `meas`, `mod`, `mid_s` (measured values, PBLHmod on the
 #'   measurement base, offset [s] from the time stamp to the interval midpoint); `era`, `era_meas`, `era_mid_s`
 #'   (ERA5 series, measured values on the ERA5 base, offset [s]); `mod_on_era` (PBLHmod on the ERA5 base). Times in
 #'   `timestamp_utc`.
-measured_time_base <- function(meas, mod, era) {
-  step <- stats::median(as.numeric(meas$timestamp_end_utc) - as.numeric(meas$timestamp_start_utc))
+measured_time_base <- function(meas, mod, era, step_s = NULL) {
+  step <- if (is.null(step_s)) measured_step_s(meas) else step_s
   with_regime <- function(e, m) {
     e$x_regime <- m$x_regime[match(as.numeric(e$timestamp_utc), as.numeric(m$timestamp_utc))]
     e

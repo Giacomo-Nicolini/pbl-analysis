@@ -277,7 +277,12 @@ measured MLH) done; 4–6 not started.
    BE-Bra for decision 3b (cases `default`, `clim`, `gamma_med`, `gamma_site`, `gamma0025`; decision table and
    figure; evidence only, default stays 0.01); FI-Lom `meas_cmp` failure (empty stratum set) fixed: empty sets write
    `n = 0` with `no_data_reason`. Cluster: one job for the evaluation, `meas_cmp` at FI-Lom
-   (`docs/local/cluster_commands_gamma_eval.md`); then G and Cowork decide 3b.
+   (`docs/local/cluster_commands_gamma_eval.md`); then G and Cowork decide 3b. Merged; the cluster run stopped at
+   FI-Lom: **no overlap** (EC values from 2024-11-04 22:00 UTC, KEN CABAM ends 2024-05-16).
+10. Follow-up fix (2026-11-11, `fix-11-empty-overlap`, to review): an empty or inverted overlap gives n = 0 rows
+   with the reason (scripts 10 and 11); in script 11, one site never stops the job (`status`, `no_data_reason` in
+   `11_gamma_decision.csv`). Cluster: range check of every PBLHmod case file, rerun of script 11 and of FI-Lom
+   `meas_cmp` (`docs/local/cluster_commands_filom_overlap.md`).
 
 
 ## Data
