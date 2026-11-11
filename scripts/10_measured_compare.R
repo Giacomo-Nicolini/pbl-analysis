@@ -28,6 +28,9 @@
 # (Eqs. 6-7), with the measured (or, in pair 6, the ERA5) value as the observation: fb > 0 when the observation is
 # deeper.
 #
+# An empty stratum set (e.g. FI-Lom: short overlap in the polar winter) still writes its metrics row, stratum `all`
+# with n = 0 and `no_data_reason` (spec 11 amendment 1); no threshold applied.
+#
 # Output (<output_dir>): tables/10_compression_<site>.csv, 10_bland_altman_bins_<site>.csv,
 # figures/10_bland_altman_<site>.png; for aerosol references also tables/10_metrics_<site>.csv (long),
 # 10_diurnal_<site>.csv, figures/10_diurnal_by_season_<site>.png, 10_scatter_<site>.png; for turbulence references
@@ -262,14 +265,29 @@ p6 <- "6_pblhmod_default_vs_era5_center"
 # --- Metrics: window convective (primary), all convective hours (sensitivity); pair 6 also all regimes ---
 sets <- list(window_convective = function(pt) pt$regime %in% "convective" & pt$in_window,
              convective = function(pt) pt$regime %in% "convective")
+# An empty set still writes its row (n = 0 and the reason; spec 11 amendment 1, FI-Lom), no threshold applied
+empty_reason <- c(window_convective = sprintf(paste("no interval in the %g-%g h apparent solar time window with",
+                                                    "PBLHmod convective and both values valid"),
+                                              opts$aerosol_window[1], opts$aerosol_window[2]),
+                  convective = "no interval with PBLHmod convective and both values valid",
+                  all_regimes = "no interval with both values valid")
+cli::cli_h2("Pairs per stratum set (all regimes, window, window x convective, convective)")
+print_tbl(dplyr::bind_rows(lapply(names(pairs), function(p) {
+  pt <- pairs[[p]]
+  dplyr::tibble(pair = p, all_regimes = nrow(pt), window = sum(pt$in_window), window_convective = sum(sets$window_convective(pt)),
+                convective = sum(sets$convective(pt)), days_window_convective = length(unique(as.Date(pt$timestamp_utc[sets$window_convective(pt)]))))
+})))
 metrics <- list()
 for (p in names(pairs)) {
   for (s in names(sets)) {
-    m <- pblh_metrics_long(pairs[[p]][sets[[s]](pairs[[p]]), ], strata = c("season", "hour_utc"))
+    x <- pairs[[p]][sets[[s]](pairs[[p]]), ]
+    if (nrow(x) == 0) cli::cli_alert_warning("{p} [{s}]: {empty_reason[[s]]}; row with n = 0 written.")
+    m <- pblh_metrics_long_set(x, p, strata = c("season", "hour_utc"), empty_reason = empty_reason[[s]])
     metrics[[length(metrics) + 1]] <- dplyr::mutate(m, stratum_set = s, .after = "pair")
   }
 }
-m6 <- pblh_metrics_long(pairs[["6_pblhmod_default_vs_era5_center"]])
+m6 <- pblh_metrics_long_set(pairs[["6_pblhmod_default_vs_era5_center"]], "6_pblhmod_default_vs_era5_center",
+                            empty_reason = empty_reason[["all_regimes"]])
 metrics[[length(metrics) + 1]] <- dplyr::mutate(m6, stratum_set = "all_regimes", .after = "pair")
 metrics <- dplyr::bind_rows(metrics)
 metrics$comparison_class <- cls[metrics$pair]

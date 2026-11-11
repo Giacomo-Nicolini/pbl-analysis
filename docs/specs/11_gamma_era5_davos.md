@@ -129,3 +129,38 @@ recommendation for the default γ, with the evidence — G decides.
    al. 2015; equal to `pblhmod_default` for now) and `pblhmod_gamma0025` (γ = 0.0025, legacy ETC code; no literature
    source found), as standard sources at the four sites, in the 11 tables, and in supplementary figures
    (`11s_ref_*`, same layout as the main ones, labelled "reference γ values").
+
+## Amendment 1 (G, 2026-11-11): γ evaluation at the measured sites (decision 3b) and the FI-Lom comparison check
+
+Branch `spec-11-gamma-network`. Evidence for spec 09 decision point 3b (value of the EC-only constant γ of
+`pblhmod_default`); **no decision here: the default stays 0.01**.
+
+- **Part A.** `scripts/11_gamma_evaluation.R` is generalised: the reference of each site is its primary measured source
+  (`measured_reference()`, `config/measured_sites.csv`, as `scripts/10_measured_compare.R`); default sites BE-Bra
+  (ERA5 only) and `config/measured_run_sites.txt`; default cases `default`, `clim`, `gamma_med`, `gamma_site`,
+  `gamma0025` (`--cases=` for others; a missing case aborts, PBLHmod is never recomputed in script 11). Sets: aerosol
+  window 10–16 h AST × PBLHmod convective (primary) and all convective; FI-Hyy convective (primary) and all regimes,
+  exact values, censored-tail test; PBLHmod vs ERA5 tower cell (convective, by season, all regimes); ERA5 tower cell
+  vs the measurement on the same sets (decision and season tables only). New outputs: `11_gamma_cases_season.csv`,
+  `11_gamma_decision.csv` (one row per site: per case median ln ratio [day-block 95 %], n, n days, `low_n`, season
+  with the largest |ln ratio|, PBLHmod case vs ERA5; distance class, borderline flag, comparison period), figure
+  `11_gamma_decision.png`; supplementary `11s_ref_*` with `gamma_med`, `gamma_site`, `gamma0025`. With the sites and
+  cases of Part D the existing tables are byte-identical. Network context (no new runs): pairs 1, 6, 7, 8 of
+  `09_network_era5_metrics.csv`.
+- **`low_n`**: no minimum existed for these metrics; `low_n` = fewer than 10 days in the day-block bootstrap (the only
+  count threshold in the project is n ≥ 10 per growth-curve bin). Flagged for G; seasons with fewer days are not
+  candidates for the "largest |ln ratio|" season.
+- **Part B (FI-Lom).** `meas_cmp` failed on the cluster (2026-11-06, exit 1 after 15 s, no `10_*FI-Lom*` table).
+  Reproduced on the PC with an empty stratum set: `pblh_metrics_long()` of a table without rows returns no columns and
+  `dplyr::mutate(.after = "pair")` aborts ("Column `pair` doesn't exist") before any table is written. Fix:
+  `pblh_metrics_long_set()` writes the `all` row with `n = 0` and `no_data_reason` (new column of
+  `10_metrics_<site>.csv`, `NA` where the set has pairs); the script also prints the pairs per set (all regimes,
+  window, window × convective, convective). No threshold changed. Overlap of the KEN CABAM record with the FI-Lom
+  reference period: 2024-01-01 → 2024-05-15, 4,170 valid half-hours, 1,042 in the window on 103 days (PC, standard
+  file); the PBLHmod-convective part is known only on the cluster.
+- **Cost of a change of the default** (report, `docs/local/cluster_commands_gamma_eval.md`): `pblh_gamma_default` is
+  part of every step's inputs hash (whole `cfg`), so every requested step reruns. Results change in 02, 04, 08a (h
+  enters the validity tests), `meas_cmp`, 08 and the collection; `gamma001` keeps 0.01 (`pblh_options(gamma =
+  0.01)`), and the `gamma001` = `default` identity check of step 02 switches itself off. Footprint chunks: every
+  `pblhmod`, `pblhmod_x0.8`, `pblhmod_x1.2` chunk; other cases only in months where a PBLHmod validity flag flips
+  (`common_pe` / `common_pme` groups): with `gamma_med`, 1 row (BE-Bra 2025) and 0 rows (FI-Hyy 2022).

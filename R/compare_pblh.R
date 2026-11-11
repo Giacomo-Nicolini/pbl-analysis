@@ -243,6 +243,30 @@ pblh_metrics_long <- function(pt, strata = c("regime", "season", "hour_utc")) {
   )
 }
 
+#' Metrics of one pair and stratum set in long format, also when the set is empty
+#'
+#' Spec 11 amendment 1 (FI-Lom, G 2026-11-11): [pblh_metrics_long()] of a table without rows returns no columns, so
+#' the comparison table of a site with an empty set was not written. Here an empty set gives the stratum `all` with
+#' `n = 0` (other metrics `NA`) and the reason; no threshold is applied.
+#'
+#' @param pt Output of [pair_table()] for one pair, already restricted to the stratum set (may have no rows).
+#' @param pair Pair name [character] (used when `pt` has no rows).
+#' @param strata Stratum columns, as in [pblh_metrics_long()].
+#' @param empty_reason Reason written when `pt` has no rows [character].
+#' @return Long tibble: `pair`, `stratum`, `metric`, `value` (as [pblh_metrics_long()]) and `no_data_reason`
+#'   [character, `NA` when the set has pairs].
+pblh_metrics_long_set <- function(pt, pair, strata = c("regime", "season", "hour_utc"),
+                                  empty_reason = "no pair in the stratum set") {
+  if (nrow(pt) > 0) {
+    out <- pblh_metrics_long(pt, strata)
+    out$no_data_reason <- rep(NA_character_, nrow(out))
+    return(out)
+  }
+  m <- pblh_metrics(numeric(), numeric())
+  dplyr::tibble(pair = pair, stratum = "all", metric = names(m), value = unname(vapply(m, as.numeric, numeric(1))),
+                no_data_reason = empty_reason)
+}
+
 #' Diurnal summary
 #'
 #' @param df Data frame with `value_cols` and the `by` columns.

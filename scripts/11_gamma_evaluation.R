@@ -1,36 +1,59 @@
-# Spec 11 D: evaluation of the gamma cases at four sites, with the generic spec-10 comparison (measured_time_base()).
-#   References: FR-Gri SIRTA CHM15k (aerosol, hourly; primary set = window convective), FI-Hyy Cloudnet epsilon MLH
-#   (turbulence, half-hourly, exact values + censored-tail test; sets convective and all regimes), CH-Dav MeteoSwiss
-#   STRATfinder (aerosol, half-hourly; primary set = window convective, G 2026-10-30), BE-Bra ERA5 only.
-#   Cases: default (PBLHmod, gamma 0.01), clim (PBLHmod-clim, ERA5 climatology), the reference gamma values gamma001
-#   (0.01) and gamma0025, and gamma_era5daily, gamma_era5clim_zmin1000,
-#   gamma_era5clim_bgonly (derived PBLHmod outputs of script 02, standardized in memory).
+# Spec 11 D and amendment 1 (G 2026-11-11): evaluation of the gamma cases at the measured sites, with the generic
+# spec-10 comparison (measured_time_base()), for the decision on the EC-only constant gamma (spec 09 decision 3b;
+# evidence only, the default stays 0.01).
+#   Reference of each site = its primary measured source (config/measured_sites.csv, measured_reference(), as
+#   scripts/10_measured_compare.R): aerosol (SIRTA CHM15k hourly; MeteoSwiss STRATfinder / CABAM half-hourly) on the
+#   window set (apparent solar time 10-16 h, PBLHmod convective) and all convective intervals; turbulence (FI-Hyy
+#   Cloudnet epsilon MLH, exact values + censored-tail test) on the convective set and all regimes (where the
+#   distance class allows). Sites without a primary source (BE-Bra) are compared with ERA5 only. The standard files
+#   of the measured sources already exclude config/measured_exclusions.csv; tables of the decision carry the distance
+#   class and the borderline flag.
+#   Cases (--cases): default (PBLHmod, gamma = config pblh_gamma_default), clim (PBLHmod-clim, ERA5 climatology),
+#   gamma_med (network median of the site medians of the daily ERA5 gamma), gamma_site (the site's median),
+#   gamma0025 (legacy ETC value) by default; also possible: gamma001, gamma_era5daily, gamma_era5clim_zmin1000,
+#   gamma_era5clim_bgonly (derived PBLHmod outputs of script 02, standardized in memory; a missing case aborts:
+#   script 02 runs them, gamma_med only after scripts/09_collect.R wrote the network gamma).
 #   Per site x case: metrics vs the measurement (pblh_metrics(), median log ratio with day-block bootstrap interval,
-#   symmetric slope), the FI-Hyy censored-tail test, PBLHmod vs ERA5 tower cell (convective and all regimes);
-#   regime shares and stable / neutral heights (gamma_era5clim_bgonly vs clim: the effect of gamma in N of the
-#   neutral Eq. B3); clear-day growth curves by apparent solar hour (kt >= 0.65, SW_IN on >= 90 % of the daylight
-#   half-hours; G 2026-10-30); gamma diagnostics (daily vs climatology).
+#   symmetric slope), all seasons and by season, the FI-Hyy censored-tail test, PBLHmod vs ERA5 tower cell
+#   (convective, by season, and all regimes); ERA5 tower cell vs the measurement on the same sets (decision table
+#   and season table only); regime shares and stable / neutral heights (gamma_era5clim_bgonly vs clim: the effect
+#   of gamma in N of the neutral Eq. B3); clear-day growth curves by apparent solar hour (kt >= 0.65, SW_IN on
+#   >= 90 % of the daylight half-hours; G 2026-10-30); gamma diagnostics (daily vs climatology).
+#   Network context (PBLHmod, PBLHmod-clim, gamma_med, gamma_site vs ERA5 at every site): pairs 1, 6, 7, 8 of
+#   tables/09_network_era5_metrics.csv (scripts/09_collect.R); not repeated here.
 #
-# Output (<output_dir>): tables/11_gamma_cases_metrics.csv (long), 11_gamma_censored_null.csv,
-# 11_gamma_regime_heights.csv, 11_gamma_daily_vs_clim.csv, 11_growth_clearday_<site>.csv; figures/
-# 11_gamma_by_month_<sites>.png, 11_gamma_cases_<site>.png, 11_growth_clearday_<site>.png (main: PBLHmod, PBLHmod-clim,
-# ERA5, measured) and 11s_ref_gamma_cases_<site>.png, 11s_ref_growth_clearday_<site>.png (supplement: reference gamma
-# values; G 2026-10-30).
+# Output (<output_dir>): tables/11_gamma_cases_metrics.csv (long), 11_gamma_cases_season.csv, 11_gamma_decision.csv
+# (one row per site), 11_gamma_censored_null.csv, 11_gamma_regime_heights.csv, 11_gamma_daily_vs_clim.csv,
+# 11_growth_clearday_<site>.csv; figures/11_gamma_decision.png, 11_gamma_by_month_<sites>.png,
+# 11_gamma_cases_<site>.png, 11_growth_clearday_<site>.png (main: PBLHmod, PBLHmod-clim, ERA5, measured) and
+# 11s_ref_gamma_cases_<site>.png, 11s_ref_growth_clearday_<site>.png (supplement: gamma_med, gamma_site and the
+# reference gamma values; G 2026-10-30, 2026-11-11).
+# With the sites and cases of spec 11 D (FR-Gri FI-Hyy CH-Dav BE-Bra, --cases=default,clim,gamma001,gamma0025,
+# gamma_era5daily,gamma_era5clim_zmin1000,gamma_era5clim_bgonly) the tables of spec 11 D are unchanged.
 #
-# Usage: Rscript scripts/11_gamma_evaluation.R [SITE ...] [--n-boot=N]   (default: FR-Gri FI-Hyy CH-Dav BE-Bra)
-#   Profile: env var R_CONFIG_ACTIVE (default | cluster).
+# Usage: Rscript scripts/11_gamma_evaluation.R [SITE ...] [--cases=a,b,...] [--n-boot=N]
+#   Default sites: BE-Bra and the sites of config/measured_run_sites.txt; default cases: default, clim, gamma_med,
+#   gamma_site, gamma0025. Profile: env var R_CONFIG_ACTIVE (default | cluster).
 
 for (f in list.files(here::here("R"), pattern = "\\.R$", full.names = TRUE)) source(f)
 
 args <- commandArgs(trailingOnly = TRUE)
 nb_arg <- grep("^--n-boot=", args, value = TRUE)
-site_ids <- setdiff(args, nb_arg)
-if (length(site_ids) == 0) site_ids <- c("FR-Gri", "FI-Hyy", "CH-Dav", "BE-Bra")
+case_arg <- grep("^--cases=", args, value = TRUE)
+site_ids <- setdiff(args, c(nb_arg, case_arg))
+bad_arg <- grep("^--", site_ids, value = TRUE)
+if (length(bad_arg) > 0) cli::cli_abort("Unknown option{?s} {.val {bad_arg}}.")
 opts <- measured_compare_options()
 if (length(nb_arg) == 1) opts$n_boot <- as.integer(sub("^--n-boot=", "", nb_arg))
 kt_clear <- 0.65 # clear day (spec 10 item 3b, confirmed G 2026-10-30)
 kt_cov <- 0.9
+# low_n: fewer days than this in the bootstrap of a set (spec 11 amendment 1; no minimum existed: flagged for G)
+min_days <- 10L
 cfg <- get_cfg()
+if (length(site_ids) == 0) {
+  ms_sites <- trimws(readLines(here::here("config", "measured_run_sites.txt"), warn = FALSE))
+  site_ids <- c("BE-Bra", ms_sites[nzchar(ms_sites) & !startsWith(ms_sites, "#")])
+}
 sites <- read_sites(resolve_path(cfg$sites_file))
 sites_tv <- read_sites_timevarying(resolve_path(cfg$sites_timevarying_file))
 exclusions <- read_exclusions(resolve_path(cfg$exclusions_file))
@@ -42,17 +65,31 @@ print_tbl <- function(x) print(as.data.frame(dplyr::mutate(x, dplyr::across(dply
                                row.names = FALSE)
 t0 <- Sys.time()
 
-cases <- c("default", "clim", "gamma001", "gamma0025", "gamma_era5daily", "gamma_era5clim_zmin1000",
-           "gamma_era5clim_bgonly")
-# Figures (G 2026-10-30): main = PBLHmod (default) and PBLHmod-clim (clim) with ERA5 and the measurement;
-# supplementary = the reference gamma values (gamma001, gamma0025), same layout; the other cases in tables only.
-fig_sets <- list(main = list(cases = c("default", "clim"), prefix = "11_", title = NULL),
-                 ref = list(cases = c("gamma001", "gamma0025"), prefix = "11s_ref_", title = "reference γ values"))
-case_pal <- stats::setNames(style_of(paste0("pblhmod_", cases[1:4])), cases[1:4])
-case_lab <- stats::setNames(style_of(paste0("pblhmod_", cases[1:4]), "label"), cases[1:4])
-refs <- list(`FR-Gri` = list(src = "sirta_mlh_chm15k", type = "aerosol", label = "SIRTA CHM15k"),
-             `FI-Hyy` = list(src = "cloudnet_eps_mlh", type = "turbulence", label = "Cloudnet epsilon MLH"),
-             `CH-Dav` = list(src = "meteoswiss_stratfinder_mlh", type = "aerosol", label = "MeteoSwiss STRATfinder"))
+all_cases <- c("default", "clim", "gamma001", "gamma0025", "gamma_era5daily", "gamma_era5clim_zmin1000",
+               "gamma_era5clim_bgonly", "gamma_med", "gamma_site")
+cases <- if (length(case_arg) == 1) strsplit(sub("^--cases=", "", case_arg), ",")[[1]] else
+  c("default", "clim", "gamma_med", "gamma_site", "gamma0025")
+bad <- setdiff(cases, all_cases)
+if (length(bad) > 0) cli::cli_abort("Unknown case{?s} {.val {bad}} (known: {.val {all_cases}}).")
+if (!"default" %in% cases) cli::cli_abort("Case {.val default} is required (regimes and the time base).")
+# Figures (G 2026-10-30, 2026-11-11): main = PBLHmod (default) and PBLHmod-clim (clim) with ERA5 and the measurement;
+# supplementary = gamma_med, gamma_site and the reference gamma values (gamma001, gamma0025), same layout; the other
+# cases in tables only.
+styled <- c("default", "clim", "gamma_med", "gamma_site", "gamma001", "gamma0025")
+case_pal <- stats::setNames(style_of(paste0("pblhmod_", styled)), styled)
+case_lab <- stats::setNames(style_of(paste0("pblhmod_", styled), "label"), styled)
+ref_cases <- intersect(c("gamma_med", "gamma_site", "gamma001", "gamma0025"), cases)
+fig_sets <- list(main = list(cases = intersect(c("default", "clim"), cases), prefix = "11_", title = NULL),
+                 ref = list(cases = ref_cases, prefix = "11s_ref_",
+                            title = if (any(c("gamma_med", "gamma_site") %in% ref_cases)) {
+                              "γ network and site medians, reference γ values"
+                            } else {
+                              "reference γ values"
+                            }))
+fig_sets <- Filter(function(fs) length(fs$cases) > 0, fig_sets)
+# Reference per site: the primary measured source (NULL = ERA5 only)
+ms <- read_measured_sites(resolve_path(cfg$measured_sites_file))
+refs <- stats::setNames(lapply(site_ids, function(s) measured_reference(ms, s)), site_ids)
 exact_ref <- function(v) v[v$kind %in% "exact", c("timestamp_utc", "pblh_m")]
 mets <- c("n", "bias", "median_log_ratio", "mad_log_ratio", "frac_within_factor2", "r_spearman", "fb", "nrmsd")
 
@@ -67,8 +104,10 @@ metric_row <- function(pt, site_id, case, reference, set) {
 }
 
 wide <- list()
+wide_em <- list() # ERA5 tower cell vs the measurement (decision and season tables only)
 nulls <- list()
 reg_h <- list()
+periods <- list()
 for (site_id in site_ids) {
   cli::cli_h1("Gamma cases: {site_id}")
   meta <- sites[sites$site_id == site_id, ]
@@ -78,14 +117,17 @@ for (site_id in site_ids) {
   std <- list()
   for (k in cases) {
     p <- file.path(pbl_dir, paste0(site_id, "_pblhmod_", k, ".csv.gz"))
-    if (!file.exists(p)) cli::cli_abort("{.path {p}} not found (script 02).")
+    if (!file.exists(p)) {
+      cli::cli_abort(c("{.path {p}} not found (script 02).",
+                       i = if (k == "gamma_med") "gamma_med needs the network gamma of scripts/09_collect.R (second pass)."))
+    }
     raw[[k]] <- readr::read_csv(p, show_col_types = FALSE, progress = FALSE, guess_max = 1e5)
     std[[k]] <- suppressMessages(standardize_pblhmod(raw[[k]], k)$data)
   }
   era <- list(era5_blh_center = rd("era5_blh_center"), era5_blh_bilinear = rd("era5_blh_bilinear"))
 
-  # --- regime shares and stable / neutral heights (bgonly vs clim vs default) ---
-  for (k in c("default", "clim", "gamma0025", "gamma_era5clim_bgonly")) {
+  # --- regime shares and stable / neutral heights (bgonly vs clim vs default; gamma_med, gamma_site) ---
+  for (k in intersect(c("default", "clim", "gamma0025", "gamma_era5clim_bgonly", "gamma_med", "gamma_site"), cases)) {
     d <- raw[[k]]
     reg_h[[length(reg_h) + 1]] <- dplyr::bind_rows(lapply(c("stable", "unstable_diag", "convective"), function(r) {
       i <- d$regime %in% r & !is.na(d$pblh_m)
@@ -113,19 +155,21 @@ for (site_id in site_ids) {
 
   # --- measured reference ---
   rf <- refs[[site_id]]
-  if (is.null(rf)) next
+  if (is.null(rf)) {
+    cli::cli_inform("{site_id}: no primary measured source in {.file measured_sites.csv}: ERA5 only.")
+    next
+  }
   meas <- rd(rf$src)
   v_rng <- function(d) range(d$timestamp_start_utc[!is.na(d$pblh_m)])
   p_start <- max(v_rng(std$default)[1], v_rng(meas)[1])
   p_end <- min(v_rng(std$default)[2], v_rng(meas)[2])
+  periods[[site_id]] <- dplyr::tibble(site_id = site_id, period_start_utc = p_start, period_end_utc = p_end)
   meas <- meas[meas$timestamp_start_utc >= p_start & meas$timestamp_start_utc <= p_end, ]
-  cli::cli_inform("{rf$label}: comparison period {format(p_start, '%Y-%m-%d %H:%M')} to {format(p_end, '%Y-%m-%d %H:%M')} UTC.")
-  sets <- if (rf$type == "aerosol") {
-    list(window_convective = function(pt) pt$regime %in% "convective" & pt$in_window,
-         convective = function(pt) pt$regime %in% "convective")
-  } else {
-    list(convective = function(pt) pt$regime %in% "convective", all_regimes = function(pt) rep(TRUE, nrow(pt)))
-  }
+  cli::cli_inform("{style_of(rf$src, 'label')} ({rf$provider_site}, {rf$distance_km} km, {rf$distance_class}{if (rf$borderline) ', borderline' else ''}): comparison period {format(p_start, '%Y-%m-%d %H:%M')} to {format(p_end, '%Y-%m-%d %H:%M')} UTC.")
+  set_fun <- list(window_convective = function(pt) pt$regime %in% "convective" & pt$in_window,
+                  convective = function(pt) pt$regime %in% "convective",
+                  all_regimes = function(pt) rep(TRUE, nrow(pt)))
+  sets <- set_fun[rf$sets]
   tbs <- list()
   for (k in cases) {
     tb <- measured_time_base(meas, std[[k]], era)
@@ -135,9 +179,25 @@ for (site_id in site_ids) {
     pt$in_window <- a >= opts$aerosol_window[1] & a < opts$aerosol_window[2]
     for (s in names(sets)) {
       x <- pt[sets[[s]](pt), ]
+      if (nrow(x) == 0) cli::cli_alert_warning("{site_id} {k} [{s}]: no pair; row with n = 0 written.")
       wide[[length(wide) + 1]] <- metric_row(x, site_id, k, rf$src, s)
       for (se in levels(x$season)) {
         wide[[length(wide) + 1]] <- metric_row(x[x$season %in% se, ], site_id, k, rf$src, paste0(s, ":", se))
+      }
+    }
+    if (k == "default") {
+      # ERA5 tower cell vs the measurement on the same sets (PBLHmod regime of the ERA5 base; regimes do not depend
+      # on gamma), as pair 2 of scripts/10_measured_compare.R
+      pe <- pair_table(tb$era$era5_blh_center, exact_ref(tb$era_meas), "era5_blh_center")
+      a <- apparent_solar_hour(pe$timestamp_utc + tb$era_mid_s, meta$lon)
+      pe$in_window <- a >= opts$aerosol_window[1] & a < opts$aerosol_window[2]
+      for (s in names(sets)) {
+        x <- pe[sets[[s]](pe), ]
+        wide_em[[length(wide_em) + 1]] <- metric_row(x, site_id, "era5_blh_center", rf$src, s)
+        for (se in levels(x$season)) {
+          wide_em[[length(wide_em) + 1]] <- metric_row(x[x$season %in% se, ], site_id, "era5_blh_center", rf$src,
+                                                       paste0(s, ":", se))
+        }
       }
     }
     if (rf$type == "turbulence") {
@@ -170,11 +230,22 @@ for (site_id in site_ids) {
   for (k in cases) g[[k]] <- at(tbs[[k]]$mod)
   g$day_id <- as.Date(d0$day_id)[match(as.numeric(g$timestamp_utc), t_d0)]
   vars <- c("measured", "era5_blh_center", cases)
-  gc <- growth_curves(g[g$day_id %in% clear, ], vars, meta$lon, mid_s = tb$mid_s)
+  g_clear <- g[g$day_id %in% clear, ]
+  g_ok <- stats::complete.cases(g_clear[vars])
+  if (!any(g_ok)) {
+    # e.g. a short overlap in the polar winter (FI-Lom): no growth curve, no table, no figure
+    cli::cli_alert_warning("{site_id}: {length(clear)} clear day{?s}, no hour with every value valid: growth curves skipped.")
+    next
+  }
+  gc <- growth_curves(g_clear, vars, meta$lon, mid_s = tb$mid_s)
   readr::write_csv(dplyr::mutate(gc$summary, site_id = site_id, reference = rf$src, .before = 1),
                    file.path(tables_dir, paste0("11_growth_clearday_", site_id, ".csv")))
   cli::cli_inform("Clear days (kt >= {kt_clear}): {length(clear)}; hours with all values: {nrow(gc$rows)}.")
   gp <- gc$summary[gc$summary$n >= 10, ]
+  if (nrow(gp) == 0) {
+    cli::cli_alert_warning("{site_id}: no apparent solar hour with n >= 10: growth figures skipped.")
+    next
+  }
   gp$x <- gp$ast_hour + 0.5
   gp$comparable <- if (rf$type == "aerosol") gp$x >= opts$aerosol_window[1] & gp$x < opts$aerosol_window[2] else TRUE
   nd <- dplyr::distinct(gc$summary[c("season", "n_clear_days")])
@@ -215,6 +286,32 @@ long <- dplyr::bind_rows(lapply(long_cols, function(m) {
 long$note <- paste("fb > 0: reference deeper (Sinclair2022); mlr_lo/hi, slope_sym_lo/hi, ba_slope_lo/hi: day-block",
                    "bootstrap 95 %; measured references: exact values (FI-Hyy) or quality-filtered aerosol MLH")
 readr::write_csv(long, file.path(tables_dir, "11_gamma_cases_metrics.csv"))
+wide_em <- dplyr::bind_rows(wide_em)
+wide_all <- dplyr::bind_rows(wide, wide_em)
+# Season table (amendment 1): every case and ERA5 against the measurement, and every case against ERA5
+season_tab <- gamma_season_table(wide_all, min_days)
+pairing <- function(s, what) {
+  vapply(s, function(x) if (is.null(refs[[x]])) NA_character_ else as.character(refs[[x]][[what]]), "")
+}
+season_tab$distance_class <- unname(pairing(season_tab$site_id, "distance_class"))
+season_tab$borderline <- as.logical(unname(pairing(season_tab$site_id, "borderline")))
+season_tab$note <- paste("ln(source / reference); case era5_blh_center = ERA5 tower cell vs the measurement;",
+                         "low_n: fewer than", min_days, "days in the day-block bootstrap")
+readr::write_csv(season_tab, file.path(tables_dir, "11_gamma_cases_season.csv"))
+# Decision table (amendment 1): one row per site
+dec_cases <- c(cases, "era5_blh_center")
+decision <- gamma_decision_table(wide_all, site_ids, refs, dec_cases, min_days)
+per <- dplyr::bind_rows(c(list(dplyr::tibble(site_id = character(), period_start_utc = as.POSIXct(character(), tz = "UTC"),
+                                             period_end_utc = as.POSIXct(character(), tz = "UTC"))), periods))
+decision <- dplyr::left_join(decision, per, by = "site_id")
+decision <- dplyr::relocate(decision, period_start_utc, period_end_utc, .after = borderline)
+decision$note <- paste("mlr = median ln(PBLHmod case / measured) on the primary set (aerosol: window",
+                       paste(opts$aerosol_window, collapse = "-"), "h apparent solar time and PBLHmod convective;",
+                       "turbulence: convective, exact values), day-block bootstrap 95 %; era5_blh_center = ERA5 tower",
+                       "cell vs measured; season_max = season with the largest |mlr| among seasons with >=", min_days,
+                       "days; era5_mlr = median ln(PBLHmod case / ERA5 tower cell), convective; low_n: fewer than",
+                       min_days, "days")
+readr::write_csv(decision, file.path(tables_dir, "11_gamma_decision.csv"))
 reg_h <- dplyr::bind_rows(reg_h)
 readr::write_csv(reg_h, file.path(tables_dir, "11_gamma_regime_heights.csv"))
 if (length(nulls) > 0) {
@@ -270,8 +367,56 @@ for (s in site_ids) {
   }
 }
 
+# --- decision overview (amendment 1): sites on the y axis, median ln ratio with interval per case ---
+dm <- wide_all[wide_all$reference != "era5_blh_center" & wide_all$case %in% c(intersect(styled, cases), "era5_blh_center"), ]
+dm <- dm[dm$stratum_set == vapply(dm$site_id, function(s) refs[[s]]$primary_set, ""), ]
+if (nrow(dm) > 0) {
+  ov_ids <- c(paste0("pblhmod_", intersect(styled, cases)), "era5_blh_center")
+  ov_ids <- style_ids("source", ov_ids)
+  dm$source <- ifelse(dm$case == "era5_blh_center", "era5_blh_center", paste0("pblhmod_", dm$case))
+  dm$source <- factor(dm$source, levels = rev(ov_ids)) # first source on top after the flip
+  ms_sites <- intersect(site_ids, unique(dm$site_id))
+  lab_site <- vapply(ms_sites, function(s) {
+    rf <- refs[[s]]
+    nd <- decision$n_days_default[decision$site_id == s]
+    paste0(s, " (", unname(style_of(rf$src, "label")), ")", if (rf$borderline) " [borderline]" else "",
+           if (isTRUE(nd < min_days)) paste0(" [low n: ", nd, " d]") else "")
+  }, "")
+  dm$site <- factor(lab_site[dm$site_id], levels = rev(lab_site))
+  dm$low_n <- ifelse(is.na(dm$n_days) | dm$n_days < min_days, "low n", "ok")
+  pos <- ggplot2::position_dodge(width = 0.75)
+  fig_d <- ggplot2::ggplot(dm, ggplot2::aes(site, median_log_ratio, colour = source, group = source)) +
+    ratio_lines() +
+    ggplot2::geom_errorbar(ggplot2::aes(ymin = mlr_lo, ymax = mlr_hi), width = 0, linewidth = 0.4, position = pos,
+                           na.rm = TRUE) +
+    ggplot2::geom_point(ggplot2::aes(shape = low_n), size = 1.8, position = pos, na.rm = TRUE) +
+    ggplot2::scale_colour_manual(values = style_of(ov_ids), labels = style_of(ov_ids, "label"), breaks = ov_ids,
+                                 name = NULL) +
+    ggplot2::scale_shape_manual(values = c(ok = 16, `low n` = 1), name = NULL,
+                                labels = c(ok = paste0(">= ", min_days, " days"), `low n` = paste0("< ", min_days, " days"))) +
+    ggplot2::coord_flip() +
+    ggplot2::labs(x = NULL, y = "Median ln(source / measured) [-] (day-block bootstrap 95 %)",
+                  subtitle = sprintf(paste("Aerosol: %g-%g h apparent solar time, PBLHmod convective;\n",
+                                           "Cloudnet (FI-Hyy): PBLHmod convective, exact values"), opts$aerosol_window[1],
+                                     opts$aerosol_window[2])) +
+    theme_pblh() +
+    ggplot2::guides(colour = ggplot2::guide_legend(ncol = 2))
+  pth <- save_figure(fig_d, "11_gamma_decision", 19, 4 + 1.6 * length(ms_sites))
+  cli::cli_alert_success("{.path {pth[['png']]}}")
+}
+
 # --- report ---
 cli::cli_h1("Summary")
+cli::cli_h2("Decision table: median ln ratio on the primary set [95 %], n days")
+dec_print <- decision[c("site_id", "stratum_set", "borderline")]
+for (k in dec_cases) {
+  dec_print[[k]] <- ifelse(is.na(decision[[paste0("mlr_", k)]]), NA_character_,
+                           sprintf("%+.2f [%+.2f, %+.2f] %s d%s", decision[[paste0("mlr_", k)]],
+                                   decision[[paste0("mlr_lo_", k)]], decision[[paste0("mlr_hi_", k)]],
+                                   decision[[paste0("n_days_", k)]],
+                                   ifelse(decision[[paste0("low_n_", k)]] %in% TRUE, " low_n", "")))
+}
+print(as.data.frame(dec_print), row.names = FALSE)
 cli::cli_h2("Primary sets: median ln ratio [95 %], within factor 2, FB, nRMSD, symmetric slope")
 prim <- wide[(wide$reference != "era5_blh_center" & wide$stratum_set %in% c("window_convective", "convective")) |
                (wide$reference == "era5_blh_center" & !grepl(":", wide$stratum_set, fixed = TRUE)), ]

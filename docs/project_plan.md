@@ -448,7 +448,9 @@ too shallow when deep") is a **hypothesis under test**.
   43 % vs ≤ 30 % under scatter alone, the same in every γ case; at the shallow end the stable set is consistent
   (32 % vs ≥ 27 %). The shallow end that remains too deep is the convective set: PBLHmod ≤ 105 m where the lidar
   MLH is < 105 m on 13 % vs ≥ 16 % (PBLHmod-clim; default 14 % vs ≥ 23 %, γ 0.0025 12 % vs ≥ 13 %); (c) the EC-only constant to be revised after the network γ (side results `gamma_med`, `gamma_site`: spec 09 amendment 3)
-  climatology (cluster, spec 09 decision point 3b), and the value then recommended for ICOS stations; (d) γ tables
+  climatology (cluster, spec 09 decision point 3b), and the value then recommended for ICOS stations; evidence table
+  `11_gamma_decision.csv` at the 8 measured sites + BE-Bra (spec 11 amendment 1, cluster run pending; `low_n` = fewer
+  than 10 bootstrap days, a new threshold to confirm); (d) γ tables
   of all sites as a deliverable (ERA5 attribution).
 - Timing of EC vs ERA5 sensible heat (evaluation; possible error driver for the evening transition). EC timestamps
   are correct (SW_IN_POT and EC H centred on solar noon within 4 min, Cowork 2026-10-23). With every value at its
