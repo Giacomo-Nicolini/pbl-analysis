@@ -151,7 +151,7 @@ so code must be reproducible, documented and traceable to references.
   `instrument` (`name`, `pid`), `volatile` (no file PID/version yet), `legacy`. No citation endpoint. Pairs ICOS site ×
   Cloudnet site: `config/measured_sites.csv` (`distance_km` from the API coordinates; optional `z_min_agl_m`; spec 13
   columns `station_code`, `wigos_id`, `provider_alt_m`, `elevation_diff_m`, `distance_class` (checked on read),
-  `status` used / inventory / pending, one primary source per site on a `used` row; `borderline` (G 2026-11-06:
+  `status` used / inventory / pending / secondary (spec 14), one primary source per site on a `used` row; `borderline` (G 2026-11-06:
   DE-HoH, FR-Lus, class kept), carried into every 07 / 10 comparison table by `tag_measured_pairing()`).
   Files under `cloudnet_dir` (`data/raw/cloudnet/{site}`; cluster `"LOCAL"`), with a provenance table
   `cloudnet_files_provenance_<product>.csv` written by `scripts/07b_cloudnet_download.R`.
@@ -209,12 +209,33 @@ so code must be reproducible, documented and traceable to references.
   - CABAM files: 15-min steps, `time` = interval centre, `time_bnds` = [start, end) on the quarter hour (checked by the
     reader); heights tilt-corrected, agl; no ABLH (`dlh` kept as `x_dlh_m`, `alh` not read); bit 2 dirty window (value
     removed), 16384 incomplete interval (quality 1). Standard source `meteoswiss_cabam_mlh`: mean of the quality-0 steps
-    of the half-hour, qc 0 both, 1 one, else NA. KEN: no polar night, record ends 2024-05-16.
+    of the half-hour, qc 0 both, 1 one, else NA. KEN: no polar night, record ends 2024-05-16: **no overlap with the
+    FI-Lom EC record (labelling date 2024-11-05); KEN row `inventory`, no primary source at FI-Lom (G 2026-11-12)**.
   - Every qc bit must be in `meteoswiss_qc_bits()`: a new bit aborts the reader (review it first).
-- **Lanzhot BL-View (spec 13 item 5, pending)**: two sample days in `data/raw/measured/CZ-Lnz/samples/`; data expected
-  2026-11. L3 `mean_mixing_layer_height` / `mean_mixing_layer_quality` (1–3) hourly, repeated on every ~1-min profile
-  (`time_aerosol`); prototype `read_blview_l3(path, time_offset_h)` (no default offset: time zone to be confirmed; the
-  files carry `time_zone` = 2 and coordinates 0). No standard file yet.
+- **Secondary measured sources (spec 14; G 2026-11-11)**: manufacturer algorithms, `status = secondary` in
+  `config/measured_sites.csv`: shown and tabulated, never a primary source, never pooled with the E-PROFILE sites;
+  internal use only. Diagnostics `scripts/14c_secondary_diagnostics.R` (outputs under `tables/internal/14_*`,
+  `figures/internal/14_*`).
+  - **DE-Tha SkyVUE PRO (TU Dresden)**: 113 m from the tower at 275°, base 0.5 m, profiles from 2025-02-06, MLH from
+    2025-06-25; UTC, stamp = end of the ~8.6 s record. Daily `E1227_<ddmmyy>_Midnight.{csv,txt}` (`.nc` empty,
+    ignored): CSV with decimal commas and `/////` (time, layers, confidences; **never parse its profile field**, a
+    zero gate makes it ambiguous); TXT = message 006, 7 lines per record, no time, paired by order. Field meanings,
+    profile decode (20-bit two's complement × 1e-8 m-1 sr-1) and CRC-16 (0x1021, init / xorout 0xFFFF, after SOH
+    through ETX): `CampbellSkyVUEPRO2026` Sect. 6.3.6, 2.1.3, 6.2; quality 1–3, 3 = highest confidence (Sect. 2.1.4).
+    `read_skyvue_day()` checks counts, layers, confidences, cloud base, profile vs CSV and CRC. Standard source
+    `tud_skyvue_mlh` (`scripts/14a_skyvue_mlh.R`): half-hourly medians of layers 1–3 as `x_layer<k>_*`, **`pblh_m`
+    `NA` until G decides a layer rule**.
+  - **CZ-Lnz BL-View L3 (CzechGlobe CL61)**: versions detected from the variables (`blview_version()`): 3.1.1
+    (`time`, `Mean_Layer_Height`, `Mean_Layer_QualityIndex`), 3.1.2 (+ `location_utc_offset`,
+    `Mean_Layer_Calculation_Time`), 3.2.2 (`time_aerosol`, `mean_mixing_layer_height`, `mean_mixing_layer_quality`,
+    fill −999; full files also `time_zone` = 2). Hourly value repeated on ~1-min profiles, changing at hh:00:xx: one
+    row per hour, profiles hh:00–hh:59 = the hour ending at hh:00; a changing value gives `NA` and
+    `x_consistent = FALSE`. Quality meaning not documented (indicative 3 = best, `Muenkel2012`). Stored time read as
+    UTC (`time_offset_h` explicit; not proven: lag test). Standard source `vaisala_blview_mlh`
+    (`scripts/14b_blview_mlh.R`): hourly, all quality kept (`x_quality`), overlaps across files: newest version kept.
+- **Standard-file column types (spec 14)**: `read_standard_pblh()` never guesses: documented non-numeric `x_` columns
+  in `standard_x_col_types()` (add a row there and in `docs/specs/standard_format.md` for a new one); every other `x_`
+  column is double when all values parse, else character.
 - Site metadata: `config/sites.csv` (lat, lon, altitude, UTC offset, zm, canopy height, d, z0...).
   Missing values allowed; functions must fail with an informative error only when a *required* value is missing.
   Time-varying zm / canopy height: `config/sites_timevarying.csv` (derived from `config/sites_H_EC_canopy_formBIF.csv`).
@@ -295,7 +316,8 @@ so code must be reproducible, documented and traceable to references.
   files, configuration, the site's raw inputs, arguments, upstream hashes) is skipped unless `--force`; any code
   change in `R/` therefore reruns every step. The first failing step stops the site.
 - **Measured steps (spec 09 amendment 2, spec 13)**: at the sites with a primary measured source
-  (`config/measured_run_sites.txt`: FI-Hyy, FR-Gri, CH-Dav, DE-RuS, DE-HoH, FI-Lom, FR-Fon, FR-Lus),
+  (`config/measured_run_sites.txt`: FI-Hyy, FR-Gri, CH-Dav, DE-RuS, DE-HoH, FR-Fon, FR-Lus; FI-Lom removed G
+  2026-11-12, no overlap; the secondary sources run with scripts 14a / 14b / 14c, not here),
   `--steps=meas_std,meas_cmp` (`scripts/09m_measured.R`; scripts per provider from `measured_site_scripts()`: standard
   files 07c / 10a / 11b, comparison 07 + 10 / 10 / 10; CH-Dav also in `11_gamma_evaluation.R`), then `08a` again (it hashes the measured standard files, so `n_measured` enters the
   reference-year proposal). Cloudnet files are downloaded first with `07b` (size report, `--confirm`, re-check).
@@ -316,7 +338,9 @@ so code must be reproducible, documented and traceable to references.
   `chunk_list_pending.csv`: only the new chunks and those whose hash (`footprint_task_hash()`, as 08b) changed; adding
   `measured` changes the `pblhmod`, `pblhmod_clim`, `era5` chunks of the months with measured values (`common_pme`).
 - **Collection**: `scripts/09_collect.R` reads only the per-site tables (`01_inputs_`, `02_cases_`, `02_regimes_`,
-  `11a_gamma_summary_`, `04_metrics_`, `08_coverage_`, `08_year_counts_`, `08_nee_qc_`) and writes `09_network_*.csv`.
+  `11a_gamma_summary_`, `04_metrics_`, `08_coverage_`, `08_year_counts_`, `08_nee_qc_`) and writes `09_network_*.csv`;
+  the one exception is `09_network_record_start.csv` (ICOS labelling date = first valid `pblhmod_default` value, G
+  2026-11-12; `network_record_start()` reads the time and value columns of the step-04 standard files).
   Network figure (G 2026-11-03): PBLHmod median ln(PBLHmod / ERA5) as filled dots with a p25–p75 bar
   (`p25_log_ratio`, `p75_log_ratio` of `pblh_metrics()`), PBLHmod-clim as open circles drawn on top, no bar.
   Supplementary version `09_network_logratio_supp` (amendment 3): also `gamma_med` (filled triangles) and

@@ -19,6 +19,9 @@
 #   09_network_run_status.csv      last status per site x step; 09_network_flags.csv sites with problems and the
 #                                  stations not run (config/sites_not_run.csv: flag "not_run", spec 09 amendment 1)
 #   09_network_gamma_site.csv      gamma_site per site: median of the site's daily ERA5 gamma (11a; amendment 3)
+#   09_network_record_start.csv    EC record start = ICOS labelling date (first valid pblhmod_default value, local
+#                                  date), last valid value, n_valid (G 2026-11-12; spec 14; the only input read
+#                                  outside the per-site tables: time and value columns of the step-04 standard file)
 # Derived: <derived_dir>/gamma/network_gamma.csv: gamma_med = median of the site medians of the daily ERA5 gamma (pooled
 #   median kept for reference), read by step 02
 #   (case gamma_med; spec 09 amendment 3); written only when every site has its 11a table and the value changed.
@@ -157,6 +160,15 @@ if (nrow(yc)) {
   write_tab(ry, "08_reference_years.csv")
   cli::cli_inform("Reference-year proposal: review {.path {file.path(tdir, '08_reference_years.csv')}}, then commit the approved list as {.file config/reference_years.csv} (site_id, year, reason).")
 }
+
+# --- EC record start = ICOS labelling date (G 2026-11-12): first valid pblhmod_default value (standard file of step
+# 04; only its time and value columns are read), for the supplement ---
+st_sites <- read_sites(resolve_path(cfg$sites_file))
+std_root <- resolve_path(cfg$standard_dir, must_exist = FALSE)
+rs <- network_record_start(stats::setNames(file.path(std_root, sites, paste0(sites, "__pblhmod_default.csv.gz")), sites),
+                           stats::setNames(st_sites$utc_offset_h[match(sites, st_sites$site_id)], sites))
+write_tab(rs, "09_network_record_start.csv")
+if (any(is.na(rs$n_valid))) cli::cli_alert_warning("No pblhmod_default standard file at {.val {rs$site_id[is.na(rs$n_valid)]}}.")
 
 # --- flags ---
 fl <- network_flags(sites, status, if (nrow(cases_tbl)) cases_tbl else dplyr::tibble(site_id = character(), case = character(), gt5km = integer()),

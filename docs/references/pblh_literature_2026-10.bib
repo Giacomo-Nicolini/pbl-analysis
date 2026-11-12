@@ -489,3 +489,42 @@
   year    = {2021}, volume = {14}, number = {12}, pages = {7835--7850},
   doi     = {10.5194/amt-14-7835-2021}
 }
+
+@manual{CampbellSkyVUEPRO2026,
+  author       = {{Campbell Scientific}},
+  title        = {{SkyVUE PRO} ({CS135}) {LIDAR} Ceilometer, Product Manual},
+  organization = {Campbell Scientific, Inc.},
+  edition      = {Revision 04/2026},
+  year         = {2026},
+  url          = {https://s.campbellsci.com/documents/us/manuals/skyvuepro.pdf},
+  note         = {Sect. 2.1.3 backscatter profile reporting (p. 6); 2.1.4 mixing layer height (pp. 6-7); 6.2 checksums (p. 68); 6.3.6 message 006 (pp. 87-91). Read 2026-11-12 (spec 14).}
+}
+
+@techreport{deHaij2007,
+  author      = {de Haij, M. J. and Klein Baltink, H. and Wauben, W. M. F.},
+  title       = {Continuous mixing layer height determination using the {LD-40} ceilometer: a feasibility study},
+  institution = {KNMI},
+  address     = {De Bilt},
+  type        = {Scientific Report},
+  number      = {WR 2007-01},
+  year        = {2007},
+  note        = {Basis of the SkyVUE PRO built-in MLH (CampbellSkyVUEPRO2026, Sect. 2.1.4); not read here.}
+}
+
+@manual{VaisalaBLView,
+  author       = {{Vaisala}},
+  title        = {{BL-View} User Guide},
+  organization = {Vaisala Oyj},
+  number       = {M211185EN-E},
+  url          = {https://docs.vaisala.com/r/M211185EN-E/en-US},
+  note         = {Section "NetCDF L3 File Format": Mean_Layer_Height, Mean_Layer_QualityIndex "for the period of 1 hour"; file-name time UTC. Meaning of the quality values and the hour convention not stated. Read 2026-11-12 (spec 14).}
+}
+
+@misc{Muenkel2012,
+  author       = {M{\"u}nkel, Christoph and Sch{\"a}fer, Klaus and Emeis, Stefan and Suppan, Peter},
+  title        = {Confidence levels and error bars for continuous detection of mixing layer heights by ceilometer},
+  howpublished = {Presentation, ISARS 2012, Boulder (Vaisala and KIT IMK-IFU)},
+  year         = {2012},
+  url          = {https://publikationen.bibliothek.kit.edu/240087001/3816066},
+  note         = {BL-View gradient-minimum quality index 1-3 (red / yellow / green; higher for a stronger gradient and a larger distance to other minima, lower with clouds). Indicative for the L3 index only (spec 14).}
+}

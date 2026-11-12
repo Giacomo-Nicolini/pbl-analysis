@@ -249,3 +249,19 @@ test_that("network and site gamma constants (spec 09 amendment 3)", {
   expect_equal(site_input_files("XX-Tst", cfg, "gamma_network")$path, p)
   expect_equal(nrow(site_input_files("XX-Tst", list(derived_dir = withr::local_tempdir()), "gamma_network")), 0)
 })
+
+test_that("network_record_start: labelling date = local date of the first valid PBLHmod value (G 2026-11-12)", {
+  d <- withr::local_tempdir()
+  t <- as.POSIXct("2024-01-01", tz = "UTC") - 3600 * 2 + 1800 * (0:9) # FLUXES rows from 1 January local (UTC + 2)
+  df <- dplyr::tibble(timestamp_start_utc = t, timestamp_end_utc = t + 1800,
+                      pblh_m = c(NA, NA, NA, NA, 300, 310, NA, 320, NA, NA), source_id = "pblhmod_default")
+  p <- write_standard_pblh(df, standard_meta("XX-Tst", "pblhmod_default", "parameterisation",
+                                             time_reference = "interval_mean"), file.path(d, "XX-Tst"))
+  rs <- network_record_start(c(`XX-Tst` = p[["data"]], `XX-Non` = file.path(d, "none.csv.gz")),
+                             c(`XX-Tst` = 2, `XX-Non` = 1))
+  expect_equal(rs$site_id, c("XX-Tst", "XX-Non"))
+  expect_equal(rs$first_valid_utc[1], t[5])
+  expect_equal(rs$last_valid_utc[1], t[8])
+  expect_equal(rs$labelling_date[1], as.Date("2024-01-01")) # 2023-12-31 22:00 UTC + 2 h + 2 h
+  expect_equal(rs$n_valid, c(3L, NA))
+})

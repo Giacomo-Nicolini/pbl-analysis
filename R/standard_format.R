@@ -215,12 +215,51 @@ write_standard_pblh <- function(df, meta, dir) {
   invisible(paths)
 }
 
+#' Types of the documented non-numeric `x_` columns of standard files
+#'
+#' `docs/specs/standard_format.md`, "Column types of x_ columns" (spec 14): every `x_` column not listed here is
+#' numeric (double) when all its values parse as numbers, otherwise character; never guessed from the first rows.
+#'
+#' @return Named character: column -> `"character"`, `"logical"` or `"datetime"` (ISO 8601 UTC).
+standard_x_col_types <- function() {
+  c(x_regime = "character", x_method = "character", x_h_source = "character", x_version = "character",
+    x_precip_checked = "logical", x_consistent = "logical",
+    x_first_profile_utc = "datetime", x_last_profile_utc = "datetime")
+}
+
+# Convert the x_ columns of a standard table read as character (standard_x_col_types()).
+standard_convert_x_cols <- function(df, path) {
+  types <- standard_x_col_types()
+  for (k in grep("^x_", names(df), value = TRUE)) {
+    v <- df[[k]]
+    ty <- if (k %in% names(types)) types[[k]] else "auto"
+    if (ty == "character") next
+    if (ty == "logical") {
+      bad <- !is.na(v) & !v %in% c("TRUE", "FALSE")
+      if (any(bad)) cli::cli_abort("{.path {path}}: {.field {k}} is logical but has other values ({.val {unique(v[bad])[1]}}).")
+      df[[k]] <- as.logical(v)
+    } else if (ty == "datetime") {
+      t <- as.POSIXct(v, format = "%Y-%m-%dT%H:%M:%SZ", tz = "UTC")
+      if (any(is.na(t) & !is.na(v))) cli::cli_abort("{.path {path}}: {.field {k}} has values that are not ISO 8601 UTC.")
+      df[[k]] <- t
+    } else {
+      x <- suppressWarnings(as.numeric(v))
+      if (!any(is.na(x) & !is.na(v))) df[[k]] <- x # else: not all numeric, kept as character
+    }
+  }
+  df
+}
+
 #' Read a standard PBLH table and its sidecar
+#'
+#' Column types are explicit (spec 14): the required and recommended columns as in `docs/specs/standard_format.md`;
+#' `x_` columns from [standard_x_col_types()], every other `x_` column double when all its values parse, else
+#' character. A column whose first rows are empty is no longer guessed as logical and lost.
 #'
 #' @param path Path of the `.csv.gz` data file; the sidecar is the `.yml` with
 #'   the same base name.
 #' @return Tibble (timestamps POSIXct UTC, `pblh_m` [m], `qc_flag` integer,
-#'   `uncertainty_m` [m], `n_samples` integer, `x_` columns as guessed) with
+#'   `uncertainty_m` [m], `n_samples` integer, `x_` columns typed as above) with
 #'   the sidecar list as attribute `meta`. Validated.
 read_standard_pblh <- function(path) {
   meta_path <- sub("\\.csv(\\.gz)?$", ".yml", path)
@@ -238,7 +277,7 @@ read_standard_pblh <- function(path) {
       qc_flag = readr::col_integer(),
       uncertainty_m = readr::col_double(),
       n_samples = readr::col_integer(),
-      .default = readr::col_guess()
+      .default = readr::col_character()
     ),
     na = "NA",
     progress = FALSE
@@ -246,6 +285,7 @@ read_standard_pblh <- function(path) {
   for (k in c("timestamp_start_utc", "timestamp_end_utc")) {
     df[[k]] <- as.POSIXct(df[[k]], format = "%Y-%m-%dT%H:%M:%SZ", tz = "UTC")
   }
+  df <- standard_convert_x_cols(df, path)
   validate_standard_pblh(df, meta)
   attr(df, "meta") <- meta
   df

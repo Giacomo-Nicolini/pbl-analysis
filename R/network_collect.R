@@ -306,3 +306,31 @@ network_etc_multiplier <- function(x, ref_years = NULL) {
   out$reference_year <- if (is.null(ref_years)) NA_integer_ else ref_years$year[match(out$site_id, ref_years$site_id)]
   out
 }
+
+#' Start of the EC record per site (ICOS labelling date)
+#'
+#' G 2026-11-12: each site's EC record starts at its ICOS labelling date, the first valid L2 EC value; the FLUXES
+#' rows before it (from 1 January, local) are empty grid rows. Taken from the first valid `pblhmod_default` value (the
+#' standard file written by step 04), for the supplement (`09_network_record_start.csv`).
+#'
+#' @param paths Named character vector (names = site ids) of `<site>__pblhmod_default.csv.gz` standard files; missing
+#'   files give a row with `NA` values.
+#' @param utc_offset_h Named numeric (names = site ids): site UTC offset [h] (local standard time = UTC + offset).
+#' @return Tibble: `site_id`, `labelling_date` [Date, local standard time of the first valid value],
+#'   `first_valid_utc`, `last_valid_utc` [POSIXct UTC, interval start], `n_valid` [-, half-hours with a value].
+network_record_start <- function(paths, utc_offset_h) {
+  dplyr::bind_rows(lapply(names(paths), function(s) {
+    na_t <- as.POSIXct(NA_real_, tz = "UTC")
+    if (!file.exists(paths[[s]])) {
+      return(dplyr::tibble(site_id = s, labelling_date = as.Date(NA), first_valid_utc = na_t, last_valid_utc = na_t,
+                           n_valid = NA_integer_))
+    }
+    d <- readr::read_csv(paths[[s]], col_select = c("timestamp_start_utc", "pblh_m"),
+                         col_types = readr::cols(timestamp_start_utc = "c", pblh_m = "d"), progress = FALSE)
+    t <- as.POSIXct(d$timestamp_start_utc[!is.na(d$pblh_m)], format = "%Y-%m-%dT%H:%M:%SZ", tz = "UTC")
+    off <- utc_offset_h[[s]]
+    first <- if (length(t)) min(t) else na_t
+    dplyr::tibble(site_id = s, labelling_date = as.Date(first + off * 3600, tz = "UTC"), first_valid_utc = first,
+                  last_valid_utc = if (length(t)) max(t) else na_t, n_valid = length(t))
+  }))
+}

@@ -149,3 +149,39 @@ start + 15 min), `method_class = aerosol`, `height_reference = agl`. `pblh_m` = 
 `x_share_lowest` (bit 8 among the level-0 steps), `x_segment`, `x_n_steps` (steps in the file), `x_n_profiles` (raw
 profiles of the level-0 steps), `x_tilt_deg`. Sidecar `licence`: to be confirmed, internal use only; `data_owner`,
 `processor`, `known_limitations` filled. Comparisons as for `meteoswiss_stratfinder_mlh`.
+
+## Column types of `x_` columns (spec 14)
+
+`read_standard_pblh()` reads every column as text and types it explicitly (no guessing from the first rows; before
+spec 14 a column empty in its first rows, e.g. the CABAM `x_dlh_m`, was guessed as logical and lost). Required and
+recommended columns as in the table above. Documented non-numeric `x_` columns (`standard_x_col_types()`):
+
+| column | type |
+|---|---|
+| `x_regime`, `x_method`, `x_h_source`, `x_version` | character |
+| `x_precip_checked`, `x_consistent` | logical (`TRUE` / `FALSE`; any other value aborts) |
+| `x_first_profile_utc`, `x_last_profile_utc` | ISO 8601 UTC time |
+
+Every other `x_` column is double when all its values parse as numbers (an empty column too), otherwise character.
+A writer that adds a non-numeric `x_` column adds it to `standard_x_col_types()` and to this table.
+
+## Secondary measured sources (spec 14)
+
+Manufacturer algorithms near ICOS towers: shown and tabulated, never pooled with the E-PROFILE sites, never a primary
+source (`status = secondary` in `config/measured_sites.csv`). Internal use only.
+
+**`tud_skyvue_mlh`** (DE-Tha, TU Dresden Campbell SkyVUE PRO, built-in MLH; `scripts/14a_skyvue_mlh.R`,
+`standardize_skyvue_mlh()`): half-hourly interval values [start, start + 30 min) (a record belongs to the half-hour
+of its time stamp minus 1 s; the stamp is the end of the ~8.6 s record), `method_class = aerosol`, heights above the
+instrument (0.5 m above ground). **No layer chosen: `pblh_m` and `qc_flag` are `NA` on every row** until G decides a
+layer rule. `n_samples` = records with a valid CRC-16. `x_` columns per layer k = 1–3: `x_layer<k>_m` (median height
+[m]), `x_layer<k>_conf` (median quality 1–3, 3 = highest confidence), `x_layer<k>_n` (records with the layer),
+`x_layer<k>_share_conf3`; `x_n_records`, `x_cloud_share` (records with detection status 1–4), `x_window_tr_pct`.
+
+**`vaisala_blview_mlh`** (CZ-Lnz, CzechGlobe CL61 with Vaisala BL-View L3; `scripts/14b_blview_mlh.R`,
+`standardize_blview_mlh()`): hourly interval values [hour end − 1 h, hour end), `method_class = aerosol`. `pblh_m` =
+the BL-View hourly mean MLH with **all quality values kept**; `qc_flag` `NA` (no filtering until G decides);
+`n_samples` = profiles of the hour. `x_quality` (1–3; meaning not documented, indicative 3 = best), `x_version`
+(3.1.1, 3.1.2, 3.2.2, from the file variables), `x_consistent` (`FALSE`: value changing within the hour, then
+`pblh_m` `NA`), `x_n_values`, `x_time_zone_h` (3.2.2 file variable). Stored time read as UTC (not proven; spec 14
+Part C lag test).

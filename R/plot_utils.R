@@ -18,7 +18,8 @@
 #' One row per category: PBLH sources (standard source ids), footprint cases, regimes, footprint subsets, qc classes
 #' of the measured MLH, legacy-regression variants and figure elements (bands, trend lines, highlighted classes).
 #'
-#' @format Tibble: `id`, `group` (`source`, `footprint_case`, `regime`, `subset`, `qc`, `legacy`, `element`),
+#' @format Tibble: `id`, `group` (`source`, `footprint_case`, `regime`, `subset`, `qc`, `legacy`, `element`,
+#'   `secondary` = series of the secondary measured sources, spec 14),
 #'   `colour` [hex or R colour name], `label`, `order` [integer, legend and plotting order within the group],
 #'   `linetype` (ggplot2 line type).
 pblh_sources_style <- local({
@@ -45,6 +46,9 @@ pblh_sources_style <- local({
     # side-result constants of step 02 (spec 09 amendment 3; supplementary network figure only)
     row("pblhmod_gamma_med", "source", k["purple"], "PBLHmod (γ network median)", 11),
     row("pblhmod_gamma_site", "source", k["grey_dark"], "PBLHmod (γ site median)", 12),
+    # secondary measured sources (spec 14; internal figures only)
+    row("tud_skyvue_mlh", "source", k["black"], "SkyVUE PRO MLH (secondary)", 5),
+    row("vaisala_blview_mlh", "source", k["black"], "BL-View MLH (secondary)", 5),
     row("icos_oper_qc0", "source", k["purple"], "ICOS operational (qc 0)", 9),
     row("icos_oper_all", "source", k["purple"], "ICOS operational (all)", 10, "dashed"),
     # footprint cases (spec 08 / 09 A5)
@@ -95,6 +99,17 @@ pblh_sources_style <- local({
     row("hour_00", "element", k["blue"], "00 UTC", 11),
     row("hour_12", "element", k["vermillion"], "12 UTC", 12),
     row("point_fill", "element", "white", "open point", 13),
+    # series of the secondary sources (spec 14 Part C): SkyVUE layers, BL-View versions and quality classes
+    row("skyvue_layer1", "secondary", k["black"], "SkyVUE layer 1", 1),
+    row("skyvue_layer2", "secondary", k["grey_dark"], "SkyVUE layer 2", 2, "dashed"),
+    row("skyvue_layer3", "secondary", k["grey"], "SkyVUE layer 3", 3, "dotted"),
+    row("blview_all", "secondary", k["black"], "BL-View (all versions)", 4),
+    row("blview_3.1.1", "secondary", k["purple"], "BL-View 3.1.1", 5),
+    row("blview_3.1.2", "secondary", k["orange"], "BL-View 3.1.2", 6),
+    row("blview_3.2.2", "secondary", k["sky"], "BL-View 3.2.2", 7),
+    row("blview_q1", "secondary", k["grey"], "BL-View quality 1", 8),
+    row("blview_q2", "secondary", k["orange"], "BL-View quality 2", 9),
+    row("blview_q3", "secondary", k["blue"], "BL-View quality 3", 10),
     # MeteoSwiss QC report (spec 13)
     row("qc_good", "element", k["blue"], "share quality 0", 14),
     row("qc_window", "element", k["orange"], "share window-flagged", 15),

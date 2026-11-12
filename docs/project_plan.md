@@ -270,7 +270,7 @@ too shallow when deep") is a **hypothesis under test**.
 - Measured PBLH, aerosol-based (spec 10): SIRTA 1D ReOBS hourly MLH at Palaiseau (CHM15k STRATfinder, CL31 CABAM;
   AERIS, Chiriaco et al. 2018), FR-Gri–SIRTA 23.37 km (daytime convective only); pair `SIRTA-ReOBS` in
   `config/measured_sites.csv`. PI data status (2026-10-29): FR-Gri SIRTA received and used; Trappes / Melun and
-  FI-Lom pending; CZ-Lnz (Lanzhot BL-View L3) pending: two sample days only.
+  FI-Lom pending; CZ-Lnz (Lanzhot BL-View L3) pending: two sample days only (received 2026-11, spec 14).
 - Measured PBLH, aerosol-based (spec 11): MeteoSwiss STRATfinder MLH of the CHM15k at Davos (DAV), 1-min values
   2021-07 → 2026-10 aggregated to half-hours (quality level 0 only), CH-Dav–DAV 0.98 km (47 m lower than the tower);
   licence CC BY-NC 4.0; primary comparison set the daytime window (night values sit on a floor, not stable-layer
@@ -281,9 +281,20 @@ too shallow when deep") is a **hypothesis under test**.
   2021-01 → 2026-11); CABAM CL31 (`meteoswiss_cabam_mlh`) at FI-Lom–Kenttärova KEN (1.80 km, all regimes, 100 m above
   the mire; 2021-01 → 2024-05, no polar night), FR-Fon–Melun MEL (16.64 km; dirty-window months) and FR-Lus–Poitiers
   POI (24.87 km, borderline). Primary measured source at all five (the Cloudnet rows of FI-Lom and DE-RuS are
-  inventory only). CZ-Lnz: Lanzhot CL61 BL-View L3 (~3 km), pending (data expected 2026-11).
-  Measured sites (8 with a primary source): FI-Hyy (Cloudnet ε), FR-Gri (SIRTA), CH-Dav, DE-RuS, DE-HoH, FI-Lom,
-  FR-Fon, FR-Lus (MeteoSwiss); pending CZ-Lnz.
+  inventory only). **FI-Lom KEN: inventory since G 2026-11-12** (no overlap: the EC record starts at the labelling date
+  2024-11-05, the CL31 record ends 2024-05-16); Kenttärova ε-lidar after the labelling date only from 2026-04-03.
+  Measured sites (7 with a primary source): FI-Hyy (Cloudnet ε), FR-Gri (SIRTA), CH-Dav, DE-RuS, DE-HoH, FR-Fon,
+  FR-Lus (MeteoSwiss).
+- Secondary measured sources (spec 14, G 2026-11-11): manufacturer algorithms, shown and tabulated, never pooled with
+  the E-PROFILE sites nor primary (`status = secondary`), internal use only: DE-Tha Campbell SkyVUE PRO built-in MLH
+  (TU Dresden, 113 m from the tower; KNMI-based gradient method, 3 layers with confidence 1–3, MLH from 2025-06-25;
+  `tud_skyvue_mlh`, no layer chosen yet) and CZ-Lnz Vaisala CL61 BL-View L3 (Lanzhot grassland, ~3 km; versions
+  3.1.1, 3.1.2, 3.2.2; `vaisala_blview_mlh`, all quality values kept).
+- **EC record start (methods note, G 2026-11-12):** each site's EC record starts at its ICOS labelling date, the first
+  valid L2 EC value; the FLUXES rows before it (the files start on 1 January, local) are empty grid rows (e.g.
+  BE-Bra 2020-10-26, FI-Hyy 2018-11-06, FI-Lom 2024-11-05). Overlaps with other sources are computed from valid
+  values (`comparison_period()`), never from the row range. Per-site dates for the supplement:
+  `09_network_record_start.csv`.
 - ERA5 (0.25°, tower cell + 8 neighbours, 2020-01-01 → 2026-10-07; formats and conventions in `CLAUDE.md`):
   - hourly `boundary_layer_height` (instantaneous; bulk Richardson diagnostic, Ri_c = 0.25), `cloud_base_height`,
     `surface_sensible_heat_flux` (hourly accumulation, J m-2, positive downward);
@@ -322,7 +333,20 @@ too shallow when deep") is a **hypothesis under test**.
   record ends 2024-05 (no footprints in the reference year 2025); (d) Jülich night MLH without a temperature overlap
   model (bit 8192, until 2025-11) differs from the later unit (night p90 1.4 km vs 0.6 km): outside the daytime
   comparable set, keep in mind for any night use; (e) CZ-Lnz BL-View: time zone, hourly convention and quality index
-  to confirm.
+  to confirm (spec 14 below). (c) superseded (G 2026-11-12): no overlap at all with the EC record (labelling date
+  2024-11-05); KEN row inventory.
+- Spec 14 (2026-11-12, secondary sources; for G): (a) SkyVUE layer rule (layer 1, the highest-confidence layer, or
+  none): from `14_skyvue_layers_hourly_DE-Tha.csv` and the window metrics per layer; until then `pblh_m` is `NA`;
+  (b) BL-View quality rule: the meaning of 1–3 is not in the BL-View User Guide; Münkel et al. (ISARS 2012) indicate
+  3 = best for the gradient-minimum index (`14_window_metrics_CZ-Lnz.csv` by class); (c) time conventions: BL-View
+  stored time read as UTC (3.1.x file names UTC, `location_utc_offset` 0; but 3.2.2 `time_zone` = 2 and extracts
+  cut at 23:54 UTC) and the hour = profiles hh:00–hh:59 as the hour ending at hh:00 (3.1.2 calculation time); SkyVUE
+  UTC, stamp = record end (site): both checked by the lag test (`14_lag_best_<site>.csv`), nothing corrected
+  automatically; (d) BL-View hours in more than one file: newest version kept (3.2.2 > 3.1.2 > 3.1.1),
+  `14_blview_overlap_CZ-Lnz.csv`; (e) SkyVUE scale parameter: decoded as value × 100 / scale (factor 1 at the 100 %
+  seen so far); gate height convention (centre / bottom) not in the manual; tilt field 0–1° although the site says
+  not tilted; (f) the SkyVUE profiles (2048 × 5 m, from 2025-02-06) for a later retrieval (possibly MeteoSwiss): decode
+  function only, no profile files.
 - Phase 5a (spec 08, 2026-10-27):
   - EBImage check on the cluster (installed there): `ffp_smooth()` vs the code's `EBImage::filter2()` smoothing
     (`scripts/08v_ffp_verify.R` runs it when EBImage is available); on the PC it is verified only against an FFT

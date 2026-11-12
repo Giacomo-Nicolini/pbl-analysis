@@ -191,9 +191,14 @@ test_that("distance classes and the pairing table (spec 13)", {
   expect_equal(me$provider_site, c("JUE", "MAG", "KEN", "MEL", "POI"))
   expect_equal(me$distance_class, c("daytime_convective", "daytime_convective", "all_regimes", "daytime_convective",
                                     "daytime_convective"))
-  expect_equal(me$primary_source_id, c(rep("meteoswiss_stratfinder_mlh", 2), rep("meteoswiss_cabam_mlh", 3)))
-  expect_true(all(me$status == "used"))
-  expect_equal(ms$status[ms$icos_site == "CZ-Lnz"], "pending")
+  # FI-Lom (KEN) inventory since G 2026-11-12: no overlap with the EC record (spec 14)
+  expect_equal(me$primary_source_id, c(rep("meteoswiss_stratfinder_mlh", 2), NA, rep("meteoswiss_cabam_mlh", 2)))
+  expect_equal(me$status, c("used", "used", "inventory", "used", "used"))
+  # spec 14: secondary sources, never primary
+  expect_equal(ms$status[ms$icos_site == "CZ-Lnz"], "secondary")
+  expect_equal(ms$status[ms$icos_site == "DE-Tha"], "secondary")
+  expect_true(all(is.na(ms$primary_source_id[ms$status == "secondary"])))
+  expect_equal(ms$distance_class[ms$icos_site == "DE-Tha"], "all_regimes")
   expect_true(all(is.na(ms$primary_source_id[ms$provider == "cloudnet" & ms$icos_site %in% c("FI-Lom", "DE-RuS")])))
   # validation: wrong class, two primaries, primary on a pending row, unknown status
   bad <- function(edit) {
@@ -206,7 +211,8 @@ test_that("distance classes and the pairing table (spec 13)", {
   }
   expect_error(read_measured_sites(bad(function(x) { x$distance_class[1] <- "not_used"; x })), "distance rule")
   expect_error(read_measured_sites(bad(function(x) {
-    x$primary_source_id[x$icos_site == "FI-Lom" & x$provider == "cloudnet"] <- "cloudnet_eps_mlh"; x
+    x$primary_source_id[x$icos_site == "DE-RuS" & x$provider == "cloudnet"] <- "cloudnet_eps_mlh"
+    x$status[x$icos_site == "DE-RuS" & x$provider == "cloudnet"] <- "used"; x
   })), "primary source at")
   expect_error(read_measured_sites(bad(function(x) {
     x$primary_source_id[x$icos_site == "CZ-Lnz"] <- "blview_mlh"; x
@@ -289,14 +295,22 @@ test_that("read_blview_l3: one row per hour, fill to NA, time offset applied, of
   q <- c(rep(3L, 60), rep(-999L, 60), rep(2L, 60))
   f <- write_blview_nc(tempfile(fileext = ".nc"), tt, h, q)
   x <- read_blview_l3(f, time_offset_h = 0)
-  expect_equal(as.numeric(x$hour_start_utc), d0 + 3600 * (0:2))
+  # spec 14: profiles hh:00-hh:59 = the hour ending at hh:00
+  expect_equal(as.numeric(x$hour_end_utc), d0 + 3600 * (0:2))
   expect_equal(x$mlh_m, c(990, NA, 780))
   expect_equal(x$quality, c(3L, NA, 2L))
   expect_equal(x$n_profiles, c(60L, 60L, 60L))
+  expect_equal(x$version, rep("3.2.2", 3))
+  expect_true(all(x$consistent))
   expect_equal(attr(x, "blview_meta")$sw_version, "2.3.2")
   x2 <- read_blview_l3(f, time_offset_h = 2) # stored time in CEST
-  expect_equal(as.numeric(x2$hour_start_utc), d0 - 7200 + 3600 * (0:2))
+  expect_equal(as.numeric(x2$hour_end_utc), d0 - 7200 + 3600 * (0:2))
   expect_error(read_blview_l3(f), "time_offset_h")
-  h[30] <- 500L # value changes within the first hour
-  expect_error(read_blview_l3(write_blview_nc(tempfile(fileext = ".nc"), tt, h, q), 0), "changes within")
+  # spec 14: a value that changes within an hour is reported (NA, consistent FALSE), not an error
+  h[30] <- 500L
+  y <- read_blview_l3(write_blview_nc(tempfile(fileext = ".nc"), tt, h, q), 0)
+  expect_equal(y$consistent, c(FALSE, TRUE, TRUE))
+  expect_equal(y$n_values, c(2L, 1L, 1L))
+  expect_true(is.na(y$mlh_m[1]) && is.na(y$quality[1]))
+  expect_equal(attr(y, "blview_meta")$n_inconsistent, 1L)
 })

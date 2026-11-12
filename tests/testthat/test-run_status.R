@@ -131,11 +131,13 @@ test_that("measured steps (spec 09 amendment 2): registered, scripts by provider
   expect_error(measured_site_scripts("none"), "provider")
   # primary providers of the committed pairings (spec 13: MeteoSwiss E-PROFILE at five more stations)
   ms <- read_measured_sites(here::here("config", "measured_sites.csv"))
-  run <- c("FI-Hyy", "FR-Gri", "CH-Dav", "DE-RuS", "DE-HoH", "FI-Lom", "FR-Fon", "FR-Lus")
+  # FI-Lom removed (G 2026-11-12: no overlap of the Kenttarova record with the EC record)
+  run <- c("FI-Hyy", "FR-Gri", "CH-Dav", "DE-RuS", "DE-HoH", "FR-Fon", "FR-Lus")
   expect_equal(vapply(run, function(s) measured_primary_provider(ms, s), ""),
-               stats::setNames(c("cloudnet", "SIRTA-ReOBS", rep("MeteoSwiss", 6)), run))
+               stats::setNames(c("cloudnet", "SIRTA-ReOBS", rep("MeteoSwiss", 5)), run))
   expect_error(measured_primary_provider(ms, "BE-Bra"), "0 primary")
-  expect_error(measured_primary_provider(ms, "CZ-Lnz"), "0 primary") # pending: no primary yet
+  expect_error(measured_primary_provider(ms, "CZ-Lnz"), "0 primary") # secondary (spec 14): never primary
+  expect_error(measured_primary_provider(ms, "FI-Lom"), "0 primary")
   # config/measured_run_sites.txt: stations with a primary measured source
   ids <- trimws(readLines(here::here("config", "measured_run_sites.txt"), warn = FALSE))
   ids <- ids[nzchar(ids) & !startsWith(ids, "#")]
