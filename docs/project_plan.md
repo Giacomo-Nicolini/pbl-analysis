@@ -335,6 +335,12 @@ too shallow when deep") is a **hypothesis under test**.
   comparable set, keep in mind for any night use; (e) CZ-Lnz BL-View: time zone, hourly convention and quality index
   to confirm (spec 14 below). (c) superseded (G 2026-11-12): no overlap at all with the EC record (labelling date
   2024-11-05); KEN row inventory.
+- Spec 15 (2026-11-12, network footprint summary; for G): (a) row set `common_pe` (all three cases valid) instead of
+  the pairwise common rows of the step-08 tables; (b) top 10 % selected on subset `valid` (to measure the QC / used
+  removals); the expected "93 % removed" is `kljun_norsl` (`kljun`: 84 %, 17 sites); the step-08 shares are by
+  PBLHmod regime, spec 15 also by zm/L class; (c) exceptions: no minimum n (n reported); (d) Rebmann pass / fail
+  flips between cases only near the 50 % limit (20 rows outside the main set × subset, shares within 0.05 of 0.5);
+  (e) figure order: land cover, then median PBLHmod h.
 - Spec 14 (2026-11-12, secondary sources; for G): (a) SkyVUE layer rule (layer 1, the highest-confidence layer, or
   none): from `14_skyvue_layers_hourly_DE-Tha.csv` and the window metrics per layer; until then `pblh_m` is `NA`;
   (b) BL-View quality rule: the meaning of 1–3 is not in the BL-View User Guide; Münkel et al. (ISARS 2012) indicate

@@ -1,6 +1,6 @@
 # Output inventory: tables, figures, stored footprint groups
 
-State of `main` + `spec-14-skyvue-blview`, 2026-11-12. Tables in `<output_dir>/tables/`, figures in
+State of `main` + `spec-15-footprint-summary`, 2026-11-12. Tables in `<output_dir>/tables/`, figures in
 `<output_dir>/figures/` (png). `<site>` = station code, `<per>` = period suffix of a step-08 run (`_<year>` for the
 reference year, `_<YYYY-MM>` for a test month). Figures are drawn from the same in-memory data as the table listed
 next to them, not by reading the table back, except where noted (*reads tables*).
@@ -118,7 +118,7 @@ Standard files (not tables): `<site>__tud_skyvue_mlh`, `<site>__vaisala_blview_m
 
 `08_coverage_<site>` (figure): monthly share of valid half-hours per case, set × subset, from the 08a input object.
 
-## Network collection: step 09 (reads the per-site tables; `09_network_record_start` also the step-04 standard files)
+## Network collection: step 09 (reads the per-site tables; `09_network_record_start` also the step-04 standard files; the `09_network_fp_*` tables the footprint input tables and hh chunks of the reference years, spec 15)
 
 | Table | Grain | Columns | Figures |
 |---|---|---|---|
@@ -135,6 +135,13 @@ Standard files (not tables): `<site>__tud_skyvue_mlh`, `<site>__vaisala_blview_m
 | `09_network_nee_qc` | site × year | `site_id` + `08_nee_qc` columns | none |
 | `09_network_etc_multiplier` | site | `site_id, m_loop, m_used, m_source, n_rows, n_rejected, n_rejected_loop, zm_over_z0_median, zm_over_z0_min, override_reason, reference_year` | none |
 | `09_network_flags` | site × flag | `site_id, flag, detail` | none |
+| `09_network_fp_target_area` (spec 15; `#` header) | scope (`site`, `network_pooled`, `network_site_median`) × site × set (`etc`, `kljun_norsl`) × subset (`valid`, `valid_qc_used`) × pair × regime (zm/L class or `all`) × day/night (or `all`) | `scope, site_id, set, subset, pair, case_a, case_b, regime, daynight, n, n_sites, p10_pp, median_pp, p90_pp, median_ta_a_pct, median_ta_b_pct` (difference = a − b, pp; rows `common_pe` of the three cases) | `09_fp_ta_diff`, `09s_fp_kljun_norsl_ta_diff`, `09s_fp_valid_ta_diff` |
+| `09_network_fp_fetch` (spec 15) | as `09_network_fp_target_area` | `scope, site_id, set, subset, pair, case_a, case_b, regime, daynight, n, n_sites, p10_lnratio, median_lnratio, p90_lnratio, median_x80_a_m, p90_x80_a_m, median_x80_b_m, p90_x80_b_m` | `09_fp_fetch_ratio`, `09s_fp_*_fetch_ratio` |
+| `09_network_fp_topaffected` (spec 15) | selection × scope × site × set (`etc`, `kljun_norsl`, `kljun`) × pair | `scope, site_id, set, pair, n_rows, threshold_pp, n_top, share_unstable, share_neutral, share_stable, share_regime_stable, share_regime_unstable_diag, share_regime_convective, share_night, share_DJF, share_MAM, share_JJA, share_SON, share_removed_by_qc, share_removed_by_qc_or_used, selection` (`abs_ta_diff (spec 15)`, or `abs_lnx80_era5_pblhmod (step 08)` = aggregation of the per-site `08_topaffected`) | `09_fp_topaffected`, `09s_fp_kljun_norsl_topaffected` (pair ERA5 − PBLHmod) |
+| `09_network_fp_icos_criteria` (spec 15) | site × set × subset × case | `site_id, set, subset, case, n, share_ta90, pass_ta90, n_stable, share_ta90_stable, pass_ta90_stable, share_ta80, n_lab, icos_lab_share, icos_lab_pass, ta90_differs, ta90_stable_differs, icos_lab_differs` (Rebmann et al. 2018 pp. 475, 487; ICOS labelling rule (ETC) on `valid_qc`) | `09_fp_icos_criteria`, `09s_fp_*_icos_criteria` |
+| `09_network_fp_exceptions` (spec 15) | site × pair × crossed stratum with \|p10\| or \|p90\| > 5 pp (main set `etc`, subset `valid_qc_used`) | `site_id, set, subset, pair, regime, daynight, n, p10_pp, median_pp, p90_pp, smaller_case, median_h_a_m, median_h_b_m, threshold_pp` | marked " *" in `09_fp_ta_diff`, `09_fp_fetch_ratio` |
+| `09s_gamma_site` (spec 15) | site | `site_id, igbp, gamma_site, p25, p75, p10, p90, n_days, n_months, months_used` (K m-1) | `09s_gamma_site` |
+| `09s_gamma_network` (spec 15) | one row | `gamma_med, gamma_med_lo95, gamma_med_hi95, gamma_med_pooled, site_median_min, site_median_max, n_sites, n_days, n_boot, seed` | `09s_gamma_site` (line and band) |
 | `09_network_record_start` | site | `site_id, labelling_date, first_valid_utc, last_valid_utc, n_valid` (EC record start = ICOS labelling date, local date of the first valid `pblhmod_default` value; G 2026-11-12, spec 14; reads the step-04 standard file, not a per-site table) | none (supplement table) |
 
 Derived (not in `tables/`): `<derived_dir>/gamma/network_gamma.csv`, one row: `gamma_med, gamma_med_pooled, n_sites,

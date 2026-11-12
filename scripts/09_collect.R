@@ -29,8 +29,21 @@
 #   PBLHmod-clim median as open circles on top (spec 09 amendment 2); 09_network_logratio_supp_<n>sites.png, the same
 #   with the side-result constants gamma_med and gamma_site (pairs 7, 8; amendment 3).
 #
-# Usage: Rscript scripts/09_collect.R [--sites-file=config/run_sites.txt] [--gamma-only]
+# Spec 15 (G 2026-11-12), with a '#' header (definitions, signs, units; read with comment = "#"):
+#   09_network_fp_target_area.csv  target-area fraction difference [pp] between cases (era5 - pblhmod, pblhmod_clim -
+#                                  pblhmod, era5 - pblhmod_clim), per site and network, regime x day/night
+#   09_network_fp_fetch.csv        ln(x_80 ratio) between cases and x_80 per case [m], same strata
+#   09_network_fp_topaffected.csv  the 10 % rows with the largest |TA difference|: shares and what removes them
+#   09_network_fp_icos_criteria.csv  Rebmann et al. (2018) criteria and the ICOS labelling rule (ETC) per site and case
+#   09_network_fp_exceptions.csv   strata with |p10| or |p90| of the TA difference > 5 pp
+#   09s_gamma_site.csv, 09s_gamma_network.csv  gamma per site (quantiles) and gamma_med with a site bootstrap
+#   Figures 09_fp_ta_diff, 09_fp_fetch_ratio, 09_fp_topaffected, 09_fp_icos_criteria (set etc, subset valid_qc_used);
+#   supplement 09s_fp_kljun_norsl_* and 09s_fp_valid_*; 09s_gamma_site.
+#   The footprint part reads the footprint input tables and hh chunks of the reference years (not only per-site tables).
+#
+# Usage: Rscript scripts/09_collect.R [--sites-file=config/run_sites.txt] [--gamma-only] [--no-footprint]
 #   --gamma-only: only the network gamma (first pass of the cluster order, after step 11a at every site).
+#   --no-footprint: skip the spec-15 footprint summary (the rest runs in seconds).
 
 for (f in list.files(here::here("R"), pattern = "\\.R$", full.names = TRUE)) source(f)
 
@@ -169,6 +182,95 @@ rs <- network_record_start(stats::setNames(file.path(std_root, sites, paste0(sit
                            stats::setNames(st_sites$utc_offset_h[match(sites, st_sites$site_id)], sites))
 write_tab(rs, "09_network_record_start.csv")
 if (any(is.na(rs$n_valid))) cli::cli_alert_warning("No pblhmod_default standard file at {.val {rs$site_id[is.na(rs$n_valid)]}}.")
+
+# --- spec 15: network footprint summary (reference year per site; per-half-hour chunk metrics) ---
+# Reads every site's footprint input table and hh chunks of the reference year (a few minutes); --no-footprint
+# skips it. Tables with a '#' header (read with comment = "#").
+fp_out <- NULL
+if (!"--no-footprint" %in% args) {
+  if (is.null(ry_ok)) {
+    cli::cli_alert_warning("No approved reference years: network footprint summary skipped.")
+  } else {
+    cli::cli_h2("Network footprint summary (spec 15)")
+    fp_dir <- file.path(derived, "footprint")
+    fp_sites <- intersect(sites, ry_ok$site_id)
+    rows <- list()
+    for (s in fp_sites) {
+      y <- ry_ok$year[ry_ok$site_id == s]
+      x <- tryCatch(fp_site_rows(s, y, fp_dir), error = function(e) e)
+      if (inherits(x, "error")) {
+        cli::cli_alert_danger("{s} {y}: {conditionMessage(x)}")
+        next
+      }
+      if (length(attr(x, "missing"))) cli::cli_alert_warning("{s} {y}: no chunks for {paste(attr(x, 'missing'), collapse = ', ')}.")
+      rows[[s]] <- x
+    }
+    rows <- dplyr::bind_rows(rows)
+    if (nrow(rows)) {
+      st08 <- fp_topaffected_step08(bind_site_tables(stats::setNames(
+        file.path(tdir, paste0("08_topaffected_", fp_sites, "_", ry_ok$year[match(fp_sites, ry_ok$site_id)], ".csv")), fp_sites)))
+      fp_out <- fp_network_summary(rows, step08_top = st08)
+      hd <- fp_table_headers()
+      for (k in names(fp_out)) {
+        write_csv_header(fp_out[[k]], file.path(tdir, paste0("09_network_fp_", k, ".csv")), hd[[k]])
+        cli::cli_alert_success("09_network_fp_{k}.csv: {nrow(fp_out[[k]])} rows")
+      }
+      # figures: main set etc / valid_qc_used; supplement kljun_norsl / valid_qc_used and etc / valid
+      igbp <- st_sites$igbp[match(fp_sites, st_sites$site_id)]
+      cm <- fp_common(rows, "etc", "valid_qc_used")
+      mh <- tapply(rows$h__pblhmod[cm], rows$site_id[cm], stats::median)[fp_sites]
+      site_order <- fp_sites[order(igbp, mh)] # land cover, then median PBLHmod h (main rows)
+      ex_sites <- unique(fp_out$exceptions$site_id)
+      variants <- list(list(prefix = "09_fp_", set = "etc", subset = "valid_qc_used"),
+                       list(prefix = "09s_fp_kljun_norsl_", set = "kljun_norsl", subset = "valid_qc_used"),
+                       list(prefix = "09s_fp_valid_", set = "etc", subset = "valid"))
+      lab_of <- function(v) paste0("validity set ", v$set, ", subset ", v$subset, "; reference year per site; ",
+                                   "sites by land cover (IGBP) and median PBLHmod h; * = exception (> 5 pp)")
+      for (v in variants) {
+        ta_v <- fp_out$target_area[fp_out$target_area$set == v$set & fp_out$target_area$subset == v$subset, ]
+        fe_v <- fp_out$fetch[fp_out$fetch$set == v$set & fp_out$fetch$subset == v$subset, ]
+        if (nrow(ta_v)) {
+          p <- plot_fp_site_diff(ta_v, "p10_pp", "median_pp", "p90_pp", site_order, ex_sites,
+                                 "Target-area fraction difference [pp] (p10-p90, median)", lab_of(v))
+          save_figure(p, paste0(v$prefix, "ta_diff"), 22, 6 + 0.32 * length(site_order))
+          p <- plot_fp_site_diff(fe_v, "p10_lnratio", "median_lnratio", "p90_lnratio", site_order, ex_sites,
+                                 "ln(x_80 ratio) [-] (p10-p90, median)", lab_of(v))
+          save_figure(p, paste0(v$prefix, "fetch_ratio"), 22, 6 + 0.32 * length(site_order))
+        }
+        ic_v <- fp_out$icos_criteria[fp_out$icos_criteria$set == v$set & fp_out$icos_criteria$subset == v$subset, ]
+        if (nrow(ic_v)) {
+          p <- plot_fp_icos_criteria(ic_v, site_order, paste0(lab_of(v), "; labelling rule on valid_qc"))
+          save_figure(p, paste0(v$prefix, "icos_criteria"), 22, 5 + 0.28 * length(site_order))
+        }
+      }
+      for (s in c("etc", "kljun_norsl")) {
+        tp <- fp_out$topaffected[fp_out$topaffected$selection == "abs_ta_diff (spec 15)" & fp_out$topaffected$set == s &
+                                   fp_out$topaffected$pair == "era5_vs_pblhmod", ]
+        if (nrow(tp)) {
+          p <- plot_fp_topaffected(tp, site_order, paste0("top 10 % |TA difference| ERA5 - PBLHmod, set ", s, ", subset valid"))
+          save_figure(p, if (s == "etc") "09_fp_topaffected" else "09s_fp_kljun_norsl_topaffected", 22, 5 + 0.3 * length(site_order))
+        }
+      }
+      cli::cli_alert_success("Figures 09_fp_* and 09s_fp_* written.")
+    }
+  }
+}
+
+# --- spec 15 C: gamma supplementary tables (needs the 11a daily tables of the sites) ---
+if (exists("g_daily") && length(g_daily)) {
+  gst <- gamma_site_table(g_daily, stats::setNames(st_sites$igbp, st_sites$site_id))
+  gnt <- gamma_network_table(g_daily)
+  write_csv_header(gst, file.path(tdir, "09s_gamma_site.csv"), c(
+    "Daily morning gamma from ERA5 (scripts/11a_gamma_era5.R, 500-3500 m above the site) per site [K m-1].",
+    "gamma_site = median of the valid daily values (side result, spec 09 amendment 3); p25, p75, p10, p90 of the daily values;",
+    "n_days = valid days, n_months = year-months with a valid day, months_used = calendar months present; igbp = land cover."))
+  write_csv_header(gnt, file.path(tdir, "09s_gamma_network.csv"), c(
+    "gamma_med = median of the site medians [K m-1] (recommended operational EC-only value, decision 3b, G 2026-11-11);",
+    "gamma_med_lo95 / hi95 = 2.5 / 97.5 % of the medians of n_boot resamples of the sites with replacement (seed given);",
+    "gamma_med_pooled = median of all site-days; site_median_min / max = range of the site medians."))
+  save_figure(plot_gamma_site(gst, gnt), "09s_gamma_site", 16, 5 + 0.3 * nrow(gst))
+  cli::cli_alert_success("09s_gamma_site.csv, 09s_gamma_network.csv (gamma_med {signif(gnt$gamma_med, 4)} [{signif(gnt$gamma_med_lo95, 3)}, {signif(gnt$gamma_med_hi95, 3)}]).")
+}
 
 # --- flags ---
 fl <- network_flags(sites, status, if (nrow(cases_tbl)) cases_tbl else dplyr::tibble(site_id = character(), case = character(), gt5km = integer()),
