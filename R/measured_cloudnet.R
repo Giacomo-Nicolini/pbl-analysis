@@ -18,7 +18,8 @@
 #'   `NA` on the other rows]. Optional (spec 13): `station_code`, `wigos_id` [-] (from the provider file),
 #'   `provider_alt_m` [m a.s.l.], `elevation_diff_m` [m, tower minus provider altitude], `distance_class` (must equal
 #'   [distance_class()] of `distance_km`), `status` (`used`, `inventory` = listed, no product used, `pending` = data
-#'   expected). At most one primary source per site, only on a `used` row. `borderline` [logical] (spec 13, G
+#'   expected, `secondary` = manufacturer algorithm, shown and tabulated, never a primary source nor pooled with the
+#'   E-PROFILE sites; spec 14). At most one primary source per site, only on a `used` row. `borderline` [logical] (spec 13, G
 #'   2026-11-06): distance close to a class limit (DE-HoH 24.48 km, FR-Lus 24.87 km; class kept), carried into the
 #'   comparison tables so that results can be shown with and without these sites; `FALSE` when the column is
 #'   missing or empty.
@@ -50,8 +51,8 @@ read_measured_sites <- function(file) {
     if (any(bad)) cli::cli_abort("{.path {file}}: distance_class differs from the distance rule (rows {which(bad)}).")
   }
   if ("status" %in% names(ms)) {
-    bad <- !ms$status %in% c("used", "inventory", "pending")
-    if (any(bad)) cli::cli_abort("{.path {file}}: status must be used, inventory or pending (rows {which(bad)}).")
+    bad <- !ms$status %in% c("used", "inventory", "pending", "secondary")
+    if (any(bad)) cli::cli_abort("{.path {file}}: status must be used, inventory, pending or secondary (rows {which(bad)}).")
   }
   if ("primary_source_id" %in% names(ms)) {
     p <- ms[!is.na(ms$primary_source_id), ]

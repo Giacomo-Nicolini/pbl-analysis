@@ -1,6 +1,6 @@
 # Output inventory: tables, figures, stored footprint groups
 
-State of `main` + `spec-11-gamma-network`, 2026-11-11. Tables in `<output_dir>/tables/`, figures in
+State of `main` + `spec-14-skyvue-blview`, 2026-11-12. Tables in `<output_dir>/tables/`, figures in
 `<output_dir>/figures/` (png). `<site>` = station code, `<per>` = period suffix of a step-08 run (`_<year>` for the
 reference year, `_<YYYY-MM>` for a test month). Figures are drawn from the same in-memory data as the table listed
 next to them, not by reading the table back, except where noted (*reads tables*).
@@ -67,6 +67,22 @@ Recurring column groups:
 | `13_qc_temp_overlap_<site>` | firmware group | `group, months, n_night, median_night_m, p10_night_m, p90_night_m, mode_night_m, share_lowest_night, median_midday_m` | none |
 | `13_qc_proposed_exclusions_<site>` | proposed month | `year_month, share_window, share_good, reason` | none |
 
+## Secondary measured sources: steps 14a, 14b, 14c (spec 14; internal, `tables/internal/`, `figures/internal/`)
+
+| Table | Grain | Columns | Figures |
+|---|---|---|---|
+| `14_skyvue_days_<site>` (14a) | SkyVUE day file pair | `day, csv, n_records, n_crc_fail, n_mlh1, n_mlh2, n_mlh3, n_profile_records_checked, max_rel_diff_profile, scale_pct, n_gates, resolution_m, tilt_deg, interval_s_median, first_utc, last_utc, error` | none |
+| `14_blview_files_<site>` (14b) | BL-View file | `file, version, sw_version, n_profiles, first_profile_utc, last_profile_utc, n_hours, n_hours_valid, n_inconsistent, date_stamp_matches_utc, location_utc_offset, error` | none |
+| `14_blview_versions_<site>` (14b) | BL-View version (`3.1.1, 3.1.2, 3.2.2, no_mlh, error`) | `version, n_files, n_files_no_valid, first_utc, last_utc, n_hours, n_hours_valid, share_valid, n_days_valid, n_q1, n_q2, n_q3, n_inconsistent` | none |
+| `14_blview_overlap_<site>` (14b) | version kept × version dropped | `version_kept, version_dropped, n_hours, n_differ` | none |
+| `14_lag_<site>` (14c) | series × reference × season (incl. `all`) × lag | `site_id, series, reference, season, lag_h, n, n_days, r` | `14_lag_<site>` |
+| `14_lag_best_<site>` (14c) | series × reference × season | `site_id, series, reference, season, best_lag_h, r_best, r_lag0, n_best` | none |
+| `14_diurnal_clear_<site>` (14c) | series (measured series, `pblhmod_default`, `era5_blh_center`) × season × UTC hour | `series, season, hour_utc, median_m, n` | `14_diurnal_clear_<site>` |
+| `14_window_metrics_<site>` (14c) | series × source (PBLHmod, ERA5) × quality (`all`, `q1`–`q3`, BL-View only) | `site_id, series, source, quality, n_days`, metrics, `note` | none |
+| `14_skyvue_layers_hourly_<site>` (14c, DE-Tha) | series (layers 1–3, PBLHmod, ERA5) × UTC hour | `series, hour_utc, median_m, median_conf, mean_share_conf3, n` | `14_skyvue_layers_hourly_<site>` |
+
+Standard files (not tables): `<site>__tud_skyvue_mlh`, `<site>__vaisala_blview_mlh` (`docs/specs/standard_format.md`).
+
 ## γ evaluation: step 11 (spec 11 D, amendment 1)
 
 | Table | Grain | Columns | Figures |
@@ -102,7 +118,7 @@ Recurring column groups:
 
 `08_coverage_<site>` (figure): monthly share of valid half-hours per case, set × subset, from the 08a input object.
 
-## Network collection: step 09 (reads the per-site tables only)
+## Network collection: step 09 (reads the per-site tables; `09_network_record_start` also the step-04 standard files)
 
 | Table | Grain | Columns | Figures |
 |---|---|---|---|
@@ -119,6 +135,7 @@ Recurring column groups:
 | `09_network_nee_qc` | site × year | `site_id` + `08_nee_qc` columns | none |
 | `09_network_etc_multiplier` | site | `site_id, m_loop, m_used, m_source, n_rows, n_rejected, n_rejected_loop, zm_over_z0_median, zm_over_z0_min, override_reason, reference_year` | none |
 | `09_network_flags` | site × flag | `site_id, flag, detail` | none |
+| `09_network_record_start` | site | `site_id, labelling_date, first_valid_utc, last_valid_utc, n_valid` (EC record start = ICOS labelling date, local date of the first valid `pblhmod_default` value; G 2026-11-12, spec 14; reads the step-04 standard file, not a per-site table) | none (supplement table) |
 
 Derived (not in `tables/`): `<derived_dir>/gamma/network_gamma.csv`, one row: `gamma_med, gamma_med_pooled, n_sites,
 n_days, sites`.

@@ -1,0 +1,367 @@
+# Spec 14: secondary measured sources (DE-Tha SkyVUE PRO built-in MLH, CZ-Lnz BL-View L3) and the explicit column
+# types of standard files. Synthetic data only; checks on the real samples are skipped when the samples are absent.
+
+# --- SkyVUE ---------------------------------------------------------------------------------------------------------
+
+# Bitwise CRC-16 exactly as the C code of the SkyVUE PRO manual (Sect. 6.2), for one record.
+crc16_manual <- function(bytes) {
+  crc <- 0xFFFF
+  for (x in bytes) {
+    crc <- bitwXor(crc, bitwShiftL(x, 8L))
+    for (j in 1:8) {
+      m <- if (bitwAnd(crc, 0x8000) != 0) 0x1021 else 0
+      crc <- bitwXor(bitwAnd(bitwShiftL(crc, 1L), 0xFFFF), m)
+    }
+  }
+  bitwXor(crc, 0xFFFF)
+}
+
+# Synthetic SkyVUE day: n records of message 006 (20 gates) and the matching CSV export.
+csv_header <- c("UTC Timestamp", "Cloud Base 1( Meters )", "Cloud Base 2( Meters )", "Cloud Base 3( Meters )",
+                "Cloud Base 4( Meters )", "Vertical Visibility( Meters )", "Ceil Status( Status )",
+                "Backscatter Profile( (100000*srad*km)^-1 )", paste0("Sky Condition ", 1:5, "( Oktas )"),
+                paste0("Sky Condition Height ", 1:5, "( Distance )"), paste0("Mixing Layer ", 1:3, "( Meters )"),
+                paste0("Confidence ", 1:3, "( Confidence 1-3 )"), "Highest Signal( Meters )",
+                "Ceil Resolution( Meters )")
+fmt_e <- function(v) {
+  # CSV style: decimal comma, mantissa without trailing zeros, "0" for zero
+  s <- ifelse(v == 0, "0", sub("\\.?0+E", "E", formatC(v, format = "E", digits = 3)))
+  gsub(".", ",", s, fixed = TRUE)
+}
+make_skyvue_day <- function(dir, n = 4, t0 = as.POSIXct("2026-07-15 00:00:09", tz = "UTC"), step = 9,
+                            mlh = matrix(c(375, 650, NA), n, 3, byrow = TRUE), conf = matrix(c(2L, 1L, 0L), n, 3, byrow = TRUE),
+                            cbh = rep(2802, n), corrupt = integer()) {
+  set.seed(1)
+  ints <- matrix(sample(-200:6000, n * 20, replace = TRUE), n, 20)
+  ints[, 3] <- 0L # a zero gate: the CSV parse stops there (ambiguous)
+  hex <- apply(ints, 1, function(r) paste(sprintf("%05x", ifelse(r < 0, r + 1048576L, r)), collapse = ""))
+  m5 <- function(x, w = 5) ifelse(is.na(x), strrep("/", w), formatC(x, width = w, flag = "0", format = "d"))
+  txt <- character(n)
+  rows <- character(n)
+  t <- t0 + step * (seq_len(n) - 1)
+  for (i in seq_len(n)) {
+    body <- paste0("CS0016006\002\r\n",
+                   "10 096 ", m5(cbh[i]), " ///// ///// ///// c00000000000\r\n",
+                   "  3 0141  8 0241  0 ////  0 ////  0 ////\r\n",
+                   "00100 05 0020 100 +39 00 0096 0020 30 131\r\n",
+                   paste(m5(mlh[i, 1]), m5(conf[i, 1]), m5(mlh[i, 2]), m5(conf[i, 2]), m5(mlh[i, 3]), m5(conf[i, 3])),
+                   "\r\n", hex[i], "\r\n\003")
+    crc <- crc16_manual(as.integer(charToRaw(body)))
+    if (i %in% corrupt) crc <- bitwXor(crc, 1L)
+    txt[i] <- paste0("\001", body, sprintf("%04x", crc), "\004\r\n")
+    prof <- paste(fmt_e(ints[i, ] * 1e-8), collapse = ",")
+    q <- function(x) paste0("\"", x, "\"")
+    num <- function(x) ifelse(is.na(x), "/////", gsub(".", ",", format(x, nsmall = 0), fixed = TRUE))
+    rows[i] <- paste(format(t[i], "%d.%m.%Y %H:%M:%S"), q(paste0(cbh[i], ",00000425904")), "/////", "/////", "/////",
+                     "/////", "c00000000000", q(prof), "3", "8", "0", "0", "0", "1410", "2410", "/////", "/////",
+                     "/////", num(mlh[i, 1]), num(mlh[i, 2]), num(mlh[i, 3]), conf[i, 1], conf[i, 2], conf[i, 3],
+                     "/////", "5", sep = ",")
+  }
+  csv <- file.path(dir, "E1227_150726_Midnight.csv")
+  txtf <- file.path(dir, "E1227_150726_Midnight.txt")
+  writeLines(c(paste(csv_header, collapse = ","), rows), csv)
+  writeBin(charToRaw(paste(txt, collapse = "")), txtf)
+  list(csv = csv, txt = txtf, ints = ints, t = t)
+}
+
+test_that("skyvue_num parses decimal commas and the missing code", {
+  expect_equal(skyvue_num(c("2802,00000425904", "/////", "375", "", "-2,4E-07", "0")),
+               c(2802.00000425904, NA, 375, NA, -2.4e-07, 0))
+})
+
+test_that("SkyVUE CRC-16: manual algorithm, table form and the CRC-16/GENIBUS check value", {
+  b <- as.integer(charToRaw("123456789"))
+  expect_equal(crc16_manual(b), 0xD64E) # published check value of CRC-16/GENIBUS (poly 0x1021, init/xorout 0xFFFF)
+  expect_equal(skyvue_crc16(matrix(b, 1)), 0xD64E)
+  m <- rbind(c(b, 0L, 0L), c(as.integer(charToRaw("CS0016006")), 1L, 2L))
+  expect_equal(skyvue_crc16(m, len = c(9L, 11L)), c(0xD64E, crc16_manual(m[2, ])))
+})
+
+test_that("SkyVUE hex profile: 20-bit two's complement times 1e-8, scale undone", {
+  p <- skyvue_decode_profile("0027efffe8000000000a", scale = 100)
+  expect_equal(p[1, ], c(638e-8, -24e-8, 0, 10e-8))
+  expect_equal(skyvue_decode_profile("7ffff80000", 100)[1, ], c(524287e-8, -524288e-8))
+  expect_equal(skyvue_decode_profile("0027e", 50)[1, 1], 638e-8 * 2)
+  expect_error(skyvue_decode_profile("0027", 100), "multiple of 5")
+})
+
+test_that("SkyVUE CSV profile head: decimal-comma values, stops at the ambiguous zero", {
+  x <- c("6,38E-06,1,895E-05,2,674E-05", "3,91E-06,-2E-07,0,6E-08,1,8E-07", "0,5E-06")
+  h <- skyvue_csv_profile_head(x, 3)
+  expect_equal(h[1, ], c(6.38e-06, 1.895e-05, 2.674e-05))
+  expect_equal(h[2, ], c(3.91e-06, -2e-07, NA)) # "0,6E-08" is "0" then "6E-08": not parsed
+  expect_true(all(is.na(h[3, ])))
+})
+
+test_that("read_skyvue_txt splits the messages, parses the fields and checks the CRC", {
+  d <- withr::local_tempdir()
+  s <- make_skyvue_day(d, n = 3, mlh = rbind(c(375, 650, 1009), c(NA, NA, NA), c(400, NA, NA)),
+                       conf = rbind(c(2L, 1L, 1L), c(0L, 0L, 0L), c(3L, 0L, 0L)), corrupt = 3L)
+  r <- read_skyvue_txt(s$txt)
+  expect_equal(nrow(r), 3)
+  expect_equal(r$mlh1_m, c(375, NA, 400))
+  expect_equal(r$mlh3_m, c(1009, NA, NA))
+  expect_equal(r$mlh1_q, c(2L, 0L, 3L))
+  expect_equal(r$h1_m, rep(2802, 3))
+  expect_equal(r$detection_status, rep(1L, 3))
+  expect_equal(r$window_tr_pct, rep(96, 3))
+  expect_equal(r$n_gates, rep(20L, 3))
+  expect_equal(r$scale_pct, rep(100, 3))
+  expect_equal(r$laser_temp_c, rep(39, 3))
+  expect_equal(r$crc_ok, c(TRUE, TRUE, FALSE))
+  expect_equal(attr(r, "skyvue_txt_meta")$n_crc_fail, 1L)
+  bad <- withr::local_tempfile()
+  writeBin(charToRaw("no message here"), bad)
+  expect_error(read_skyvue_txt(bad), "SOH")
+})
+
+test_that("read_skyvue_day pairs CSV and TXT and fails on a shifted record", {
+  d <- withr::local_tempdir()
+  mlh <- cbind(c(300, 350, 400, 450), c(900, NA, 950, NA), NA)
+  conf <- cbind(c(1L, 2L, 3L, 1L), c(1L, 0L, 1L, 0L), 0L)
+  s <- make_skyvue_day(d, n = 4, mlh = mlh, conf = conf)
+  r <- read_skyvue_day(s$csv, s$txt)
+  expect_equal(r$time_end_utc, s$t)
+  expect_equal(r$mlh1_m, mlh[, 1])
+  expect_equal(r$mlh2_q, conf[, 2])
+  m <- attr(r, "skyvue_meta")
+  expect_equal(m$n_records, 4)
+  expect_equal(m$n_profile_records_checked, 4)
+  expect_lt(m$max_rel_diff_profile, 0.01)
+  # a deliberately shifted record: drop the first CSV row and repeat the last one
+  l <- readLines(s$csv)
+  writeLines(c(l[1], l[3:5], l[5]), s$csv)
+  expect_error(read_skyvue_day(s$csv, s$txt), "differ")
+  # unequal record counts
+  writeLines(l[1:4], s$csv)
+  expect_error(read_skyvue_day(s$csv, s$txt), "3 records")
+})
+
+test_that("a record with a CRC mismatch keeps its time but loses its layers", {
+  d <- withr::local_tempdir()
+  s <- make_skyvue_day(d, n = 3, corrupt = 2L)
+  r <- read_skyvue_day(s$csv, s$txt)
+  expect_equal(r$crc_ok, c(TRUE, FALSE, TRUE))
+  expect_true(is.na(r$mlh1_m[2]) && is.na(r$mlh1_q[2]))
+  expect_equal(attr(r, "skyvue_meta")$n_crc_fail, 1L)
+})
+
+test_that("skyvue_halfhour: half-hour of the stamp minus 1 s, medians per layer, no layer chosen", {
+  t <- as.POSIXct("2025-07-01 00:00:00", tz = "UTC") + c(9, 600, 1800, 1809, 2000)
+  r <- dplyr::tibble(time_end_utc = t, crc_ok = c(TRUE, TRUE, TRUE, TRUE, FALSE), detection_status = c(1L, 0L, 0L, 0L, 1L),
+                     window_tr_pct = 96, mlh1_m = c(300, 400, 500, 700, 900), mlh1_q = c(1L, 3L, 3L, 2L, 3L),
+                     mlh2_m = c(NA, 800, NA, NA, NA), mlh2_q = c(0L, 1L, 0L, 0L, 0L), mlh3_m = NA_real_, mlh3_q = 0L)
+  h <- skyvue_halfhour(r)
+  expect_equal(nrow(h), 2)
+  expect_equal(h$n_samples, c(3L, 1L)) # the record ending at 00:30:00 belongs to 00:00; the CRC failure is not used
+  expect_equal(h$x_n_records, c(3L, 2L))
+  expect_equal(h$x_layer1_m, c(400, 700))
+  expect_equal(h$x_layer1_conf, c(3, 2))
+  expect_equal(h$x_layer1_share_conf3, c(2 / 3, 0))
+  expect_equal(h$x_layer2_m, c(800, NA))
+  expect_equal(h$x_layer3_n, c(0L, 0L))
+  s <- suppressMessages(standardize_skyvue_mlh(h, "XX-Tst", read_exclusions(fixture_path("exclusion_periods.csv")), 1))
+  expect_true(all(is.na(s$data$pblh_m)))
+  expect_equal(s$meta$source_id, "tud_skyvue_mlh")
+  expect_equal(s$meta$method_class, "aerosol")
+  expect_match(s$meta$licence, "internal use only")
+  expect_no_error(validate_standard_pblh(s$data, s$meta))
+})
+
+test_that("find_skyvue_days pairs the day files and ignores the .nc", {
+  d <- withr::local_tempdir()
+  for (f in c("E1227_150726_Midnight.csv", "E1227_150726_Midnight.txt", "E1227_150726_Midnight.nc",
+              "E1227_160726_Midnight.csv")) writeLines("x", file.path(d, f))
+  x <- suppressMessages(find_skyvue_days(d))
+  expect_equal(x$day, as.Date("2026-07-15"))
+  expect_match(x$csv, "150726_Midnight.csv$")
+})
+
+test_that("the real SkyVUE sample passes every pairing and decode check", {
+  dd <- here::here("data", "raw", "measured", "DE-Tha", "samples", "07_2026")
+  csv <- file.path(dd, "E1227_150726_Midnight.csv")
+  skip_if_not(file.exists(csv), "SkyVUE sample not on this machine")
+  r <- read_skyvue_day(csv, file.path(dd, "E1227_150726_Midnight.txt"))
+  m <- attr(r, "skyvue_meta")
+  expect_equal(m$n_records, 10063)
+  expect_equal(m$n_crc_fail, 0L)
+  expect_equal(m$n_profile_records_checked, 10063)
+  expect_lt(m$max_rel_diff_profile, 1e-6)
+  expect_equal(m$scale_values, 100)
+  expect_equal(unique(r$n_gates), 2048L)
+})
+
+# --- BL-View --------------------------------------------------------------------------------------------------------
+
+# Synthetic BL-View 3.2.2 file (as in test-measured_eprofile.R): hourly values repeated on time_aerosol, fill -999.
+write_blview_nc <- function(path, tt, h, q) {
+  dim_t <- ncdf4::ncdim_def("time_aerosol", "seconds since 1970-01-01 00:00:00.000", tt, unlim = FALSE)
+  v <- list(h = ncdf4::ncvar_def("mean_mixing_layer_height", "m", list(dim_t), missval = -999, prec = "integer"),
+            q = ncdf4::ncvar_def("mean_mixing_layer_quality", "", list(dim_t), missval = -999, prec = "integer"))
+  nc <- ncdf4::nc_create(path, unname(v), force_v4 = TRUE)
+  ncdf4::ncvar_put(nc, v$h, h)
+  ncdf4::ncvar_put(nc, v$q, q)
+  ncdf4::nc_close(nc)
+  path
+}
+
+# Synthetic BL-View 3.1.x file (MLH as 1 x n, time as an int variable with attribute `Units`).
+write_blview31_nc <- function(path, tt, h, q, v312 = FALSE, calc = NULL) {
+  dt <- ncdf4::ncdim_def("timeDim", "", seq_along(tt), create_dimvar = FALSE)
+  dh <- ncdf4::ncdim_def("Mean_Layer_HeightDim", "", 1L, create_dimvar = FALSE)
+  dq <- ncdf4::ncdim_def("Mean_Layer_QualityIndexDim", "", 1L, create_dimvar = FALSE)
+  v <- list(t = ncdf4::ncvar_def("time", "", list(dt), prec = "integer"),
+            h = ncdf4::ncvar_def("Mean_Layer_Height", "", list(dh, dt), prec = "integer"),
+            q = ncdf4::ncvar_def("Mean_Layer_QualityIndex", "", list(dq, dt), prec = "integer"))
+  if (v312) {
+    du <- ncdf4::ncdim_def("location_utc_offsetDim", "", 1L, create_dimvar = FALSE)
+    dc <- ncdf4::ncdim_def("Mean_Layer_Calculation_TimeDim", "", 1L, create_dimvar = FALSE)
+    v$u <- ncdf4::ncvar_def("location_utc_offset", "", list(du, dt), prec = "float")
+    v$c <- ncdf4::ncvar_def("Mean_Layer_Calculation_Time", "", list(dc, dt), prec = "integer")
+  }
+  nc <- ncdf4::nc_create(path, unname(v))
+  ncdf4::ncvar_put(nc, v$t, tt)
+  ncdf4::ncatt_put(nc, "time", "Units", "seconds since 1970-01-01 00:00:00.000")
+  ncdf4::ncvar_put(nc, v$h, h)
+  ncdf4::ncvar_put(nc, v$q, q)
+  if (v312) {
+    ncdf4::ncvar_put(nc, v$u, rep(0, length(tt)))
+    ncdf4::ncvar_put(nc, v$c, calc)
+  }
+  ncdf4::nc_close(nc)
+  path
+}
+
+test_that("BL-View 3.1.1 / 3.1.2 files: version from the variables, hourly collapse, -999 to NA", {
+  d0 <- as.numeric(as.POSIXct("2025-03-23", tz = "UTC"))
+  tt <- d0 + 55 + 60 * (0:179)
+  h <- c(rep(600L, 60), rep(-999L, 60), rep(1200L, 60))
+  q <- c(rep(3L, 60), rep(-999L, 60), rep(1L, 60))
+  calc <- rep(tt[c(1, 61, 121)], each = 60)
+  f1 <- write_blview31_nc(tempfile(fileext = ".nc"), tt, h, q)
+  f2 <- write_blview31_nc(tempfile(fileext = ".nc"), tt, h, q, v312 = TRUE, calc = calc)
+  x1 <- read_blview_l3(f1, 0)
+  x2 <- read_blview_l3(f2, 0)
+  expect_equal(unique(x1$version), "3.1.1")
+  expect_equal(unique(x2$version), "3.1.2")
+  expect_equal(x1$mlh_m, c(600, NA, 1200))
+  expect_equal(x1$quality, c(3L, NA, 1L))
+  expect_equal(as.numeric(x1$hour_end_utc), d0 + 3600 * (0:2))
+  expect_equal(as.numeric(x2$calc_time_utc) - as.numeric(x2$hour_end_utc), rep(55, 3))
+  expect_equal(attr(x2, "blview_meta")$location_utc_offset, 0)
+  # a file without the MLH variables
+  dt <- ncdf4::ncdim_def("timeDim", "", 1:3, create_dimvar = FALSE)
+  nc <- ncdf4::nc_create(f3 <- tempfile(fileext = ".nc"), list(ncdf4::ncvar_def("time", "", list(dt), prec = "integer")))
+  ncdf4::ncvar_put(nc, "time", tt[1:3])
+  ncdf4::nc_close(nc)
+  x3 <- read_blview_l3(f3, 0)
+  expect_equal(nrow(x3), 0)
+  expect_equal(attr(x3, "blview_meta")$version, "no_mlh")
+})
+
+test_that("BL-View directory: version table, overlaps keep the newest version, standard table", {
+  d <- withr::local_tempdir()
+  d0 <- as.numeric(as.POSIXct("2025-10-13", tz = "UTC"))
+  tt <- d0 + 6 + 60 * (0:119)
+  write_blview31_nc(file.path(d, "a_311.nc"), tt, c(rep(500L, 60), rep(700L, 60)), c(rep(2L, 60), rep(3L, 60)))
+  write_blview_nc(file.path(d, "b_322.nc"), tt[61:120] + 3600, c(rep(710L, 60)), rep(3L, 60))
+  write_blview_nc(file.path(d, "c_322.nc"), tt[61:120], c(rep(720L, 60)), rep(3L, 60)) # same hour as a_311 hour 2
+  r <- read_blview_dir(d, 0)
+  expect_equal(sort(r$files$version), c("3.1.1", "3.2.2", "3.2.2"))
+  vt <- blview_version_table(r)
+  expect_equal(vt$version, c("3.1.1", "3.2.2"))
+  expect_equal(vt$n_hours_valid, c(2L, 2L))
+  expect_equal(vt$n_q3, c(1L, 2L))
+  dd <- blview_dedup_hours(r$hours)
+  expect_equal(nrow(dd$hours), 3)
+  expect_equal(dd$hours$mlh_m[dd$hours$hour_end_utc == as.POSIXct(d0 + 3600, origin = "1970-01-01", tz = "UTC")], 720)
+  expect_equal(dd$overlap$n_hours, 1L)
+  expect_equal(dd$overlap$n_differ, 1L)
+  s <- suppressMessages(standardize_blview_mlh(dd$hours, "XX-Tst", read_exclusions(fixture_path("exclusion_periods.csv")),
+                                               1, time_offset_h = 0))
+  expect_equal(s$data$pblh_m, c(500, 720, 710))
+  expect_equal(as.numeric(s$data$timestamp_end_utc - s$data$timestamp_start_utc, units = "secs"), rep(3600, 3))
+  expect_equal(s$data$x_version, c("3.1.1", "3.2.2", "3.2.2"))
+  expect_true(all(is.na(s$data$qc_flag)))
+  expect_no_error(validate_standard_pblh(s$data, s$meta))
+  expect_error(standardize_blview_mlh(r$hours, "XX-Tst", read_exclusions(fixture_path("exclusion_periods.csv")), 1, 0),
+               "duplicated")
+})
+
+test_that("the real BL-View samples: one file per version family is read", {
+  dd <- here::here("data", "raw", "measured", "CZ-Lnz", "samples")
+  skip_if_not(dir.exists(dd), "BL-View samples not on this machine")
+  r <- read_blview_dir(dd, 0)
+  expect_setequal(unique(r$files$version), c("3.1.1", "3.1.2", "3.2.2"))
+  expect_true(all(is.na(r$files$error)))
+  expect_equal(sum(r$files$n_inconsistent), 0L)
+  expect_true(all(r$files$date_stamp_matches_utc[r$files$version != "3.2.2"]))
+})
+
+# --- Part C diagnostics: hour bins, morning bins, lag test ---------------------------------------------------------
+
+test_that("hour_bins and instant_hour_bins put values on UTC hours", {
+  t <- as.POSIXct("2025-07-01 10:00", tz = "UTC") + 1800 * 0:3
+  b <- hour_bins(t, t + 1800, c(100, 200, NA, 400))
+  expect_equal(format(b$bin_utc, "%H"), c("10", "11"))
+  expect_equal(b$value, c(150, 400))
+  expect_equal(b$n, c(2L, 1L))
+  e <- instant_hour_bins(as.POSIXct("2025-07-01 10:00", tz = "UTC") + 3600 * 0:2, c(100, 300, NA))
+  expect_equal(nrow(e), 1)
+  expect_equal(e$value, 200)
+})
+
+test_that("lag_correlation finds the lag of a series stamped one hour late (CET)", {
+  lat <- 50.96
+  lon <- 13.57
+  days <- as.Date("2025-06-01") + 0:19
+  mb <- morning_bins(days, lat, lon)
+  expect_true(all(mb$season == "JJA"))
+  st <- sun_times(days[1], lat, lon)
+  expect_true(all(as.numeric(mb$bin_utc[mb$day == days[1]]) + 1800 >= as.numeric(st$sunrise_utc)))
+  # reference: a growth curve with day-to-day amplitude; measured = same curve stamped 1 h later
+  hrs <- as.POSIXct(paste(rep(days, each = 24), sprintf("%02d:00", 0:23)), tz = "UTC")
+  amp <- rep(seq(800, 1800, length.out = 20), each = 24)
+  h <- as.numeric(format(hrs, "%H"))
+  v <- pmax(100, amp * sin(pmin(pmax((h - 3) / 10, 0), 1) * pi / 2))
+  ref <- dplyr::tibble(bin_utc = hrs, value = v, n = 1L)
+  meas <- dplyr::tibble(bin_utc = hrs + 3600, value = v, n = 1L)
+  lc <- lag_correlation(meas, ref, mb)
+  b <- best_lag(lc)
+  expect_equal(b$best_lag_h[b$season == "all"], 1)
+  expect_equal(b$r_best[b$season == "all"], 1, tolerance = 1e-12)
+  expect_true(all(is.na(lc$r[lc$season == "DJF"])))
+  b0 <- best_lag(lag_correlation(ref, ref, mb))
+  expect_equal(b0$best_lag_h[b0$season == "all"], 0)
+})
+
+test_that("the secondary sources have style rows", {
+  expect_no_error(style_of(c("tud_skyvue_mlh", "vaisala_blview_mlh")))
+  expect_no_error(style_of(c("skyvue_layer1", "skyvue_layer2", "skyvue_layer3", "blview_all", "blview_3.1.1",
+                             "blview_3.1.2", "blview_3.2.2", "blview_q1", "blview_q2", "blview_q3"), group = "secondary"))
+})
+
+# --- standard files: explicit column types ---------------------------------------------------------------------------
+
+test_that("read_standard_pblh: an x_ column empty in its first rows is read as numeric, not logical", {
+  n <- 2500
+  t <- as.POSIXct("2024-01-01", tz = "UTC") + 1800 * (seq_len(n) - 1)
+  df <- dplyr::tibble(timestamp_start_utc = t, timestamp_end_utc = t + 1800, pblh_m = 500, source_id = "src_x",
+                      x_dlh_m = c(rep(NA, 2000), rep(1234.5, n - 2000)), x_regime = c(rep(NA, 2000), rep("stable", 500)),
+                      x_consistent = c(rep(NA, 1500), rep(TRUE, 1000)), x_note = c(rep(NA, 2400), rep("a", 100)),
+                      x_empty = NA_real_,
+                      x_first_profile_utc = c(rep(NA, 2000), rep("2024-01-01T00:01:14Z", 500)))
+  meta <- standard_meta("XX-Tst", "src_x", "aerosol", time_reference = "interval_mean")
+  dir <- withr::local_tempdir()
+  p <- write_standard_pblh(df, meta, dir)
+  x <- read_standard_pblh(p[["data"]])
+  expect_type(x$x_dlh_m, "double")
+  expect_equal(sum(x$x_dlh_m == 1234.5, na.rm = TRUE), 500)
+  expect_type(x$x_regime, "character")
+  expect_type(x$x_consistent, "logical")
+  expect_equal(sum(x$x_consistent, na.rm = TRUE), 1000)
+  expect_type(x$x_note, "character") # unknown, not numeric: character
+  expect_type(x$x_empty, "double")   # unknown, empty: double
+  expect_s3_class(x$x_first_profile_utc, "POSIXct")
+  expect_type(x$qc_flag, "integer")
+})

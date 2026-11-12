@@ -1,12 +1,13 @@
 # Stations with a primary measured source (config/measured_sites.csv), run with
 # scripts/run_site.R SITE --steps=meas_std,meas_cmp,08a (spec 09 amendment 2). FI-Hyy needs the Cloudnet files first
-# (scripts/07b_cloudnet_download.R). Spec 13 (G 2026-11-06): the five MeteoSwiss E-PROFILE stations (FI-Lom and DE-RuS
-# now with the MeteoSwiss MLH as primary source; their Cloudnet rows are inventory only).
+# (scripts/07b_cloudnet_download.R). Spec 13 (G 2026-11-06): the MeteoSwiss E-PROFILE stations (DE-RuS now with the
+# MeteoSwiss MLH as primary source; its Cloudnet row is inventory only). FI-Lom removed (G 2026-11-12): no overlap of
+# the Kenttarova CL31 record (ends 2024-05-16) with the EC record (from the labelling date 2024-11-05); its
+# MeteoSwiss row is inventory. Secondary sources (spec 14: DE-Tha SkyVUE, CZ-Lnz BL-View) are not run here.
 FI-Hyy
 FR-Gri
 CH-Dav
 DE-RuS
 DE-HoH
-FI-Lom
 FR-Fon
 FR-Lus
