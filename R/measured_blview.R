@@ -252,17 +252,24 @@ blview_version_table <- function(r) {
 #' @param time_offset_h Offset applied when reading [h] (recorded in the sidecar).
 #' @param measured_exclusions Output of [read_measured_exclusions()]; `NULL` = none (reported).
 #' @param versions Output of [blview_version_table()] (summarised in the sidecar) [-].
+#' @param time_correction Output of [blview_time_correction()] without `hours` (recorded in the sidecar); `NULL`
+#'   = stored time kept (only for checks: the standard file is corrected by default, fix-14a item 11).
 #' @return List: `data` (standard table: `n_samples` = profiles in the hour; `x_quality` [1-3], `x_version`,
-#'   `x_consistent`, `x_n_values`, `x_time_zone_h` [h, file variable, 3.2.2 full files]), `meta`, `n_excluded`,
+#'   `x_consistent`, `x_n_values`, `x_time_zone_h` [h, file variable, 3.2.2 full files], `x_time_shift_h` [h, corrected minus stored
+#'   hour end; with `time_correction` only]), `meta`, `n_excluded`,
 #'   `n_excluded_measured` [-].
 standardize_blview_mlh <- function(hours, site_id, exclusions, utc_offset_h, time_offset_h, measured_exclusions = NULL,
-                                   versions = NULL) {
+                                   versions = NULL, time_correction = NULL) {
   src <- "vaisala_blview_mlh"
   if (anyDuplicated(hours$hour_end_utc)) cli::cli_abort("BL-View: duplicated hours (use {.fn blview_dedup_hours}).")
   d <- dplyr::tibble(timestamp_start_utc = hours$hour_end_utc - 3600, timestamp_end_utc = hours$hour_end_utc,
                      pblh_m = hours$mlh_m, source_id = src, qc_flag = NA_integer_, uncertainty_m = NA_real_,
                      n_samples = as.integer(hours$n_profiles), x_quality = hours$quality, x_version = hours$version,
                      x_consistent = hours$consistent, x_n_values = hours$n_values, x_time_zone_h = hours$time_zone_h)
+  if (!is.null(time_correction)) {
+    if (!"time_shift_h" %in% names(hours)) cli::cli_abort("BL-View: {.arg time_correction} given but hours not corrected.")
+    d$x_time_shift_h <- hours$time_shift_h
+  }
   d <- d[order(d$timestamp_start_utc), ]
   d <- flag_exclusions(d, site_id, exclusions, utc_offset_h, time_col = "timestamp_start_utc")
   ex <- drop_excluded_rows(d, src)
@@ -274,6 +281,7 @@ standardize_blview_mlh <- function(hours, site_id, exclusions, utc_offset_h, tim
   vt <- if (is.null(versions)) "" else paste0(
     "versions: ", paste0(versions$version, " (", versions$n_files, " files, ", versions$n_hours_valid,
                          " valid hours)", collapse = "; "), "; ")
+  tc <- blview_time_correction_text(time_correction)
   meta <- standard_meta(
     site_id, src, "aerosol",
     instrument = paste("Vaisala CL61 lidar ceilometer with BL-View (Lanzhot grassland tower, about 3 km from the",
@@ -289,10 +297,9 @@ standardize_blview_mlh <- function(hours, site_id, exclusions, utc_offset_h, tim
     original_qc = "BL-View quality index 1-3 (x_quality); no filtering applied",
     qc_flag_meaning = list(`NA` = "no filtering: quality in x_quality, rule to be decided by G (spec 14)"),
     processing_history = paste0(
-      vt, "read by read_blview_dir() / read_blview_l3() with time_offset_h = ", time_offset_h, " (stored time ",
-      "assumed UTC; not proven, spec 14 Part C lag test); hour = profiles hh:00-hh:59 -> interval [hh - 1 h, hh) ",
-      "(end of the averaging hour); hours with a changing value kept as NA (x_consistent FALSE); overlaps between ",
-      "files: newest version kept (blview_dedup_hours()); rows in exclusion periods dropped (", ex$n_excluded, "); ",
+      vt, "read by read_blview_dir() / read_blview_l3() with time_offset_h = ", time_offset_h, "; hour = profiles ",
+      "hh:00-hh:59 -> interval [hh - 1 h, hh) of the stored stamp (end of the averaging hour); ", tc$history, "; hours with a changing value kept as NA (x_consistent FALSE); overlaps between ",
+      "files (after the time correction): newest version kept (blview_dedup_hours()); rows in exclusion periods dropped (", ex$n_excluded, "); ",
       mx$history, "; standardized by standardize_blview_mlh() (spec 14)."),
     contact = "CzechGlobe (CZ-Lnz)",
     licence = "internal use only: measured data are not released (spec 14); to be confirmed with the provider",
@@ -300,7 +307,7 @@ standardize_blview_mlh <- function(hours, site_id, exclusions, utc_offset_h, tim
     data_owner = "CzechGlobe",
     processor = "Vaisala BL-View (versions in x_version)",
     known_limitations = paste("secondary source: manufacturer algorithm, never pooled with the E-PROFILE sites;",
-                              "time zone and hour convention not proven")
+                              tc$limitation)
   )
   list(data = d, meta = meta, n_excluded = ex$n_excluded, n_excluded_measured = mx$n_excluded)
 }
@@ -345,4 +352,94 @@ blview_convert_version <- function(d, version, tz) {
   d <- d[order(d$timestamp_start_utc), ]
   dup <- duplicated(d$timestamp_start_utc)
   list(data = d[!dup, ], n_dropped = sum(bad), n_duplicated = sum(dup))
+}
+
+#' Empirical time correction of the BL-View hours (default of the standard file, fix-14a item 11)
+#'
+#' Decided by G (2026-11-12) from the cluster lag tests of `scripts/14c_secondary_diagnostics.R` (clear days, morning
+#' bins, PBLHmod and ERA5): with the stored stamps, 3.1.1 / 3.1.2 peak at +1 h in every season and 3.2.2 at +2 h (DJF)
+#' / +3 h (other seasons); with 3.2.2 re-read as Europe/Prague local time (with summer time), 3.2.2 peaks at +1 h like
+#' 3.1.x in DJF / MAM / JJA (SON +3 h on 68 days, flat curve). Two corrections, in this order:
+#' (a) the 3.2.2 hour ends are re-read as local clock time of `tz_322` and converted to UTC ([blview_local_to_utc()]);
+#'     hour ends that do not exist in `tz_322` (spring forward) are dropped; hours that collide after the conversion
+#'     (autumn repeated hour) are counted here and left to [blview_dedup_hours()];
+#' (b) every hour end of every version is shifted by `shift_h`: an empirical alignment, mechanism unknown (probably
+#'     BL-View attaching the hourly mean one hour after its hour).
+#' After both, the lag test is expected at 0 h in every season with enough data (a check, not a target).
+#'
+#' @param hours `hours` of [read_blview_dir()] (`hour_end_utc` as stored, `version`).
+#' @param tz_322 Olson time zone of the 3.2.2 stamps [character]; `NULL` = no conversion.
+#' @param shift_h Shift added to every hour end after (a) [h]; 0 = none.
+#' @return List: `hours` (corrected; column `time_shift_h` [h] = corrected minus stored hour end), `n_dropped_dst` [-,
+#'   3.2.2 hours whose stored clock time does not exist in `tz_322`], `dropped_dst` [character, those stored hour ends],
+#'   `n_duplicated_dst` [-, extra 3.2.2 rows on an already used UTC hour after (a)], `duplicated_dst` [character, those
+#'   UTC hour ends], `tz_322`, `shift_h`.
+blview_time_correction <- function(hours, tz_322 = "Europe/Prague", shift_h = -1) {
+  if (!is.null(tz_322) && !tz_322 %in% OlsonNames()) cli::cli_abort("Unknown time zone {.val {tz_322}}.")
+  if (length(shift_h) != 1 || !is.finite(shift_h)) cli::cli_abort("{.arg shift_h} must be one finite number [h].")
+  stored <- hours$hour_end_utc
+  e <- stored
+  dropped <- character()
+  dup <- character()
+  if (!is.null(tz_322)) {
+    i <- hours$version %in% "3.2.2"
+    e[i] <- blview_local_to_utc(stored[i], tz_322)
+    bad <- i & is.na(e)
+    dropped <- format(stored[bad], "%Y-%m-%d %H:%M", tz = "UTC")
+    keep <- !bad
+    hours <- hours[keep, ]
+    stored <- stored[keep]
+    e <- e[keep]
+    i <- i[keep]
+    # 3.2.2 rows that land on a UTC hour already taken by another 3.2.2 row although their stored hour was not a
+    # repeat (overlapping files repeat a stored hour and are not counted here: blview_dedup_hours() reports them)
+    o <- order(e, stored)
+    hours <- hours[o, ]
+    stored <- stored[o]
+    e <- e[o]
+    i <- i[o]
+    k_new <- paste(hours$version, format(e, "%Y-%m-%d %H:%M", tz = "UTC"))
+    k_old <- paste(hours$version, format(stored, "%Y-%m-%d %H:%M", tz = "UTC"))
+    dd <- i & duplicated(k_new) & !duplicated(k_old)
+    dup <- format(e[dd], "%Y-%m-%d %H:%M", tz = "UTC")
+  }
+  e <- e + shift_h * 3600
+  attr(e, "tzone") <- "UTC"
+  hours$hour_end_utc <- e
+  hours$time_shift_h <- (as.numeric(e) - as.numeric(stored)) / 3600
+  hours <- hours[order(hours$hour_end_utc), ]
+  list(hours = hours, n_dropped_dst = length(dropped), dropped_dst = dropped, n_duplicated_dst = length(dup),
+       duplicated_dst = dup, tz_322 = tz_322, shift_h = shift_h)
+}
+
+#' Sidecar text of the BL-View time correction
+#'
+#' @param tc Output of [blview_time_correction()] (or `NULL` = stored time kept).
+#' @return List: `history` (for `processing_history`), `limitation` (for `known_limitations`) [character].
+blview_time_correction_text <- function(tc) {
+  evidence <- paste(
+    "lag evidence (scripts/14c_secondary_diagnostics.R, cluster, G 2026-11-12; clear days, morning bins, PBLHmod and",
+    "ERA5): stored stamps: 3.1.1 / 3.1.2 peak at +1 h in every season, 3.2.2 at +2 h (DJF) / +3 h (other seasons);",
+    "3.2.2 re-read as Europe/Prague local time: +1 h like 3.1.x in DJF / MAM / JJA (SON +3 h on 68 days, flat curve)")
+  if (is.null(tc)) {
+    return(list(history = paste0("stored time kept, NOT corrected (", evidence, ")"),
+                limitation = "time stamps not corrected: lagged by +1 h (3.1.x) to +3 h (3.2.2) against the references"))
+  }
+  conv <- if (is.null(tc$tz_322)) "(a) no 3.2.2 conversion" else paste0(
+    "(a) 3.2.2 hour ends read as ", tc$tz_322, " local time with summer time and converted to UTC (",
+    tc$n_dropped_dst, " stored hour end", if (tc$n_dropped_dst == 1) "" else "s", " not existing in local time dropped",
+    if (tc$n_dropped_dst > 0) paste0(": ", paste(tc$dropped_dst, collapse = ", ")) else "", "; ",
+    tc$n_duplicated_dst, " hour", if (tc$n_duplicated_dst == 1) "" else "s", " duplicated after the conversion",
+    if (tc$n_duplicated_dst > 0) paste0(": ", paste(tc$duplicated_dst, collapse = ", "), " UTC, one row kept by ",
+                                        "blview_dedup_hours()") else "", ")")
+  list(
+    history = paste0(
+      "time correction (fix-14a item 11, G 2026-11-12; blview_time_correction()): ", conv, "; (b) every hour end of ",
+      "every version shifted by ", sprintf("%+g", tc$shift_h), " h, an empirical alignment, mechanism unknown ",
+      "(probably BL-View attaching the hourly mean one hour after its hour); x_time_shift_h = corrected minus stored ",
+      "hour end; ", evidence, "; after the correction the lag test is expected at 0 h in every season with enough ",
+      "data (a check, not a target)"),
+    limitation = paste("time stamps corrected empirically (3.2.2 local time to UTC; all versions", sprintf("%+g", tc$shift_h),
+                       "h): mechanism of the 1 h lag unknown")
+  )
 }

@@ -346,7 +346,9 @@ too shallow when deep") is a **hypothesis under test**.
   (b) BL-View time convention: lag +1 h (3.1.1, 3.1.2, all seasons), 3.2.2 +2 h (DJF) / +3 h (other seasons);
   hypothesis 3.2.2 = Europe/Prague local time with summer time, tested by `--blview-322-tz` (diagnostics only);
   (c) the +1 h common to all versions is in the stamps, not in the matching (synthetic check): CET stamps or a
-  one-hour delay of the hourly value; to ask the site / Vaisala; no correction of the standard file until G decides.
+  one-hour delay of the hourly value; to ask the site / Vaisala. **Decided (G 2026-11-12, fix-14a item 11)**: the
+  standard file is corrected by default (3.2.2 Europe/Prague local time → UTC, then all versions −1 h, empirical;
+  `x_time_shift_h`); mechanism still to ask the site / Vaisala; after the rerun the lag test should give 0 h.
 - Spec 14 (2026-11-12, secondary sources; for G): (a) SkyVUE layer rule (layer 1, the highest-confidence layer, or
   none): superseded by fix-14c (a);
   (b) BL-View quality rule: the meaning of 1–3 is not in the BL-View User Guide; Münkel et al. (ISARS 2012) indicate

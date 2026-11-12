@@ -257,7 +257,8 @@ skyvue_csv_profile_head <- function(x, n = 20L) {
 #'
 #' Spec 14 A1: time stamps and the three mixing layers with their confidence from the CSV; the profile header and
 #' (optionally) the profile from the TXT, paired by record order. Checks, each aborting with the first failing record:
-#' equal record counts; for every record with a valid CRC, the CSV mixing layers and confidences equal the TXT line 5
+#' equal record counts (a mismatch aborts with condition class `skyvue_count_mismatch`, fields `n_csv`, `n_txt`;
+#' fix-14a item 10); for every record with a valid CRC, the CSV mixing layers and confidences equal the TXT line 5
 #' (`/////` = `NA`, confidence 0 when no layer), and the CSV cloud base 1 (rounded to 1 m) equals TXT `h1` where the
 #' detection status is 1-4; the decoded profile (first `n_check` gates) equals the CSV values where the CSV parse is
 #' unambiguous (relative difference <= 1 %, CSV values carry 3-4 significant digits). Records with a CRC mismatch
@@ -280,7 +281,12 @@ read_skyvue_day <- function(csv, txt, keep_profile = FALSE, n_check = 20L) {
   a <- read_skyvue_csv(csv)
   layout <- attr(a, "layout")
   b <- read_skyvue_txt(txt, keep_profile = keep_profile)
-  if (nrow(a) != nrow(b)) cli::cli_abort("SkyVUE pairing: {basename(csv)} has {nrow(a)} records, {basename(txt)} {nrow(b)}.")
+  if (nrow(a) != nrow(b)) {
+    # fix-14a item 10: a count mismatch has its own condition class (skyvue_count_mismatch, fields n_csv and n_txt)
+    # so that callers can skip the day instead of counting it as a failed check; no alignment is attempted
+    cli::cli_abort("SkyVUE pairing: {basename(csv)} has {nrow(a)} records, {basename(txt)} {nrow(b)}.",
+                   class = "skyvue_count_mismatch", n_csv = nrow(a), n_txt = nrow(b))
+  }
   first_bad <- function(ok, what) {
     if (!all(ok)) {
       i <- which(!ok)[1]

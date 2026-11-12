@@ -23,6 +23,9 @@
 #   (secondary_window_metrics()), group aesthetic of the lag figure; --blview-322-tz=Europe/Prague re-reads the 3.2.2
 #   stamps as local time with summer time (hypothesis of G 2026-11-12; diagnostics only, outputs with suffix _tz322;
 #   the standard file is not changed).
+# fix-14a item 11: 14b now writes the BL-View standard file time-corrected by default (3.2.2 Europe/Prague -> UTC,
+#   all versions -1 h; x_time_shift_h); the lag test is then expected at 0 h in every season with enough data (a
+#   check, not a target). --blview-322-tz is refused on a corrected file (only for a file with stored stamps).
 #
 # Usage: Rscript scripts/14c_secondary_diagnostics.R SITE [--from=YYYY-MM-DD] [--to=YYYY-MM-DD]
 #          [--blview-322-tz=Europe/Prague]
@@ -75,6 +78,18 @@ meas <- in_per(meas)
 mod <- in_per(rd("pblhmod_default"))
 era <- list(era5_blh_center = in_per(rd("era5_blh_center")))
 if (nrow(meas) == 0) cli::cli_abort("{site_id}: no {src} row between {format(t_from)} and {format(t_to)}.")
+if (src == "vaisala_blview_mlh") {
+  # fix-14a item 11: the standard file is time-corrected by 14b by default (x_time_shift_h); report it, and refuse a
+  # second 3.2.2 conversion
+  corrected <- "x_time_shift_h" %in% names(meas) && any(!is.na(meas$x_time_shift_h))
+  if (corrected) {
+    sh <- unique(meas[c("x_version", "x_time_shift_h")])
+    cli::cli_alert_info("BL-View standard file time-corrected by 14b (fix-14a item 11); shifts by version (h): {paste(sh$x_version, sh$x_time_shift_h, collapse = '; ')}. Expected lag: 0 h.")
+  } else {
+    cli::cli_alert_warning("BL-View standard file with stored stamps (written before fix-14a item 11, or with --blview-322-tz=none --shift-h=0).")
+  }
+  if (corrected && !is.null(tz322)) cli::cli_abort("--blview-322-tz: the standard file is already time-corrected (x_time_shift_h); rerun without it.")
+}
 if (!is.null(tz322)) {
   # fix-14c (G 2026-11-12): hypothesis = 3.2.2 stamps are local time of tz322 (with summer time); diagnostics only
   cv <- blview_convert_version(meas, "3.2.2", tz322)

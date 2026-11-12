@@ -162,7 +162,7 @@ gradient and a larger distance to other minima, lower with clouds (indicative: 3
 mean). Overlaps between files (reprocessing, day files): newest version kept (3.2.2 > 3.1.2 > 3.1.1), counted in
 `14_blview_overlap_<site>.csv` (rule flagged for G). `vaisala_blview_mlh`: `pblh_m` = hourly value (all quality),
 `qc_flag` `NA`, `x_quality`, `x_version`, `x_consistent`, `x_n_values`, `x_time_zone_h`; stored time read as UTC
-(`--time-offset=0`).
+(`--time-offset=0`), then corrected since amendment 1 item 11 (`x_time_shift_h`).
 
 ### Further tasks
 
@@ -202,7 +202,7 @@ Cluster results of the 14c diagnostics (DE-Tha July 2026, CZ-Lnz all versions) s
   `--blview-322-tz=Europe/Prague` of 14c (default off) re-reads the 3.2.2 hour ends as local clock time
   (`blview_local_to_utc()`, `blview_convert_version()`: the spring-forward hour dropped, a duplicate autumn hour
   dropped, both counted); outputs with the suffix `_tz322`; the standard file is not changed. If the hypothesis holds,
-  3.2.2 then peaks where 3.1.x does (+1 h) in every season. G decides after the run.
+  3.2.2 then peaks where 3.1.x does (+1 h) in every season. G decides after the run (decided: item 11).
 - **The +1 h baseline (check).** Lag test: every series is put on UTC hour bins [h, h + 1 h) by its interval
   midpoint (`hour_bins()`): the BL-View hour [end − 1 h, end) to the bin of its start, the PBLHmod half-hours h:00 and
   h:30 to bin h (their mean), ERA5 bin h = mean of the instantaneous values at h and h + 1 h. Window metrics
@@ -214,7 +214,8 @@ Cluster results of the 14c diagnostics (DE-Tha July 2026, CZ-Lnz all versions) s
   means that those profiles describe [hh − 2 h, hh − 1 h): either the 3.1.x stamps are CET (UTC + 1, no summer
   time) although the file names are labelled UTC and `location_utc_offset` is 0, or BL-View attaches each hourly
   mean one hour after the hour ends. The lag test cannot tell these apart (both a constant +1 h); the 3.1.2
-  calculation time (hh:00:55) is the time the value appears, not the hour it averages. Open for G (and the site).
+  calculation time (hh:00:55) is the time the value appears, not the hour it averages. Mechanism open for the site;
+  corrected empirically (item 11).
 - **09_fp_topaffected (spec 15):** the network bar uses the pooled shares (sums to 100 %); the median of the site
   shares stays in the table.
 - **(9) SkyVUE CSV before the MLH option (cluster data, G 2026-11-12).** Until about 2025-06-24 the daily CSV has
@@ -226,3 +227,26 @@ Cluster results of the 14c diagnostics (DE-Tha July 2026, CZ-Lnz all versions) s
   reports the CSV-profile comparison as "not available (short CSV layout)". `find_skyvue_days()` keeps a day with only
   one of the two files with `skip_reason` (`no TXT file` / `no CSV file`); 14a lists it in `14_skyvue_days_<site>.csv`
   (columns `csv_layout`, `profile_check`, `skip_reason`), not an error. The full-record 14a run must be repeated.
+- **(10) SkyVUE days with different CSV / TXT record counts (fix-14a, cluster data, G 2026-11-12).** Around the
+  MLH-option installation some days have unequal counts (2025-06-25 CSV 5,296 / TXT 8,287; 2025-06-26 10,009 /
+  10,019; 2025-06-30 3,835 / 3,840). A count mismatch is a skipped day, not a failed check: `read_skyvue_day()` aborts
+  with condition class `skyvue_count_mismatch` (fields `n_csv`, `n_txt`); 14a writes `skip_reason` = "record count
+  mismatch: CSV n, TXT m" with `n_csv` and `n_txt` in the day table (both = `n_records` on a read day, `NA` on a
+  day with one file or a failed check) and reports the mismatch days per month in the log. No alignment for now.
+  Exit status 1 stays for real check failures only (CRC, cloud base or vertical visibility after pairing, layers,
+  decode).
+- **(11) BL-View time correction (fix-14a, G 2026-11-12).** Lag evidence (cluster, 14c; clear days, morning bins,
+  PBLHmod and ERA5): with the stored stamps 3.1.1 / 3.1.2 peak at +1 h in every season and 3.2.2 at +2 h (DJF) /
+  +3 h (other seasons); with `--blview-322-tz=Europe/Prague`, 3.2.2 peaks at +1 h like 3.1.x in DJF / MAM / JJA
+  (SON +3 h on 68 days, flat curve). Decision: 14b corrects the CZ-Lnz standard file by default
+  (`blview_time_correction()`, before `blview_dedup_hours()`, so that overlaps between versions are compared at the
+  corrected hours): (a) the 3.2.2 hour ends are read as Europe/Prague local time with summer time and converted to
+  UTC (`--blview-322-tz`, default `Europe/Prague`, `none` = off); stored hour ends that do not exist in local time
+  (spring forward) are dropped, 3.2.2 hours that collide after the conversion (autumn) are counted (one row kept by
+  `blview_dedup_hours()`); (b) every hour end of every version is shifted by −1 h (`--shift-h`, default −1), an
+  empirical alignment, mechanism unknown (probably BL-View attaching the hourly mean one hour after its hour; the CET
+  reading of the 3.1.x stamps is not excluded). Total shift per row in `x_time_shift_h` [h] (3.1.x −1, 3.2.2 −2 in
+  winter / −3 in summer). The sidecar (`processing_history`, `known_limitations`) records both corrections, the lag
+  evidence and the dropped / duplicated DST hours (listed). `--blview-322-tz=none --shift-h=0` keeps the stored time
+  (checks only). 14c reports the shifts and refuses its own `--blview-322-tz` on a corrected file. After the rerun of
+  14b and 14c, the lag test should give 0 h in every season with enough data: a check, not a target.
