@@ -19,7 +19,8 @@
 #' of the measured MLH, legacy-regression variants and figure elements (bands, trend lines, highlighted classes).
 #'
 #' @format Tibble: `id`, `group` (`source`, `footprint_case`, `regime`, `subset`, `qc`, `legacy`, `element`,
-#'   `secondary` = series of the secondary measured sources, spec 14),
+#'   `secondary` = series of the secondary measured sources, spec 14; `fp_pair`, `fp_share` = network footprint
+#'   summary, spec 15),
 #'   `colour` [hex or R colour name], `label`, `order` [integer, legend and plotting order within the group],
 #'   `linetype` (ggplot2 line type).
 pblh_sources_style <- local({
@@ -110,6 +111,20 @@ pblh_sources_style <- local({
     row("blview_q1", "secondary", k["grey"], "BL-View quality 1", 8),
     row("blview_q2", "secondary", k["orange"], "BL-View quality 2", 9),
     row("blview_q3", "secondary", k["blue"], "BL-View quality 3", 10),
+    # network footprint summary (spec 15): case pairs (difference = first minus second) and stacked-share categories
+    row("era5_vs_pblhmod", "fp_pair", k["vermillion"], "ERA5 − PBLHmod", 1),
+    row("pblhmod_clim_vs_pblhmod", "fp_pair", k["green"], "PBLHmod-clim − PBLHmod", 2),
+    row("era5_vs_pblhmod_clim", "fp_pair", k["orange"], "ERA5 − PBLHmod-clim", 3),
+    row("zl_unstable", "fp_share", k["vermillion"], "unstable (zm/L < −0.1)", 1),
+    row("zl_neutral", "fp_share", k["grey"], "neutral", 2),
+    row("zl_stable", "fp_share", k["blue"], "stable (zm/L > 0.1)", 3),
+    row("day", "fp_share", k["yellow"], "day", 4),
+    row("night", "fp_share", k["blue_dark"], "night", 5),
+    row("kept", "fp_share", k["green"], "kept (QC and used)", 6),
+    row("removed_used", "fp_share", k["orange"], "removed: NEE not used", 7),
+    row("removed_qc", "fp_share", k["purple"], "removed: NEE QC", 8),
+    row("ta90_line", "element", "grey50", "50 % of the time (Rebmann et al. 2018)", 18, "dashed"),
+    row("lab70_line", "element", "grey30", "70 % of the good data (ICOS labelling rule)", 19, "dotted"),
     # MeteoSwiss QC report (spec 13)
     row("qc_good", "element", k["blue"], "share quality 0", 14),
     row("qc_window", "element", k["orange"], "share window-flagged", 15),

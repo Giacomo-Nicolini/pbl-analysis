@@ -339,8 +339,14 @@ so code must be reproducible, documented and traceable to references.
   `measured` changes the `pblhmod`, `pblhmod_clim`, `era5` chunks of the months with measured values (`common_pme`).
 - **Collection**: `scripts/09_collect.R` reads only the per-site tables (`01_inputs_`, `02_cases_`, `02_regimes_`,
   `11a_gamma_summary_`, `04_metrics_`, `08_coverage_`, `08_year_counts_`, `08_nee_qc_`) and writes `09_network_*.csv`;
-  the one exception is `09_network_record_start.csv` (ICOS labelling date = first valid `pblhmod_default` value, G
-  2026-11-12; `network_record_start()` reads the time and value columns of the step-04 standard files).
+  exceptions: `09_network_record_start.csv` (ICOS labelling date = first valid `pblhmod_default` value, G
+  2026-11-12; `network_record_start()` reads the time and value columns of the step-04 standard files) and the
+  spec-15 network footprint summary (`09_network_fp_*.csv`, `#` header; `fp_site_rows()` reads the footprint input
+  tables and the hh chunks of the reference years; `--no-footprint` skips it). Spec 15 conventions: pairs era5 −
+  pblhmod, pblhmod_clim − pblhmod, era5 − pblhmod_clim (first minus second); row set `common_pe` = valid with an FFP
+  result in all three cases; main set `etc`, subset `valid_qc_used`; regime = zm/L class × day/night; exceptions >
+  5 pp (reporting choice); ICOS labelling rule (ETC, G 2026-11-12): share of the `valid_qc` half-hours with TA ≥ 70 %,
+  met if ≥ 70 %. γ supplement `09s_gamma_site.csv`, `09s_gamma_network.csv` (site bootstrap, seed 20261112).
   Network figure (G 2026-11-03): PBLHmod median ln(PBLHmod / ERA5) as filled dots with a p25–p75 bar
   (`p25_log_ratio`, `p75_log_ratio` of `pblh_metrics()`), PBLHmod-clim as open circles drawn on top, no bar.
   Supplementary version `09_network_logratio_supp` (amendment 3): also `gamma_med` (filled triangles) and
