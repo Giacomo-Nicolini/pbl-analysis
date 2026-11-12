@@ -16,7 +16,7 @@ Last update: 2026-11-03. Read this first in a new session, then `docs/project_pl
 | Measured MLH, SIRTA ReOBS (spec 10) | `sirta_mlh_chm15k` (primary), `sirta_mlh_cl31` | Ceilometer MLH at Palaiseau (CHM15k STRATfinder; CL31 CABAM v2019.3), hourly means from the SIRTA 1D ReOBS product; qc 0/1 from the sample count; FR-Gri, 23.37 km: daytime convective only | aerosol |
 | Measured MLH, MeteoSwiss STRATfinder (specs 11, 13) | `meteoswiss_stratfinder_mlh` | CHM15k STRATfinder MLH (MeteoSwiss client files), half-hourly median of the quality-0 1-min values; CH-Dav (Davos, 0.98 km), DE-RuS (Jülich, 5.30 km), DE-HoH (Magdeburg, 24.48 km); E-PROFILE files: licence to be confirmed, internal use only | aerosol |
 | Measured MLH, MeteoSwiss CABAM (spec 13) | `meteoswiss_cabam_mlh` | CL31 CABAM MLH (MeteoSwiss E-PROFILE client files), half-hourly mean of the quality-0 15-min steps (qc 0 both, 1 one); FR-Fon (Melun, 16.64 km), FR-Lus (Poitiers, 24.87 km); FI-Lom (Kenttärova, 1.80 km) inventory only since 2026-11-12 (no overlap with the EC record); licence to be confirmed, internal use only | aerosol |
-| Secondary measured MLH, SkyVUE PRO (spec 14) | `tud_skyvue_mlh` | Campbell SkyVUE PRO built-in MLH (KNMI-based gradient method, 3 layers, confidence 1–3; TU Dresden), DE-Tha (113 m); half-hourly medians of each layer, **`pblh_m` NA until G decides a layer rule**; internal use only; never pooled with the E-PROFILE sites | aerosol (secondary) |
+| Secondary measured MLH, SkyVUE PRO (spec 14) | `tud_skyvue_mlh` | Campbell SkyVUE PRO built-in MLH (KNMI-based gradient method, 3 layers, confidence 1–3; TU Dresden), DE-Tha (113 m); half-hourly medians of each layer, `pblh_m` NA; **inventory since G 2026-11-12** (no daytime growth in any layer on the July 2026 test month, confidence 1 almost always); raw profiles kept for a later retrieval; internal use only | aerosol (inventory) |
 | Secondary measured MLH, BL-View (spec 14) | `vaisala_blview_mlh` | Vaisala CL61 BL-View L3 hourly MLH (versions 3.1.1, 3.1.2, 3.2.2), CZ-Lnz (Lanzhot grassland, ~3 km); all quality values kept (`x_quality`); time zone not proven; internal use only; never pooled | aerosol (secondary) |
 | Other measured PBLH (later) | – | PI data (SE-Htm, SE-Nor, SE-Svb, FI-Hyy, CZ-BK1 requested), ceilometer / radiosonde (E-PROFILE, IGRA) | aerosol / thermodynamic / turbulence |
 
@@ -311,7 +311,15 @@ measured MLH) done; 4–6 not started.
    reference years (no footprint rerun); γ supplementary tables `09s_gamma_site.csv`, `09s_gamma_network.csv`.
    Checks against the per-site tables: top 10 % (step-08 selection, `etc`) 71 % stable, 64 % night, 64 % removed as
    expected; the expected 93 % removed is `kljun_norsl`, not `kljun` (84 %). Cluster: the collection only
-   (`docs/local/cluster_commands_spec15.md`).
+   (`docs/local/cluster_commands_spec15.md`). Merged (`main`, 3e1625f).
+15. fix-14c (2026-11-12, `fix-14c-diagnostics`, to review; spec 14 amendment 1): 14c lag table fixed (data masking;
+   one row per site × series × reference × season), lags −3 … +6 h, SkyVUE window metrics per layer, lag figure
+   grouping; **SkyVUE built-in MLH set to inventory (G 2026-11-12)**, reader / standard source / profile decoder kept
+   (raw profiles = DE-Tha asset for a later retrieval); option `--blview-322-tz=Europe/Prague` (diagnostics only,
+   suffix `_tz322`) to test the hypothesis that 3.2.2 stamps are local time with summer time; the +1 h baseline is not
+   a matching artefact (synthetic chain gives lag 0): it is in the BL-View stamps (CET stamps or a one-hour delay,
+   open); `09_fp_topaffected` network bar = pooled shares. Cluster: 14c only (`docs/local/cluster_commands_spec14.md`,
+   section "fix-14c").
 
 
 ## Data

@@ -341,8 +341,14 @@ too shallow when deep") is a **hypothesis under test**.
   PBLHmod regime, spec 15 also by zm/L class; (c) exceptions: no minimum n (n reported); (d) Rebmann pass / fail
   flips between cases only near the 50 % limit (20 rows outside the main set × subset, shares within 0.05 of 0.5);
   (e) figure order: land cover, then median PBLHmod h.
+- fix-14c (2026-11-12, spec 14 amendment 1): (a) **decided (G): SkyVUE built-in MLH not used** (`inventory`: no
+  daytime growth, confidence 1); the raw profiles stay the DE-Tha asset for a later retrieval (e.g. MeteoSwiss);
+  (b) BL-View time convention: lag +1 h (3.1.1, 3.1.2, all seasons), 3.2.2 +2 h (DJF) / +3 h (other seasons);
+  hypothesis 3.2.2 = Europe/Prague local time with summer time, tested by `--blview-322-tz` (diagnostics only);
+  (c) the +1 h common to all versions is in the stamps, not in the matching (synthetic check): CET stamps or a
+  one-hour delay of the hourly value; to ask the site / Vaisala; no correction of the standard file until G decides.
 - Spec 14 (2026-11-12, secondary sources; for G): (a) SkyVUE layer rule (layer 1, the highest-confidence layer, or
-  none): from `14_skyvue_layers_hourly_DE-Tha.csv` and the window metrics per layer; until then `pblh_m` is `NA`;
+  none): superseded by fix-14c (a);
   (b) BL-View quality rule: the meaning of 1–3 is not in the BL-View User Guide; Münkel et al. (ISARS 2012) indicate
   3 = best for the gradient-minimum index (`14_window_metrics_CZ-Lnz.csv` by class); (c) time conventions: BL-View
   stored time read as UTC (3.1.x file names UTC, `location_utc_offset` 0; but 3.2.2 `time_zone` = 2 and extracts

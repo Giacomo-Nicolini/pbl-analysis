@@ -222,16 +222,24 @@ so code must be reproducible, documented and traceable to references.
     zero gate makes it ambiguous); TXT = message 006, 7 lines per record, no time, paired by order. Field meanings,
     profile decode (20-bit two's complement × 1e-8 m-1 sr-1) and CRC-16 (0x1021, init / xorout 0xFFFF, after SOH
     through ETX): `CampbellSkyVUEPRO2026` Sect. 6.3.6, 2.1.3, 6.2; quality 1–3, 3 = highest confidence (Sect. 2.1.4).
-    `read_skyvue_day()` checks counts, layers, confidences, cloud base, profile vs CSV and CRC. Standard source
-    `tud_skyvue_mlh` (`scripts/14a_skyvue_mlh.R`): half-hourly medians of layers 1–3 as `x_layer<k>_*`, **`pblh_m`
-    `NA` until G decides a layer rule**.
+    `read_skyvue_day()` checks counts, layers, confidences, cloud base, profile vs CSV and CRC. Before the MLH option
+    (until about 2025-06-24) the CSV has 7 columns (time, cloud bases 1-4, vertical visibility, highest signal): layout
+    detected from the header, cloud base and VV checked, no MLH, no profile check; a day with only a CSV or only a TXT
+    (2025-06-25) is skipped and listed (fix-14c item 9). Standard source
+    `tud_skyvue_mlh` (`scripts/14a_skyvue_mlh.R`): half-hourly medians of layers 1–3 as `x_layer<k>_*`, `pblh_m`
+    `NA`. **Built-in MLH set to `inventory` (G 2026-11-12)**: no daytime growth in any layer (July 2026), confidence 1
+    almost always; reader, standard source and profile decoder kept, the raw profiles are the DE-Tha asset for a
+    later retrieval.
   - **CZ-Lnz BL-View L3 (CzechGlobe CL61)**: versions detected from the variables (`blview_version()`): 3.1.1
     (`time`, `Mean_Layer_Height`, `Mean_Layer_QualityIndex`), 3.1.2 (+ `location_utc_offset`,
     `Mean_Layer_Calculation_Time`), 3.2.2 (`time_aerosol`, `mean_mixing_layer_height`, `mean_mixing_layer_quality`,
     fill −999; full files also `time_zone` = 2). Hourly value repeated on ~1-min profiles, changing at hh:00:xx: one
     row per hour, profiles hh:00–hh:59 = the hour ending at hh:00; a changing value gives `NA` and
     `x_consistent = FALSE`. Quality meaning not documented (indicative 3 = best, `Muenkel2012`). Stored time read as
-    UTC (`time_offset_h` explicit; not proven: lag test). Standard source `vaisala_blview_mlh`
+    UTC (`time_offset_h` explicit). Lag test (cluster, G 2026-11-12): +1 h for 3.1.1 / 3.1.2 in every season, 3.2.2
+    +2 h (DJF) / +3 h (other seasons); the +1 h is in the stamps, not in the matching (spec 14 amendment 1);
+    `14c --blview-322-tz=Europe/Prague` tests 3.2.2 = local time with summer time (diagnostics only, `_tz322`); the
+    standard file is unchanged until G decides. Standard source `vaisala_blview_mlh`
     (`scripts/14b_blview_mlh.R`): hourly, all quality kept (`x_quality`), overlaps across files: newest version kept.
 - **Standard-file column types (spec 14)**: `read_standard_pblh()` never guesses: documented non-numeric `x_` columns
   in `standard_x_col_types()` (add a row there and in `docs/specs/standard_format.md` for a new one); every other `x_`

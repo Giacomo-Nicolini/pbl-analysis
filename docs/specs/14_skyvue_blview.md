@@ -175,3 +175,54 @@ mean). Overlaps between files (reprocessing, day files): newest version kept (3.
   2026-04-03. The Cloudnet row had the two HALO names swapped (corrected).
 - `09_network_record_start.csv` (`network_record_start()`): labelling date (local date of the first valid
   `pblhmod_default` value), first and last valid value (UTC), n_valid; PC: BE-Bra 2020-10-26, FI-Hyy 2018-11-06.
+
+## Amendment 1 (fix-14c, 2026-11-12): diagnostics fixes, SkyVUE MLH to inventory, BL-View time conventions
+
+Cluster results of the 14c diagnostics (DE-Tha July 2026, CZ-Lnz all versions) showed three faults and two findings.
+
+- **Lag table (fixed).** In `14c`, `dplyr::mutate(lag_correlation(...), reference = r)` took the correlation column `r`
+  instead of the loop variable (data masking): the reference column held correlations, every lag became its own
+  group, `14_lag_best_*` was not reduced, and faceting by reference made one point per facet (the `geom_line()`
+  warnings of `14_lag_*.png`). Now `lag_table()` builds the table without masking, `best_lag()` returns one row per
+  site × series × reference × season (best lag, r_best, r at lag 0, n), references are printed as PBLHmod / ERA5,
+  and the figure groups by series. Lags −3 … +6 h (the 3.2.2 peak sat at the +3 h edge); `at_edge` flags a best
+  lag at the end of the range.
+- **SkyVUE window metrics.** Computed per layer by `secondary_window_metrics()` (`pblh_m` set to the layer; BL-View
+  per quality class as before). The empty section in the cluster log was most likely the runbook: its `sed` ranges
+  for DE-Tha stopped at the "Window metrics" header and restarted at "Layer medians"; the table
+  `14_window_metrics_DE-Tha.csv` was written. Runbook corrected.
+- **Decision (G, 2026-11-12): the SkyVUE built-in MLH is `inventory`** in `config/measured_sites.csv`: on the July 2026
+  test month no layer shows a daytime growth (layer 1 about 400 m all day) and the confidence is 1 for almost all
+  daytime values. Reader, standard source `tud_skyvue_mlh` and the profile decoder are kept: the raw profiles (2048 ×
+  5 m, from 2025-02-06) are the DE-Tha asset for a later retrieval. 14c selects the row by provider, so the
+  diagnostics still run.
+- **BL-View lag (G, cluster):** +1 h for 3.1.1 and 3.1.2 in every season; 3.2.2 (files with `time_zone` = 2) +2 h in
+  DJF and +3 h (at the old edge) in MAM, JJA, SON. Hypothesis: 3.2.2 stamps are local time of Europe/Prague with
+  summer time, and all versions carry a +1 h offset from the hourly-mean convention. Option
+  `--blview-322-tz=Europe/Prague` of 14c (default off) re-reads the 3.2.2 hour ends as local clock time
+  (`blview_local_to_utc()`, `blview_convert_version()`: the spring-forward hour dropped, a duplicate autumn hour
+  dropped, both counted); outputs with the suffix `_tz322`; the standard file is not changed. If the hypothesis holds,
+  3.2.2 then peaks where 3.1.x does (+1 h) in every season. G decides after the run.
+- **The +1 h baseline (check).** Lag test: every series is put on UTC hour bins [h, h + 1 h) by its interval
+  midpoint (`hour_bins()`): the BL-View hour [end − 1 h, end) to the bin of its start, the PBLHmod half-hours h:00 and
+  h:30 to bin h (their mean), ERA5 bin h = mean of the instantaneous values at h and h + 1 h. Window metrics
+  (`measured_time_base()`, hourly base): the interval [t, t + 1 h) against the mean of the two PBLHmod half-hours in
+  it and the mean of ERA5 at t and t + 1 h, labelled by t. Both match the same hour and label it the same way. A
+  synthetic chain (truth → BL-View file with the reader's convention → standard → lag test and window matching) gives
+  lag 0 and ratio 1 (test). So the +1 h does not come from the matching and does not disappear with it: it is in the
+  stamps. With the reader's hour convention (profiles hh:00–hh:59 carry the mean of [hh − 1 h, hh)), a +1 h lag
+  means that those profiles describe [hh − 2 h, hh − 1 h): either the 3.1.x stamps are CET (UTC + 1, no summer
+  time) although the file names are labelled UTC and `location_utc_offset` is 0, or BL-View attaches each hourly
+  mean one hour after the hour ends. The lag test cannot tell these apart (both a constant +1 h); the 3.1.2
+  calculation time (hh:00:55) is the time the value appears, not the hour it averages. Open for G (and the site).
+- **09_fp_topaffected (spec 15):** the network bar uses the pooled shares (sums to 100 %); the median of the site
+  shares stays in the table.
+- **(9) SkyVUE CSV before the MLH option (cluster data, G 2026-11-12).** Until about 2025-06-24 the daily CSV has
+  only 7 columns (`UTC Timestamp`, `Cloud Base 1..4`, `Vertical Visibility`, `Highest Signal`); the TXT is the same
+  message 006 with profiles and the same record count (2025-06-10: 10,057 = 10,057); from about 2025-06-26 the full
+  layout; 2025-06-25 has a CSV but no TXT. `read_skyvue_csv()` detects the layout from the header (`full` / `short`;
+  any other header aborts); in the short layout `read_skyvue_day()` pairs by order and checks the record count, cloud
+  base 1 (detection status 1-4) and the vertical visibility (status 5, TXT `h1`), sets the mixing layers to `NA` and
+  reports the CSV-profile comparison as "not available (short CSV layout)". `find_skyvue_days()` keeps a day with only
+  one of the two files with `skip_reason` (`no TXT file` / `no CSV file`); 14a lists it in `14_skyvue_days_<site>.csv`
+  (columns `csv_layout`, `profile_check`, `skip_reason`), not an error. The full-record 14a run must be repeated.

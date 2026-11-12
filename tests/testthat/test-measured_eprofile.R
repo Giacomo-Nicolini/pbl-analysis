@@ -196,7 +196,7 @@ test_that("distance classes and the pairing table (spec 13)", {
   expect_equal(me$status, c("used", "used", "inventory", "used", "used"))
   # spec 14: secondary sources, never primary
   expect_equal(ms$status[ms$icos_site == "CZ-Lnz"], "secondary")
-  expect_equal(ms$status[ms$icos_site == "DE-Tha"], "secondary")
+  expect_equal(ms$status[ms$icos_site == "DE-Tha"], "inventory") # SkyVUE MLH not used (G 2026-11-12, fix-14c)
   expect_true(all(is.na(ms$primary_source_id[ms$status == "secondary"])))
   expect_equal(ms$distance_class[ms$icos_site == "DE-Tha"], "all_regimes")
   expect_true(all(is.na(ms$primary_source_id[ms$provider == "cloudnet" & ms$icos_site %in% c("FI-Lom", "DE-RuS")])))

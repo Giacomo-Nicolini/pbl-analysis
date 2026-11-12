@@ -4,7 +4,9 @@
 #   .nc files are ignored), or under --dir. Every day: CSV time stamps and layers paired with the TXT message 006 by
 #   record order and checked (counts, layers and confidences, cloud base, profile decode vs CSV, CRC-16;
 #   read_skyvue_day()). A day that fails a check is listed with the error and left out; the script then ends with
-#   exit status 1 after writing everything else.
+#   exit status 1 after writing everything else. fix-14c item 9: the 7-column CSV before the MLH option (until about
+#   2025-06-24) is read too (cloud base 1 and vertical visibility checked, no MLH, profile check "not available"); a
+#   day with only a CSV or only a TXT (e.g. 2025-06-25) is skipped with skip_reason in the day table, not an error.
 # Pairing: provider "TU Dresden" in config/measured_sites.csv (status secondary).
 # Output: <standard_dir>/<site>/<site>__tud_skyvue_mlh.csv.gz + .yml; <output_dir>/tables/internal/
 #   14_skyvue_days_<site>.csv (one row per day file pair: records, CRC failures, records with MLH, profile check,
@@ -53,22 +55,29 @@ keep <- c("time_end_utc", "crc_ok", "detection_status", "window_tr_pct", "mlh1_m
 recs <- vector("list", nrow(days))
 info <- vector("list", nrow(days))
 for (i in seq_len(nrow(days))) {
+  fname <- basename(if (is.na(days$csv[i])) days$txt[i] else days$csv[i])
+  if (!is.na(days$skip_reason[i])) {
+    # fix-14c item 9: a day with only one of the two files is skipped and listed (not an error)
+    info[[i]] <- dplyr::tibble(day = days$day[i], csv = fname, skip_reason = days$skip_reason[i], error = NA_character_)
+    next
+  }
   r <- tryCatch(read_skyvue_day(days$csv[i], days$txt[i]), error = function(e) e)
   if (inherits(r, "error")) {
     msg <- gsub("\\s+", " ", conditionMessage(r))
     cli::cli_alert_danger("{format(days$day[i])}: {msg}")
-    info[[i]] <- dplyr::tibble(day = days$day[i], csv = basename(days$csv[i]), error = msg)
+    info[[i]] <- dplyr::tibble(day = days$day[i], csv = fname, skip_reason = NA_character_, error = msg)
     next
   }
   m <- attr(r, "skyvue_meta")
   info[[i]] <- dplyr::tibble(
-    day = days$day[i], csv = m$csv, n_records = m$n_records, n_crc_fail = m$n_crc_fail,
+    day = days$day[i], csv = m$csv, csv_layout = m$csv_layout, n_records = m$n_records, n_crc_fail = m$n_crc_fail,
     n_mlh1 = sum(!is.na(r$mlh1_m)), n_mlh2 = sum(!is.na(r$mlh2_m)), n_mlh3 = sum(!is.na(r$mlh3_m)),
-    n_profile_records_checked = m$n_profile_records_checked, max_rel_diff_profile = m$max_rel_diff_profile,
+    profile_check = m$profile_check, n_profile_records_checked = m$n_profile_records_checked,
+    max_rel_diff_profile = m$max_rel_diff_profile,
     scale_pct = paste(m$scale_values, collapse = " "), n_gates = paste(unique(r$n_gates), collapse = " "),
     resolution_m = paste(unique(r$resolution_m), collapse = " "), tilt_deg = paste(unique(r$tilt_deg), collapse = " "),
     interval_s_median = m$interval_s_median, first_utc = min(r$time_end_utc), last_utc = max(r$time_end_utc),
-    error = NA_character_)
+    skip_reason = NA_character_, error = NA_character_)
   recs[[i]] <- r[keep]
   if (i %% 20 == 0) cli::cli_inform("{i} / {nrow(days)} days ({format(round(difftime(Sys.time(), t0, units = 'mins'), 1))}).")
 }
@@ -76,6 +85,8 @@ info <- dplyr::bind_rows(info)
 readr::write_csv(info, file.path(tab_dir, paste0("14_skyvue_days_", site_id, ".csv")))
 recs <- dplyr::bind_rows(recs)
 n_fail <- sum(!is.na(info$error))
+n_skip <- sum(!is.na(info$skip_reason))
+if (n_skip > 0) cli::cli_alert_warning("{n_skip} day{?s} skipped (only one of .csv / .txt): {paste(format(info$day[!is.na(info$skip_reason)]), info$skip_reason[!is.na(info$skip_reason)], collapse = '; ')}.")
 if (nrow(recs) == 0) cli::cli_abort("No day passed the checks.")
 recs <- recs[order(recs$time_end_utc), ]
 if (anyDuplicated(recs$time_end_utc)) {
@@ -84,13 +95,15 @@ if (anyDuplicated(recs$time_end_utc)) {
 }
 
 cli::cli_h2("Checks over {nrow(info)} day{?s}")
-ok <- info[is.na(info$error), ]
+ok <- info[is.na(info$error) & is.na(info$skip_reason), ]
+mr <- if (any(!is.na(ok$max_rel_diff_profile))) signif(max(ok$max_rel_diff_profile, na.rm = TRUE), 2) else "not available"
 cli::cli_inform(c(
-  "Records {sum(ok$n_records)}; CRC mismatches {sum(ok$n_crc_fail)}; days failing a check {n_fail}.",
-  "Profile decode vs CSV (first 20 gates, unambiguous values): {sum(ok$n_profile_records_checked)} records, max relative difference {signif(max(ok$max_rel_diff_profile, na.rm = TRUE), 2)}.",
+  "Records {sum(ok$n_records)}; CRC mismatches {sum(ok$n_crc_fail)}; days failing a check {n_fail}; days skipped {n_skip}.",
+  "CSV layout: full {sum(ok$csv_layout == 'full')} days, short (7 columns, before the MLH option) {sum(ok$csv_layout == 'short')} days.",
+  "Profile decode vs CSV (first 20 gates, unambiguous values; full layout only): {sum(ok$n_profile_records_checked, na.rm = TRUE)} records, max relative difference {mr}.",
   "Scale parameter values: {paste(unique(ok$scale_pct), collapse = ', ')} %; gates {paste(unique(ok$n_gates), collapse = ', ')} x {paste(unique(ok$resolution_m), collapse = ', ')} m; tilt {paste(unique(ok$tilt_deg), collapse = ', ')} deg.",
   "Record step: median of the daily medians {stats::median(ok$interval_s_median)} s.",
-  "First record with an MLH layer: {format(min(recs$time_end_utc[!is.na(recs$mlh1_m)]), '%Y-%m-%d %H:%M:%S')} UTC (site: MLH option from 2025-06-25)."
+  "First record with an MLH layer: {if (any(!is.na(recs$mlh1_m))) format(min(recs$time_end_utc[!is.na(recs$mlh1_m)]), '%Y-%m-%d %H:%M:%S') else 'none'} UTC (site: MLH option from 2025-06-25)."
 ))
 cli::cli_inform("Records with layer 1 / 2 / 3: {sum(!is.na(recs$mlh1_m))} / {sum(!is.na(recs$mlh2_m))} / {sum(!is.na(recs$mlh3_m))}; confidence of layer 1: {paste(names(table(recs$mlh1_q[!is.na(recs$mlh1_m)])), table(recs$mlh1_q[!is.na(recs$mlh1_m)]), sep = ': ', collapse = ', ')}.")
 
