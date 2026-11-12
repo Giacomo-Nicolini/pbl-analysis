@@ -304,3 +304,45 @@ standardize_blview_mlh <- function(hours, site_id, exclusions, utc_offset_h, tim
   )
   list(data = d, meta = meta, n_excluded = ex$n_excluded, n_excluded_measured = mx$n_excluded)
 }
+
+#' Re-read BL-View hour stamps as local clock time (diagnostic option, fix-14c)
+#'
+#' Hypothesis (G 2026-11-12, from the cluster lag test): the 3.2.2 stamps (files with `time_zone` = 2) are local time
+#' of `tz` (e.g. Europe/Prague, CET / CEST with summer time), stored as if they were UTC. The stored hour end is
+#' formatted as a clock time and re-read in `tz`. Hour ends that do not exist in `tz` (the spring-forward hour) give
+#' `NA`; in the repeated autumn hour, R resolves the clock time to one of the two instants, so two stored hours can
+#' map to the same UTC hour (the caller keeps the first). Diagnostics only: the standard file keeps the stored time.
+#'
+#' @param t Stored hour ends [POSIXct, read as UTC].
+#' @param tz Olson time zone of the stamps [character], e.g. `"Europe/Prague"`.
+#' @return POSIXct UTC: the hour ends in UTC (`NA` where the clock time does not exist in `tz`).
+blview_local_to_utc <- function(t, tz) {
+  clock <- format(t, "%Y-%m-%d %H:%M:%S", tz = "UTC")
+  out <- as.POSIXct(clock, format = "%Y-%m-%d %H:%M:%S", tz = tz)
+  # A clock time that does not exist in tz (spring forward) may come back shifted instead of NA on some platforms:
+  # keep only the times that format back to the same clock time.
+  back <- format(out, "%Y-%m-%d %H:%M:%S", tz = tz)
+  out[is.na(back) | back != clock] <- NA
+  attr(out, "tzone") <- "UTC"
+  out
+}
+
+#' Apply [blview_local_to_utc()] to the rows of one BL-View version of a standard table
+#'
+#' @param d Standard rows of `vaisala_blview_mlh` (with `x_version`).
+#' @param version Version whose stamps are converted [character], e.g. `"3.2.2"`.
+#' @param tz Time zone [character].
+#' @return List: `data` (rows converted: `timestamp_end_utc` = UTC hour end, `timestamp_start_utc` = end - 1 h; rows
+#'   whose stamp does not exist in `tz` dropped; after the conversion, duplicated hours keep the first row), `n_dropped`
+#'   [-, nonexistent], `n_duplicated` [-].
+blview_convert_version <- function(d, version, tz) {
+  i <- d$x_version %in% version
+  e <- blview_local_to_utc(d$timestamp_end_utc[i], tz)
+  d$timestamp_end_utc[i] <- e
+  d$timestamp_start_utc[i] <- e - 3600
+  bad <- i & is.na(d$timestamp_end_utc)
+  d <- d[!bad, ]
+  d <- d[order(d$timestamp_start_utc), ]
+  dup <- duplicated(d$timestamp_start_utc)
+  list(data = d[!dup, ], n_dropped = sum(bad), n_duplicated = sum(dup))
+}

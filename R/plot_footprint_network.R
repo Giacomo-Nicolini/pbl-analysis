@@ -49,13 +49,13 @@ plot_fp_site_diff <- function(x, lo, mid, hi, site_order, exceptions = character
 #' @param site_order Sites from top to bottom [character].
 #' @param subtitle Subtitle [character].
 #' @return A ggplot: three panels (stability class, day / night, removal by QC / used), one stacked bar per site and
-#'   for the network (pooled and median of the sites).
+#'   one for the network with the pooled shares, so that each bar sums to 100 % (fix-14c, G 2026-11-12; the median of
+#'   the site shares stays in the table).
 plot_fp_topaffected <- function(top, site_order, subtitle = NULL) {
-  d <- top[top$scope %in% c("site", "network_pooled", "network_site_median"), ]
-  d$row <- ifelse(d$scope == "site", d$site_id, ifelse(d$scope == "network_pooled", "net_pooled", "net_median"))
-  lev <- c("net_pooled", "net_median", rev(site_order)) # network rows at the bottom
-  labs <- c(stats::setNames(rev(site_order), rev(site_order)), net_median = "Network (median of sites)",
-            net_pooled = "Network (pooled)")
+  d <- top[top$scope %in% c("site", "network_pooled"), ]
+  d$row <- ifelse(d$scope == "site", d$site_id, "net_pooled")
+  lev <- c("net_pooled", rev(site_order)) # network row at the bottom
+  labs <- c(stats::setNames(rev(site_order), rev(site_order)), net_pooled = "Network (pooled)")
   long <- dplyr::bind_rows(
     dplyr::tibble(row = d$row, panel = "stability (zm/L)", cat = "zl_unstable", share = d$share_unstable),
     dplyr::tibble(row = d$row, panel = "stability (zm/L)", cat = "zl_neutral", share = d$share_neutral),

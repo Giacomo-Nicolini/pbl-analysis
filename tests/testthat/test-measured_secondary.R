@@ -30,7 +30,8 @@ fmt_e <- function(v) {
 }
 make_skyvue_day <- function(dir, n = 4, t0 = as.POSIXct("2026-07-15 00:00:09", tz = "UTC"), step = 9,
                             mlh = matrix(c(375, 650, NA), n, 3, byrow = TRUE), conf = matrix(c(2L, 1L, 0L), n, 3, byrow = TRUE),
-                            cbh = rep(2802, n), corrupt = integer()) {
+                            cbh = rep(2802, n), corrupt = integer(), status = rep(1L, n), vv = rep(NA_real_, n),
+                            layout = "full", vv_csv = vv) {
   set.seed(1)
   ints <- matrix(sample(-200:6000, n * 20, replace = TRUE), n, 20)
   ints[, 3] <- 0L # a zero gate: the CSV parse stops there (ambiguous)
@@ -40,8 +41,9 @@ make_skyvue_day <- function(dir, n = 4, t0 = as.POSIXct("2026-07-15 00:00:09", t
   rows <- character(n)
   t <- t0 + step * (seq_len(n) - 1)
   for (i in seq_len(n)) {
+    h1 <- if (status[i] == 5L) vv[i] else if (status[i] %in% 1:4) cbh[i] else NA # line 2: h1 = VV at status 5
     body <- paste0("CS0016006\002\r\n",
-                   "10 096 ", m5(cbh[i]), " ///// ///// ///// c00000000000\r\n",
+                   status[i], "0 096 ", m5(h1), " ///// ///// ///// c00000000000\r\n",
                    "  3 0141  8 0241  0 ////  0 ////  0 ////\r\n",
                    "00100 05 0020 100 +39 00 0096 0020 30 131\r\n",
                    paste(m5(mlh[i, 1]), m5(conf[i, 1]), m5(mlh[i, 2]), m5(conf[i, 2]), m5(mlh[i, 3]), m5(conf[i, 3])),
@@ -52,14 +54,21 @@ make_skyvue_day <- function(dir, n = 4, t0 = as.POSIXct("2026-07-15 00:00:09", t
     prof <- paste(fmt_e(ints[i, ] * 1e-8), collapse = ",")
     q <- function(x) paste0("\"", x, "\"")
     num <- function(x) ifelse(is.na(x), "/////", gsub(".", ",", format(x, nsmall = 0), fixed = TRUE))
-    rows[i] <- paste(format(t[i], "%d.%m.%Y %H:%M:%S"), q(paste0(cbh[i], ",00000425904")), "/////", "/////", "/////",
-                     "/////", "c00000000000", q(prof), "3", "8", "0", "0", "0", "1410", "2410", "/////", "/////",
-                     "/////", num(mlh[i, 1]), num(mlh[i, 2]), num(mlh[i, 3]), conf[i, 1], conf[i, 2], conf[i, 3],
-                     "/////", "5", sep = ",")
+    cb_csv <- if (status[i] %in% 1:4) q(paste0(cbh[i], ",00000425904")) else "/////"
+    if (layout == "full") {
+      rows[i] <- paste(format(t[i], "%d.%m.%Y %H:%M:%S"), cb_csv, "/////", "/////", "/////",
+                       num(vv_csv[i]), "c00000000000", q(prof), "3", "8", "0", "0", "0", "1410", "2410", "/////", "/////",
+                       "/////", num(mlh[i, 1]), num(mlh[i, 2]), num(mlh[i, 3]), conf[i, 1], conf[i, 2], conf[i, 3],
+                       "/////", "5", sep = ",")
+    } else { # 7-column layout before the MLH option (DE-Tha until about 2025-06-24)
+      rows[i] <- paste(format(t[i], "%d.%m.%Y %H:%M:%S"), cb_csv, "/////", "/////", "/////", num(vv_csv[i]), "/////",
+                       sep = ",")
+    }
   }
   csv <- file.path(dir, "E1227_150726_Midnight.csv")
   txtf <- file.path(dir, "E1227_150726_Midnight.txt")
-  writeLines(c(paste(csv_header, collapse = ","), rows), csv)
+  hdr <- if (layout == "full") csv_header else csv_header[c(1:6, 25)] # UTC Timestamp, Cloud Base 1-4, VV, Highest Signal
+  writeLines(c(paste(hdr, collapse = ","), rows), csv)
   writeBin(charToRaw(paste(txt, collapse = "")), txtf)
   list(csv = csv, txt = txtf, ints = ints, t = t)
 }
@@ -173,8 +182,41 @@ test_that("find_skyvue_days pairs the day files and ignores the .nc", {
   for (f in c("E1227_150726_Midnight.csv", "E1227_150726_Midnight.txt", "E1227_150726_Midnight.nc",
               "E1227_160726_Midnight.csv")) writeLines("x", file.path(d, f))
   x <- suppressMessages(find_skyvue_days(d))
-  expect_equal(x$day, as.Date("2026-07-15"))
-  expect_match(x$csv, "150726_Midnight.csv$")
+  expect_equal(x$day, as.Date(c("2026-07-15", "2026-07-16")))
+  expect_match(x$csv[1], "150726_Midnight.csv$")
+  # fix-14c item 9: a day with only one of the two files is kept with a reason, not dropped
+  expect_equal(x$skip_reason, c(NA, "no TXT file"))
+  expect_true(is.na(x$txt[2]))
+})
+
+test_that("short CSV layout (7 columns, before the MLH option): paired by order, cloud base and VV checked", {
+  d <- withr::local_tempdir()
+  st <- c(1L, 0L, 5L, 1L)
+  s <- make_skyvue_day(d, n = 4, status = st, vv = c(NA, NA, 120, NA), layout = "short")
+  a <- read_skyvue_csv(s$csv)
+  expect_equal(attr(a, "layout"), "short")
+  expect_equal(a$cloud_base1_m, c(2802.00000425904, NA, NA, 2802.00000425904))
+  expect_equal(a$vertical_visibility_m, c(NA, NA, 120, NA))
+  expect_true(all(is.na(a$mlh1_m)) && all(is.na(a$profile_csv)))
+  r <- read_skyvue_day(s$csv, s$txt)
+  m <- attr(r, "skyvue_meta")
+  expect_equal(m$csv_layout, "short")
+  expect_equal(m$profile_check, "not available (short CSV layout)")
+  expect_true(is.na(m$n_profile_records_checked) && is.na(m$max_rel_diff_profile))
+  expect_true(all(is.na(r$mlh1_m)) && all(is.na(r$mlh3_q)))
+  expect_equal(r$detection_status, st)
+  expect_equal(nrow(r), 4)
+  # a vertical visibility that differs between CSV and TXT fails loudly
+  s2 <- make_skyvue_day(withr::local_tempdir(), n = 4, status = st, vv = c(NA, NA, 120, NA), vv_csv = c(NA, NA, 150, NA),
+                        layout = "short")
+  expect_error(read_skyvue_day(s2$csv, s2$txt), "vertical visibility")
+  # a shifted record fails (cloud base against a status-0 record)
+  l <- readLines(s$csv)
+  writeLines(c(l[1], l[3:5], l[5]), s$csv)
+  expect_error(read_skyvue_day(s$csv, s$txt), "differ")
+  # an unknown layout is refused
+  writeLines(c("UTC Timestamp,Something( Meters )", "15.07.2026 00:00:09,1"), s$csv)
+  expect_error(read_skyvue_csv(s$csv), "unknown SkyVUE CSV layout")
 })
 
 test_that("the real SkyVUE sample passes every pairing and decode check", {
@@ -364,4 +406,126 @@ test_that("read_standard_pblh: an x_ column empty in its first rows is read as n
   expect_type(x$x_empty, "double")   # unknown, empty: double
   expect_s3_class(x$x_first_profile_utc, "POSIXct")
   expect_type(x$qc_flag, "integer")
+})
+
+# --- fix-14c ---------------------------------------------------------------------------------------------------------
+
+# Synthetic morning growth on hourly bins: day-to-day amplitude, growth from 04 to 12 UTC.
+growth_bins <- function(days, shift_h = 0) {
+  hrs <- as.POSIXct(paste(rep(days, each = 24), sprintf("%02d:00", 0:23)), tz = "UTC")
+  amp <- rep(seq(800, 1800, length.out = length(days)), each = 24)
+  h <- as.numeric(format(hrs, "%H", tz = "UTC"))
+  v <- pmax(100, amp * sin(pmin(pmax((h - 4) / 8, 0), 1) * pi / 2))
+  dplyr::tibble(bin_utc = hrs + shift_h * 3600, value = v, n = 1L)
+}
+
+test_that("lag_table keeps the reference names and best_lag gives one row per series x reference x season", {
+  days <- as.Date("2025-06-01") + 0:19
+  mb <- morning_bins(days, 50.96, 13.57)
+  ref <- growth_bins(days)
+  lt <- lag_table(list(s1 = growth_bins(days, 1), s2 = growth_bins(days, 0)),
+                  list(pblhmod_default = ref, era5_blh_center = ref), mb, "XX-Tst")
+  expect_setequal(unique(lt$reference), c("pblhmod_default", "era5_blh_center")) # was: correlations (data masking)
+  expect_equal(range(lt$lag_h), c(-3, 6))
+  b <- best_lag(lt, by = c("site_id", "series", "reference"))
+  expect_equal(nrow(b), nrow(unique(lt[!is.na(lt$r), c("site_id", "series", "reference", "season")])))
+  expect_equal(anyDuplicated(b[c("series", "reference", "season")]), 0L)
+  expect_equal(b$best_lag_h[b$series == "s1" & b$season == "all"], c(1L, 1L))
+  expect_equal(b$best_lag_h[b$series == "s2" & b$season == "all"], c(0L, 0L))
+  expect_equal(b$r_lag0[b$series == "s2" & b$season == "all"], c(1, 1), tolerance = 1e-12)
+  expect_equal(reference_label(c("pblhmod_default", "era5_blh_center", "x")), c("PBLHmod", "ERA5", "x"))
+  # a hand-made lag table: the maximum, r at lag 0, and a group whose lag 0 has no correlation
+  lc <- dplyr::tibble(series = "s", reference = rep(c("a", "b"), each = 4), season = "all", lag_h = rep(c(-1, 0, 1, 2), 2),
+                      n = 20L, r = c(0.1, 0.5, 0.9, 0.3, 0.2, NA, 0.4, 0.8))
+  bb <- best_lag(lc, by = c("series", "reference"))
+  expect_equal(bb$best_lag_h, c(1L, 2L))
+  expect_equal(bb$r_best, c(0.9, 0.8))
+  expect_equal(bb$r_lag0, c(0.5, NA))
+  expect_equal(nrow(best_lag(lc[0, ], by = c("series", "reference"))), 0)
+})
+
+test_that("local-time stamps across a summer-time change: lag +1 / +2 before, 0 after the conversion", {
+  # true hourly values in UTC; stored stamps = local clock time of Europe/Prague (CET +1, CEST +2), read as UTC
+  days <- as.Date("2025-03-01") + 0:59 # spans the change of 2025-03-30
+  truth <- growth_bins(days)
+  stored <- truth
+  stored$bin_utc <- as.POSIXct(format(truth$bin_utc, "%Y-%m-%d %H:%M:%S", tz = "Europe/Prague"), tz = "UTC")
+  off <- (as.numeric(stored$bin_utc) - as.numeric(truth$bin_utc)) / 3600
+  expect_equal(sort(unique(off)), c(1, 2))
+  mb <- morning_bins(days, 50.96, 13.57)
+  before <- best_lag(lag_correlation(stored, truth, mb[mb$day < as.Date("2025-03-30"), ]))
+  expect_equal(before$best_lag_h[before$season == "all"], 1L) # winter part: CET
+  after_st <- best_lag(lag_correlation(stored, truth, mb[mb$day > as.Date("2025-03-31"), ]))
+  expect_equal(after_st$best_lag_h[after_st$season == "all"], 2L) # summer part: CEST
+  # conversion of hour ends (stamps of the standard table) back to UTC
+  back <- blview_local_to_utc(stored$bin_utc, "Europe/Prague")
+  expect_equal(as.numeric(back), as.numeric(truth$bin_utc))
+  conv <- truth
+  conv$bin_utc <- back
+  b <- best_lag(lag_correlation(conv, truth, mb))
+  expect_equal(b$best_lag_h, rep(0L, nrow(b)))
+  # the spring-forward clock hour does not exist: NA; standard rows of one version only
+  expect_true(is.na(blview_local_to_utc(as.POSIXct("2025-03-30 02:30", tz = "UTC"), "Europe/Prague")))
+  t <- as.POSIXct("2025-03-30 01:00", tz = "UTC") + 3600 * 0:3 # stored 01, 02 (nonexistent), 03, 04 local
+  d <- dplyr::tibble(timestamp_start_utc = t - 3600, timestamp_end_utc = t, pblh_m = 1:4, x_version = rep("3.2.2", 4))
+  d <- dplyr::bind_rows(d, dplyr::tibble(timestamp_start_utc = t[1] - 4 * 3600, timestamp_end_utc = t[1] - 3 * 3600, pblh_m = 0,
+                                         x_version = "3.1.2"))
+  cv <- blview_convert_version(d, "3.2.2", "Europe/Prague")
+  expect_equal(cv$n_dropped, 1L)
+  expect_equal(format(cv$data$timestamp_end_utc[cv$data$x_version == "3.2.2"], "%H:%M", tz = "UTC"),
+               c("00:00", "01:00", "02:00"))
+  expect_equal(cv$data$timestamp_end_utc[cv$data$x_version == "3.1.2"], t[1] - 3 * 3600) # other versions unchanged
+  expect_equal(cv$n_duplicated, 0L)
+})
+
+test_that("the +1 h baseline: the BL-View chain matched to half-hourly references gives lag 0 and ratio 1", {
+  # truth: half-hourly PBLH; BL-View: the mean of the hour ending at hh:00 carried by the profiles hh:00-hh:59
+  days <- as.Date("2025-06-01") + 0:13
+  hh <- as.POSIXct(paste(rep(days, each = 48), sprintf("%02d:%02d", rep(0:23, each = 2), c(0, 30))), tz = "UTC")
+  hr <- as.numeric(format(hh, "%H", tz = "UTC")) + as.numeric(format(hh, "%M", tz = "UTC")) / 60 + 0.25
+  amp <- rep(seq(800, 1800, length.out = length(days)), each = 48)
+  truth <- dplyr::tibble(timestamp_start_utc = hh, timestamp_end_utc = hh + 1800,
+                         pblh_m = pmax(100, amp * sin(pmin(pmax((hr - 4) / 8, 0), 1) * pi / 2)))
+  hour_mean <- tapply(truth$pblh_m, floor(as.numeric(hh) / 3600) * 3600, mean) # [h, h + 1 h)
+  h_start <- as.numeric(names(hour_mean))
+  # profiles at hh:mm:50 of hour hh carry the mean of [hh - 1 h, hh)
+  tt <- rep(h_start + 3600, each = 60) + 50 + 60 * (0:59)
+  vals <- rep(as.integer(round(hour_mean)), each = 60)
+  f <- write_blview_nc(tempfile(fileext = ".nc"), tt, vals, rep(3L, length(tt)))
+  x <- read_blview_l3(f, 0)
+  s <- suppressMessages(standardize_blview_mlh(x, "XX-Tst", read_exclusions(fixture_path("exclusion_periods.csv")),
+                                               1, 0))$data
+  expect_equal(as.numeric(s$timestamp_start_utc), h_start) # labelled by the hour it averages
+  mb <- morning_bins(days, 50.96, 13.57)
+  lc <- lag_correlation(hour_bins(s$timestamp_start_utc, s$timestamp_end_utc, s$pblh_m),
+                        hour_bins(truth$timestamp_start_utc, truth$timestamp_end_utc, truth$pblh_m), mb)
+  b <- best_lag(lc)
+  expect_equal(b$best_lag_h[b$season == "all"], 0L)
+  # window-metric matching (measured_time_base, hourly base): PBLHmod mean of the two half-hours = the hourly value
+  mod <- dplyr::mutate(truth, x_regime = "convective")
+  era_t <- as.POSIXct(h_start, origin = "1970-01-01", tz = "UTC")
+  era <- list(era5_blh_center = dplyr::tibble(timestamp_start_utc = era_t, timestamp_end_utc = era_t, pblh_m = 500))
+  tb <- measured_time_base(s, mod, era, step_s = 3600)
+  pt <- pair_table(tb$mod, tb$meas[tb$meas$kind %in% "exact", c("timestamp_utc", "pblh_m")], "x")
+  expect_gt(nrow(pt), 100)
+  expect_lte(max(abs(pt$mod - pt$ref)), 0.5) # rounding of the integer MLH only
+})
+
+test_that("window metrics per SkyVUE layer although pblh_m is NA", {
+  t <- as.POSIXct("2025-07-01 08:00", tz = "UTC") + 1800 * 0:11 # 08:00-14:00 UTC, in the window at DE-Tha
+  meas <- dplyr::tibble(timestamp_start_utc = t, timestamp_end_utc = t + 1800, pblh_m = NA_real_, qc_flag = NA_integer_,
+                        x_layer1_m = 400, x_layer2_m = 1200)
+  mod <- dplyr::tibble(timestamp_start_utc = t, timestamp_end_utc = t + 1800, pblh_m = 800, x_regime = "convective")
+  era_t <- seq(min(t), max(t) + 1800, by = 3600)
+  era <- list(era5_blh_center = dplyr::tibble(timestamp_start_utc = era_t, timestamp_end_utc = era_t, pblh_m = 1000))
+  opts <- measured_compare_options()
+  expect_null(secondary_window_metrics(meas, "x", mod, era, 13.57, opts, "XX-Tst")) # pblh_m NA: nothing
+  w <- dplyr::bind_rows(lapply(1:2, function(k) {
+    secondary_window_metrics(dplyr::mutate(meas, pblh_m = .data[[paste0("x_layer", k, "_m")]]),
+                             paste0("skyvue_layer", k), mod, era, 13.57, opts, "XX-Tst")
+  }))
+  expect_equal(unique(w$quality), "all")
+  p <- w[w$source == "pblhmod_default", ]
+  expect_equal(p$median_log_ratio, c(log(800 / 400), log(800 / 1200)))
+  expect_true(all(p$n > 0))
 })

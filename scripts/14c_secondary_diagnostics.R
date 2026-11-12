@@ -18,7 +18,14 @@
 #   14_skyvue_layers_hourly_<site>.csv; <output_dir>/figures/internal/14_lag_<site>.png, 14_diurnal_clear_<site>.png,
 #   DE-Tha 14_skyvue_layers_hourly_<site>.png.
 #
+# fix-14c (2026-11-12): lag table without data masking (one row per site x series x reference x season in
+#   14_lag_best), lags -3 ... +6 h, references named (PBLHmod, ERA5), window metrics per SkyVUE layer
+#   (secondary_window_metrics()), group aesthetic of the lag figure; --blview-322-tz=Europe/Prague re-reads the 3.2.2
+#   stamps as local time with summer time (hypothesis of G 2026-11-12; diagnostics only, outputs with suffix _tz322;
+#   the standard file is not changed).
+#
 # Usage: Rscript scripts/14c_secondary_diagnostics.R SITE [--from=YYYY-MM-DD] [--to=YYYY-MM-DD]
+#          [--blview-322-tz=Europe/Prague]
 #   e.g. DE-Tha --from=2026-07-01 --to=2026-07-31 (test month), then the full record without --from / --to.
 #   Profile: env var R_CONFIG_ACTIVE (default | cluster).
 
@@ -30,7 +37,7 @@ opt <- function(name, default = NULL) {
   if (length(a) == 1) sub(paste0("^--", name, "="), "", a) else default
 }
 pos <- args[!startsWith(args, "--")]
-bad <- setdiff(sub("=.*$", "", args[startsWith(args, "--")]), c("--from", "--to"))
+bad <- setdiff(sub("=.*$", "", args[startsWith(args, "--")]), c("--from", "--to", "--blview-322-tz"))
 if (length(bad) > 0) cli::cli_abort("Unknown option{?s} {.val {bad}}.")
 if (length(pos) != 1) cli::cli_abort("Pass one ICOS station code (DE-Tha or CZ-Lnz).")
 site_id <- pos[1]
@@ -42,15 +49,21 @@ kt_cov <- 0.9
 sites <- read_sites(resolve_path(cfg$sites_file))
 meta <- sites[sites$site_id == site_id, ]
 ms <- read_measured_sites(resolve_path(cfg$measured_sites_file))
-ms <- ms[ms$icos_site == site_id & ms$status %in% "secondary", ]
-if (nrow(ms) != 1) cli::cli_abort("{site_id}: no (or more than one) secondary source in {.file measured_sites.csv}.")
+# the row by provider: the SkyVUE MLH is inventory since G 2026-11-12, its diagnostics stay available
+ms <- ms[ms$icos_site == site_id & ms$provider %in% c("TU Dresden", "CzechGlobe"), ]
+if (nrow(ms) != 1) cli::cli_abort("{site_id}: no (or more than one) SkyVUE / BL-View row in {.file measured_sites.csv}.")
 src <- c(`TU Dresden` = "tud_skyvue_mlh", CzechGlobe = "vaisala_blview_mlh")[[ms$provider]]
+cli::cli_inform("{site_id}: {src}, status {ms$status} in {.file measured_sites.csv}.")
+tz322 <- opt("blview-322-tz")
+if (!is.null(tz322) && src != "vaisala_blview_mlh") cli::cli_abort("--blview-322-tz applies to BL-View (CZ-Lnz) only.")
+if (!is.null(tz322) && !tz322 %in% OlsonNames()) cli::cli_abort("Unknown time zone {.val {tz322}}.")
+sfx <- if (is.null(tz322)) "" else "_tz322" # outputs of the conversion run kept apart
 std_dir <- file.path(resolve_path(cfg$standard_dir), site_id)
 rd <- function(s) read_standard_pblh(file.path(std_dir, paste0(site_id, "__", s, ".csv.gz")))
 tab_dir <- file.path(resolve_path(cfg$output_dir, must_exist = FALSE), "tables", "internal")
 fig_dir <- file.path(resolve_path(cfg$output_dir, must_exist = FALSE), "figures", "internal")
 dir.create(tab_dir, recursive = TRUE, showWarnings = FALSE)
-out_tab <- function(x, name) readr::write_csv(x, file.path(tab_dir, paste0("14_", name, "_", site_id, ".csv")))
+out_tab <- function(x, name) readr::write_csv(x, file.path(tab_dir, paste0("14_", name, "_", site_id, sfx, ".csv")))
 print_tbl <- function(x) print(as.data.frame(dplyr::mutate(x, dplyr::across(dplyr::where(is.double), ~ signif(.x, 3)))),
                                row.names = FALSE)
 
@@ -62,6 +75,12 @@ meas <- in_per(meas)
 mod <- in_per(rd("pblhmod_default"))
 era <- list(era5_blh_center = in_per(rd("era5_blh_center")))
 if (nrow(meas) == 0) cli::cli_abort("{site_id}: no {src} row between {format(t_from)} and {format(t_to)}.")
+if (!is.null(tz322)) {
+  # fix-14c (G 2026-11-12): hypothesis = 3.2.2 stamps are local time of tz322 (with summer time); diagnostics only
+  cv <- blview_convert_version(meas, "3.2.2", tz322)
+  meas <- cv$data
+  cli::cli_alert_info("BL-View 3.2.2 stamps re-read as {tz322} local time: {cv$n_dropped} nonexistent hour{?s} dropped, {cv$n_duplicated} duplicated hour{?s} (repeated autumn hour) dropped; outputs with suffix {.val {sfx}}.")
+}
 cli::cli_h1("{site_id} {src}: {format(t_from, '%Y-%m-%d')} to {format(t_to - 1, '%Y-%m-%d')} ({nrow(meas)} rows)")
 cli::cli_inform("PBLHmod rows {nrow(mod)} (valid {sum(!is.na(mod$pblh_m))}); ERA5 hours {nrow(era$era5_blh_center)}.")
 
@@ -91,15 +110,23 @@ mb <- morning_bins(clear, meta$lat, meta$lon)
 ref_bins <- list(pblhmod_default = hour_bins(mod$timestamp_start_utc, mod$timestamp_end_utc, mod$pblh_m),
                  era5_blh_center = instant_hour_bins(era$era5_blh_center$timestamp_start_utc, era$era5_blh_center$pblh_m))
 meas_bins <- lapply(series, function(s) hour_bins(s$timestamp_start_utc, s$timestamp_end_utc, s$pblh_m))
-lag <- dplyr::bind_rows(lapply(names(series), function(s) dplyr::bind_rows(lapply(names(ref_bins), function(r) {
-  dplyr::mutate(lag_correlation(meas_bins[[s]], ref_bins[[r]], mb), site_id = site_id, series = s, reference = r,
-                .before = 1)
-}))))
+lags <- -3:6 # fix-14c: widened (the 3.2.2 peak sat at the +3 h edge)
+lag <- lag_table(meas_bins, ref_bins, mb, site_id, lags = lags)
 out_tab(lag, "lag")
 best <- best_lag(lag, by = c("site_id", "series", "reference"))
 out_tab(best, "lag_best")
-cli::cli_h2("Best lag of the morning growth (L > 0: measured stamps later than UTC, e.g. +1 = CET)")
-if (nrow(best) > 0) print_tbl(best) else cli::cli_alert_warning("No correlation (too few clear-day morning pairs).")
+cli::cli_h2("Best lag of the morning growth (L > 0: measured stamps later than UTC, e.g. +1 = CET); lags {min(lags)} to +{max(lags)} h")
+if (nrow(best) > 0) {
+  bp <- best
+  bp$reference <- reference_label(bp$reference)
+  bp$season <- factor(bp$season, levels = c("all", "DJF", "MAM", "JJA", "SON"))
+  bp <- bp[order(bp$series, bp$reference, bp$season), ]
+  bp$season <- as.character(bp$season)
+  bp$at_edge <- bp$best_lag_h %in% range(lags)
+  print_tbl(bp[c("series", "reference", "season", "best_lag_h", "r_best", "r_lag0", "n_best", "at_edge")])
+} else {
+  cli::cli_alert_warning("No correlation (too few clear-day morning pairs).")
+}
 
 clear_bins <- function(b) b[as.Date(b$bin_utc + 1800) %in% clear | as.Date(b$bin_utc) %in% clear, ]
 diur <- dplyr::bind_rows(lapply(c(names(series), names(ref_bins)), function(s) {
@@ -128,57 +155,47 @@ if (nrow(diur) > 0) {
     ggplot2::labs(x = "UTC hour (bin midpoint)", y = "Median height [m]",
                   subtitle = paste0(site_id, ", clear days (kt >= ", kt_clear, "); internal")) +
     theme_pblh()
-  p <- save_figure(g, paste0("14_diurnal_clear_", site_id), 19, 14, dir = fig_dir)
+  p <- save_figure(g, paste0("14_diurnal_clear_", site_id, sfx), 19, 14, dir = fig_dir)
   cli::cli_alert_success("{.path {p[['png']]}}")
 }
 lagp <- lag[!is.na(lag$r), ]
 if (nrow(lagp) > 0) {
   ids <- unique(lagp$series)
   st <- sty(ids)
-  g <- ggplot2::ggplot(lagp, ggplot2::aes(lag_h, r, colour = series, linetype = series)) +
+  lagp$reference <- reference_label(lagp$reference)
+  lagp$season <- factor(lagp$season, levels = c("all", "DJF", "MAM", "JJA", "SON"))
+  g <- ggplot2::ggplot(lagp, ggplot2::aes(lag_h, r, colour = series, linetype = series, group = series)) +
     ggplot2::geom_vline(xintercept = 0, colour = style_of("reference_line", "colour", "element"), linewidth = 0.3) +
     ggplot2::geom_line() + ggplot2::geom_point(size = 1) +
     ggplot2::facet_grid(reference ~ season) +
     ggplot2::scale_colour_manual(values = stats::setNames(st$col, ids), labels = stats::setNames(st$lab, ids), name = NULL) +
     ggplot2::scale_linetype_manual(values = stats::setNames(st$lty, ids), labels = stats::setNames(st$lab, ids), name = NULL) +
-    ggplot2::scale_x_continuous(breaks = -3:3) +
+    ggplot2::scale_x_continuous(breaks = lags) +
     ggplot2::labs(x = "Lag L [h] (measured value L hours after the reference hour)", y = "Pearson r, morning growth",
                   subtitle = paste0(site_id, ", clear-day mornings (sunrise to solar noon); L = 0: UTC, +1: CET, +2: CEST")) +
     theme_pblh()
-  p <- save_figure(g, paste0("14_lag_", site_id), 19, 12, dir = fig_dir)
+  p <- save_figure(g, paste0("14_lag_", site_id, sfx), 19, 12, dir = fig_dir)
   cli::cli_alert_success("{.path {p[['png']]}}")
 }
 
 # --- window metrics (aerosol window, PBLHmod convective) per series and, for BL-View, per quality class ---
-exact_ref <- function(v) v[v$kind %in% "exact", c("timestamp_utc", "pblh_m")]
-win_metrics <- function(s, label) {
-  s <- s[!is.na(s$timestamp_start_utc), ]
-  if (sum(!is.na(s$pblh_m)) == 0) return(NULL)
-  tb <- measured_time_base(s, mod, era, step_s = stats::median(as.numeric(s$timestamp_end_utc - s$timestamp_start_utc,
-                                                                          units = "secs")))
-  prs <- list(pblhmod_default = list(x = tb$mod, ref = exact_ref(tb$meas), mid = tb$mid_s),
-              era5_blh_center = list(x = tb$era$era5_blh_center, ref = exact_ref(tb$era_meas), mid = tb$era_mid_s))
-  dplyr::bind_rows(lapply(names(prs), function(r) {
-    pt <- pair_table(prs[[r]]$x, prs[[r]]$ref, r)
-    a <- apparent_solar_hour(pt$timestamp_utc + prs[[r]]$mid, meta$lon)
-    pt <- pt[pt$regime %in% "convective" & a >= opts$aerosol_window[1] & a < opts$aerosol_window[2], ]
-    q <- if ("x_quality" %in% names(s)) s$x_quality[match(as.numeric(pt$timestamp_utc), as.numeric(s$timestamp_start_utc))]
-    cls <- if (is.null(q)) list(all = rep(TRUE, nrow(pt))) else
-      c(list(all = rep(TRUE, nrow(pt))), stats::setNames(lapply(1:3, function(k) q %in% k), paste0("q", 1:3)))
-    dplyr::bind_rows(lapply(names(cls), function(k) {
-      x <- pt[cls[[k]], ]
-      dplyr::bind_cols(dplyr::tibble(site_id = site_id, series = label, source = r, quality = k,
-                                     n_days = length(unique(as.Date(x$timestamp_utc)))),
-                       pblh_metrics(x$mod, x$ref))
-    }))
-  }))
+# SkyVUE: one series per layer (pblh_m = the layer); BL-View: per quality class (secondary_window_metrics())
+wm <- dplyr::bind_rows(lapply(names(series), function(s) {
+  secondary_window_metrics(series[[s]], s, mod, era, meta$lon, opts, site_id)
+}))
+if (nrow(wm) == 0) cli::cli_alert_warning("No window metrics: no measured value in the period.")
+if (nrow(wm) > 0) {
+  wm$note <- paste("ln(source / measured); window", paste(opts$aerosol_window, collapse = "-"),
+                   "h apparent solar time, PBLHmod convective; quality all / q1-q3 (BL-View only); SkyVUE: one series",
+                   "per layer")
 }
-wm <- dplyr::bind_rows(lapply(names(series), function(s) win_metrics(series[[s]], s)))
-wm$note <- paste("ln(source / measured); window", paste(opts$aerosol_window, collapse = "-"),
-                 "h apparent solar time, PBLHmod convective; quality all / q1-q3 (BL-View only)")
 out_tab(wm, "window_metrics")
-cli::cli_h2("Window metrics (source vs measured)")
-if (nrow(wm) > 0) print_tbl(wm[c("series", "source", "quality", "n", "n_days", "median_log_ratio", "frac_within_factor2")])
+cli::cli_h2("Window metrics (source vs measured; SkyVUE per layer, BL-View per quality class)")
+if (nrow(wm) > 0) {
+  wp <- wm
+  wp$source <- reference_label(wp$source)
+  print_tbl(wp[c("series", "source", "quality", "n", "n_days", "median_log_ratio", "frac_within_factor2")])
+}
 
 # --- 2. DE-Tha layers by UTC hour ---
 if (src == "tud_skyvue_mlh") {
@@ -208,7 +225,7 @@ if (src == "tud_skyvue_mlh") {
     ggplot2::labs(x = "UTC hour (bin midpoint)", y = "Median height [m]",
                   subtitle = paste0(site_id, ": SkyVUE layers 1-3 (half-hourly medians), PBLHmod, ERA5; all days; internal")) +
     theme_pblh()
-  p <- save_figure(g, paste0("14_skyvue_layers_hourly_", site_id), 19, 12, dir = fig_dir)
+  p <- save_figure(g, paste0("14_skyvue_layers_hourly_", site_id, sfx), 19, 12, dir = fig_dir)
   cli::cli_alert_success("{.path {p[['png']]}}")
   cli::cli_h2("Layer medians by UTC hour (confidence 1-3: 3 = highest)")
   print_tbl(lay[lay$hour_utc %in% c(0, 6, 9, 12, 15, 18), ])

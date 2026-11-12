@@ -174,10 +174,15 @@ read_skyvue_txt <- function(path, keep_profile = FALSE) {
 #' with comma separators (`3,65E-06,9,7E-06,...`) and is not parsed here (spec 14), except for the first gates by
 #' [skyvue_csv_profile_head()] for the decode check.
 #'
+#' Two CSV layouts, detected from the header (fix-14c item 9, DE-Tha cluster data): `"full"` (26 columns, from about
+#' 2025-06-26: status, profile, sky condition, mixing layers and confidences) and `"short"` (7 columns until about
+#' 2025-06-24, before the MLH option: `UTC Timestamp`, `Cloud Base 1..4`, `Vertical Visibility`, `Highest Signal`).
+#'
 #' @param path Path of `E1227_<ddmmyy>_Midnight.csv` [character].
 #' @return Tibble in file order: `time_end_utc` [POSIXct UTC, end of the record interval], `cloud_base1_m` ..
 #'   `cloud_base4_m`, `vertical_visibility_m`, `highest_signal_m` [m], `ceil_status`, `mlh1_m`..`mlh3_m` [m],
-#'   `mlh1_q`..`mlh3_q` [1-3], `ceil_resolution_m` [m], `profile_csv` (the raw profile field, first 600 characters).
+#'   `mlh1_q`..`mlh3_q` [1-3], `ceil_resolution_m` [m], `profile_csv` (the raw profile field, first 600 characters);
+#'   in the short layout the columns it lacks are `NA`. Attribute `layout` (`"full"` or `"short"`).
 read_skyvue_csv <- function(path) {
   if (!file.exists(path)) cli::cli_abort("SkyVUE file {.path {path}} not found.")
   d <- readr::read_csv(path, col_types = readr::cols(.default = readr::col_character()), na = character(),
@@ -187,21 +192,38 @@ read_skyvue_csv <- function(path) {
     if (length(k) != 1) cli::cli_abort("{.path {path}}: {length(k)} column{?s} match {.val {pattern}}.")
     d[[k]]
   }
+  short_cols <- c("^UTC Timestamp", "^Cloud Base 1\\(", "^Cloud Base 2\\(", "^Cloud Base 3\\(", "^Cloud Base 4\\(",
+                  "^Vertical Visibility\\(", "^Highest Signal\\(")
+  has <- function(p) any(grepl(p, names(d)))
+  layout <- if (any(grepl("^Mixing Layer 1\\(", names(d)))) {
+    "full"
+  } else if (ncol(d) == 7 && all(vapply(short_cols, has, logical(1)))) {
+    "short"
+  } else {
+    cli::cli_abort("{.path {path}}: unknown SkyVUE CSV layout ({ncol(d)} columns: {.val {names(d)}}).")
+  }
   t <- as.POSIXct(col("^UTC Timestamp"), format = "%d.%m.%Y %H:%M:%S", tz = "UTC")
   if (anyNA(t)) cli::cli_abort("{.path {path}}: {sum(is.na(t))} time stamp{?s} not in dd.mm.yyyy HH:MM:SS.")
-  dplyr::tibble(
+  full <- layout == "full"
+  na_num <- rep(NA_real_, nrow(d))
+  out <- dplyr::tibble(
     time_end_utc = t,
     cloud_base1_m = skyvue_num(col("^Cloud Base 1\\(")), cloud_base2_m = skyvue_num(col("^Cloud Base 2\\(")),
     cloud_base3_m = skyvue_num(col("^Cloud Base 3\\(")), cloud_base4_m = skyvue_num(col("^Cloud Base 4\\(")),
     vertical_visibility_m = skyvue_num(col("^Vertical Visibility\\(")),
-    highest_signal_m = skyvue_num(col("^Highest Signal\\(")), ceil_status = col("^Ceil Status\\("),
-    mlh1_m = skyvue_num(col("^Mixing Layer 1\\(")), mlh2_m = skyvue_num(col("^Mixing Layer 2\\(")),
-    mlh3_m = skyvue_num(col("^Mixing Layer 3\\(")),
-    mlh1_q = as.integer(skyvue_num(col("^Confidence 1\\("))), mlh2_q = as.integer(skyvue_num(col("^Confidence 2\\("))),
-    mlh3_q = as.integer(skyvue_num(col("^Confidence 3\\("))),
-    ceil_resolution_m = skyvue_num(col("^Ceil Resolution\\(")),
-    profile_csv = substr(col("^Backscatter Profile\\("), 1, 600)
+    highest_signal_m = skyvue_num(col("^Highest Signal\\(")),
+    ceil_status = if (full) col("^Ceil Status\\(") else rep(NA_character_, nrow(d)),
+    mlh1_m = if (full) skyvue_num(col("^Mixing Layer 1\\(")) else na_num,
+    mlh2_m = if (full) skyvue_num(col("^Mixing Layer 2\\(")) else na_num,
+    mlh3_m = if (full) skyvue_num(col("^Mixing Layer 3\\(")) else na_num,
+    mlh1_q = if (full) as.integer(skyvue_num(col("^Confidence 1\\("))) else NA_integer_,
+    mlh2_q = if (full) as.integer(skyvue_num(col("^Confidence 2\\("))) else NA_integer_,
+    mlh3_q = if (full) as.integer(skyvue_num(col("^Confidence 3\\("))) else NA_integer_,
+    ceil_resolution_m = if (full) skyvue_num(col("^Ceil Resolution\\(")) else na_num,
+    profile_csv = if (full) substr(col("^Backscatter Profile\\("), 1, 600) else rep(NA_character_, nrow(d))
   )
+  attr(out, "layout") <- layout
+  out
 }
 
 #' First gates of the SkyVUE CSV profile field, where the parse is unambiguous
@@ -241,14 +263,22 @@ skyvue_csv_profile_head <- function(x, n = 20L) {
 #' unambiguous (relative difference <= 1 %, CSV values carry 3-4 significant digits). Records with a CRC mismatch
 #' are kept with `crc_ok = FALSE` and their mixing layers set to `NA` (counted in the attribute).
 #'
+#' Short CSV layout (before the MLH option, until about 2025-06-24; fix-14c item 9): records paired by order as well;
+#' checked: equal counts, cloud base 1 (detection status 1-4) and the vertical visibility (detection status 5, where
+#' the TXT `h1` carries it; `CampbellSkyVUEPRO2026` Sect. 6.3.6, line 2) against the TXT; mixing layers `NA` (none in
+#' the CSV, the option was not active); the CSV-profile comparison is not available (no profile column) and is
+#' reported as such.
+#'
 #' @param csv,txt Paths of the day's `.csv` and `.txt` files [character].
 #' @param keep_profile Keep the hex profile lines [logical].
 #' @param n_check Profile gates compared with the CSV [-].
 #' @return Tibble of [read_skyvue_txt()] with `time_end_utc` [POSIXct UTC] first. Attribute `skyvue_meta`: `csv`,
-#'   `txt`, `n_records`, `n_crc_fail`, `n_profile_records_checked`, `max_rel_diff_profile` [-], `scale_values` [%],
+#'   `txt`, `csv_layout` (`full` / `short`), `n_records`, `n_crc_fail`, `profile_check` (`done` / `not available
+#'   (short CSV layout)`), `n_profile_records_checked`, `max_rel_diff_profile` [-], `scale_values` [%],
 #'   `interval_s_median` [s].
 read_skyvue_day <- function(csv, txt, keep_profile = FALSE, n_check = 20L) {
   a <- read_skyvue_csv(csv)
+  layout <- attr(a, "layout")
   b <- read_skyvue_txt(txt, keep_profile = keep_profile)
   if (nrow(a) != nrow(b)) cli::cli_abort("SkyVUE pairing: {basename(csv)} has {nrow(a)} records, {basename(txt)} {nrow(b)}.")
   first_bad <- function(ok, what) {
@@ -259,31 +289,45 @@ read_skyvue_day <- function(csv, txt, keep_profile = FALSE, n_check = 20L) {
   }
   same <- function(x, y) (is.na(x) & is.na(y)) | (!is.na(x) & !is.na(y) & abs(x - y) < 0.5)
   ok_crc <- b$crc_ok
-  for (k in 1:3) {
-    first_bad(!ok_crc | same(a[[paste0("mlh", k, "_m")]], b[[paste0("mlh", k, "_m")]]), paste("mixing layer", k, "heights"))
-    qa <- dplyr::coalesce(a[[paste0("mlh", k, "_q")]], 0L)
-    qb <- dplyr::coalesce(b[[paste0("mlh", k, "_q")]], 0L)
-    first_bad(!ok_crc | qa == qb, paste("mixing layer", k, "confidences"))
-  }
   cl <- b$detection_status %in% 1:4
   first_bad(!ok_crc | !cl | same(round(a$cloud_base1_m), b$h1_m), "cloud base 1 (detection status 1-4)")
-  hex <- if (keep_profile) b$profile_hex else attr(b, "profile_head_hex")
-  dec <- skyvue_decode_profile(substr(hex, 1, 5 * n_check), b$scale_pct, gates = seq_len(n_check))
-  csvp <- skyvue_csv_profile_head(a$profile_csv, n_check)
-  cmp <- !is.na(csvp) & ok_crc
-  rel <- abs(dec - csvp) / pmax(abs(csvp), 1e-12)
-  rel[!cmp] <- NA_real_
-  bad_rec <- apply(rel > 0.01, 1, function(r) any(r, na.rm = TRUE))
-  first_bad(!bad_rec, paste0("decoded profile and CSV profile (first ", n_check, " gates)"))
+  if (layout == "full") {
+    for (k in 1:3) {
+      first_bad(!ok_crc | same(a[[paste0("mlh", k, "_m")]], b[[paste0("mlh", k, "_m")]]), paste("mixing layer", k, "heights"))
+      qa <- dplyr::coalesce(a[[paste0("mlh", k, "_q")]], 0L)
+      qb <- dplyr::coalesce(b[[paste0("mlh", k, "_q")]], 0L)
+      first_bad(!ok_crc | qa == qb, paste("mixing layer", k, "confidences"))
+    }
+    hex <- if (keep_profile) b$profile_hex else attr(b, "profile_head_hex")
+    dec <- skyvue_decode_profile(substr(hex, 1, 5 * n_check), b$scale_pct, gates = seq_len(n_check))
+    csvp <- skyvue_csv_profile_head(a$profile_csv, n_check)
+    cmp <- !is.na(csvp) & ok_crc
+    rel <- abs(dec - csvp) / pmax(abs(csvp), 1e-12)
+    rel[!cmp] <- NA_real_
+    bad_rec <- apply(rel > 0.01, 1, function(r) any(r, na.rm = TRUE))
+    first_bad(!bad_rec, paste0("decoded profile and CSV profile (first ", n_check, " gates)"))
+    profile_check <- "done"
+    n_prof <- sum(rowSums(cmp) > 0)
+    max_rel <- if (any(!is.na(rel))) max(rel, na.rm = TRUE) else NA_real_
+  } else {
+    vv <- b$detection_status %in% 5L
+    first_bad(!ok_crc | !vv | same(round(a$vertical_visibility_m), b$h1_m), "vertical visibility (detection status 5)")
+    for (k in 1:3) { # no MLH column in the short layout (option not active)
+      b[[paste0("mlh", k, "_m")]] <- NA_real_
+      b[[paste0("mlh", k, "_q")]] <- NA_integer_
+    }
+    profile_check <- "not available (short CSV layout)"
+    n_prof <- NA_integer_
+    max_rel <- NA_real_
+  }
   for (k in 1:3) {
     b[[paste0("mlh", k, "_m")]][!ok_crc] <- NA_real_
     b[[paste0("mlh", k, "_q")]][!ok_crc] <- NA_integer_
   }
   out <- dplyr::bind_cols(dplyr::tibble(time_end_utc = a$time_end_utc), b)
   attr(out, "skyvue_meta") <- list(
-    csv = basename(csv), txt = basename(txt), n_records = nrow(out), n_crc_fail = sum(!ok_crc),
-    n_profile_records_checked = sum(rowSums(cmp) > 0),
-    max_rel_diff_profile = if (any(!is.na(rel))) max(rel, na.rm = TRUE) else NA_real_,
+    csv = basename(csv), txt = basename(txt), csv_layout = layout, n_records = nrow(out), n_crc_fail = sum(!ok_crc),
+    profile_check = profile_check, n_profile_records_checked = n_prof, max_rel_diff_profile = max_rel,
     scale_values = sort(unique(b$scale_pct)),
     interval_s_median = if (nrow(out) > 1) stats::median(diff(as.numeric(out$time_end_utc))) else NA_real_
   )
@@ -293,8 +337,9 @@ read_skyvue_day <- function(csv, txt, keep_profile = FALSE, n_check = 20L) {
 #' Find the SkyVUE day file pairs under a folder
 #'
 #' @param dir Folder searched recursively [character].
-#' @return Tibble: `day` [Date, from `<ddmmyy>`], `csv`, `txt` [paths]; days with only one of the two files are
-#'   reported and dropped; the empty `.nc` files are ignored.
+#' @return Tibble: `day` [Date, from `<ddmmyy>`], `csv`, `txt` [paths, `NA` if missing], `skip_reason` (`NA` for a
+#'   complete pair; `"no TXT file"` / `"no CSV file"` for a day with only one of the two: kept so that the caller can
+#'   list it, fix-14c item 9, e.g. DE-Tha 2025-06-25); the empty `.nc` files are ignored.
 find_skyvue_days <- function(dir) {
   f <- list.files(dir, pattern = "_Midnight\\.(csv|txt)$", recursive = TRUE, full.names = TRUE)
   base <- sub("\\.(csv|txt)$", "", f)
@@ -303,13 +348,14 @@ find_skyvue_days <- function(dir) {
   csv <- f[ext == "csv"][match(k, base[ext == "csv"])]
   txt <- f[ext == "txt"][match(k, base[ext == "txt"])]
   d <- dplyr::tibble(key = k, csv = csv, txt = txt)
-  half <- is.na(d$csv) | is.na(d$txt)
-  if (any(half)) cli::cli_alert_warning("SkyVUE: {sum(half)} day{?s} with only one of .csv / .txt dropped: {.file {basename(d$key[half])}}.")
-  d <- d[!half, ]
+  d$skip_reason <- ifelse(is.na(d$txt), "no TXT file", ifelse(is.na(d$csv), "no CSV file", NA_character_))
+  half <- !is.na(d$skip_reason)
+  if (any(half)) cli::cli_alert_warning("SkyVUE: {sum(half)} day{?s} with only one of .csv / .txt (skipped, listed): {.file {basename(d$key[half])}}.")
   dd <- regmatches(basename(d$key), regexpr("_[0-9]{6}_", basename(d$key)))
   d$day <- as.Date(gsub("_", "", dd), format = "%d%m%y")
-  d <- d[order(d$day), c("day", "csv", "txt")]
-  if (anyDuplicated(d$day)) cli::cli_abort("SkyVUE: more than one file pair for {.val {format(d$day[duplicated(d$day)])}}.")
+  d <- d[order(d$day), c("day", "csv", "txt", "skip_reason")]
+  dup <- d$day[duplicated(d$day)]
+  if (length(dup)) cli::cli_abort("SkyVUE: more than one file set for {.val {format(dup)}}.")
   d
 }
 
@@ -388,8 +434,9 @@ standardize_skyvue_mlh <- function(h, site_id, exclusions, utc_offset_h, measure
   dm <- if (is.null(days_meta)) "" else paste0(
     nrow(days_meta), " day file pairs ", format(min(days_meta$day)), " to ", format(max(days_meta$day)), ", ",
     sum(days_meta$n_records), " records, ", sum(days_meta$n_crc_fail), " with a CRC mismatch (layers not used), ",
-    "profile decode vs CSV: max relative difference ", signif(max(days_meta$max_rel_diff_profile, na.rm = TRUE), 2),
-    "; ")
+    "profile decode vs CSV: max relative difference ",
+    if (any(!is.na(days_meta$max_rel_diff_profile))) signif(max(days_meta$max_rel_diff_profile, na.rm = TRUE), 2) else
+      "not available", " (not available on short-layout days, before the MLH option); ")
   meta <- standard_meta(
     site_id, src, "aerosol",
     instrument = paste("Campbell Scientific SkyVUE PRO (CS135) lidar ceilometer, TU Dresden, 113 m from the DE-Tha",
