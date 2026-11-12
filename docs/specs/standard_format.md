@@ -183,5 +183,7 @@ layer rule. `n_samples` = records with a valid CRC-16. `x_` columns per layer k 
 the BL-View hourly mean MLH with **all quality values kept**; `qc_flag` `NA` (no filtering until G decides);
 `n_samples` = profiles of the hour. `x_quality` (1–3; meaning not documented, indicative 3 = best), `x_version`
 (3.1.1, 3.1.2, 3.2.2, from the file variables), `x_consistent` (`FALSE`: value changing within the hour, then
-`pblh_m` `NA`), `x_n_values`, `x_time_zone_h` (3.2.2 file variable). Stored time read as UTC (not proven; spec 14
-Part C lag test).
+`pblh_m` `NA`), `x_n_values`, `x_time_zone_h` (3.2.2 file variable), `x_time_shift_h` [h, corrected minus stored
+hour end]. Time corrected by default (spec 14 amendment 1 item 11, G 2026-11-12): 3.2.2 stamps read as Europe/Prague
+local time (summer time) and converted to UTC, then every version −1 h (empirical alignment from the lag test,
+mechanism unknown); details in the sidecar.

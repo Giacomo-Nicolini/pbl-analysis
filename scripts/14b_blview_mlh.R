@@ -1,8 +1,8 @@
 # Spec 14 Part B: Vaisala BL-View L3 mixing-layer height (CZ-Lnz, CL61 at the Lanzhot grassland tower) as the
 # secondary standard source `vaisala_blview_mlh` (hourly, all quality values kept, quality in x_quality).
 # Input: every .nc under <measured_dir> of the site (recursive; BL-View 3.1.1, 3.1.2, 3.2.2 detected from the
-#   variables, never from the folder name), or under --dir. Stored time read with --time-offset (default 0 = UTC,
-#   not proven: checked by the lag test of scripts/14c_secondary_diagnostics.R).
+#   variables, never from the folder name), or under --dir. Stored time read with --time-offset (default 0), then
+#   corrected (fix-14a item 11, below).
 # Pairing: provider "CzechGlobe" in config/measured_sites.csv (status secondary).
 # Output: <standard_dir>/<site>/<site>__vaisala_blview_mlh.csv.gz + .yml; <output_dir>/tables/internal/
 #   14_blview_files_<site>.csv (one row per file: version, firmware, profiles, hours, valid hours, inconsistent
@@ -10,9 +10,17 @@
 #   days with a valid MLH, share of valid hours, quality distribution, files without MLH),
 #   14_blview_overlap_<site>.csv (hours present in more than one file: version kept / dropped, how many differ).
 #   Internal use only (measured data are not released).
+# fix-14a item 11 (G 2026-11-12, from the 14c lag tests): time correction by default (blview_time_correction()):
+#   (a) 3.2.2 stamps read as Europe/Prague local time (with summer time) and converted to UTC (nonexistent
+#   spring-forward hours dropped, autumn collisions counted); (b) all versions shifted by -1 h, an empirical
+#   alignment (mechanism unknown). Both, the lag evidence and the DST hours go to the sidecar; x_time_shift_h per
+#   row. The version, file and overlap tables use the corrected hours (the 3.1.2 calculation-time check the stored).
 #
-# Usage: Rscript scripts/14b_blview_mlh.R [SITE] [--dir=PATH] [--time-offset=H]
-#   Default site CZ-Lnz. Profile: env var R_CONFIG_ACTIVE (default | cluster).
+# Usage: Rscript scripts/14b_blview_mlh.R [SITE] [--dir=PATH] [--time-offset=H] [--blview-322-tz=TZ|none]
+#          [--shift-h=H]
+#   Defaults: site CZ-Lnz, --blview-322-tz=Europe/Prague, --shift-h=-1 (--blview-322-tz=none --shift-h=0 keeps the
+#   stored time, for checks only). --time-offset (default 0) must stay 0 with the 3.2.2 conversion.
+#   Profile: env var R_CONFIG_ACTIVE (default | cluster).
 
 for (f in list.files(here::here("R"), pattern = "\\.R$", full.names = TRUE)) source(f)
 
@@ -22,10 +30,14 @@ opt <- function(name, default = NULL) {
   if (length(a) == 1) sub(paste0("^--", name, "="), "", a) else default
 }
 pos <- args[!startsWith(args, "--")]
-bad <- setdiff(sub("=.*$", "", args[startsWith(args, "--")]), c("--dir", "--time-offset"))
+bad <- setdiff(sub("=.*$", "", args[startsWith(args, "--")]), c("--dir", "--time-offset", "--blview-322-tz", "--shift-h"))
 if (length(bad) > 0) cli::cli_abort("Unknown option{?s} {.val {bad}}.")
 site_id <- if (length(pos) >= 1) pos[1] else "CZ-Lnz"
 time_offset_h <- as.numeric(opt("time-offset", "0"))
+tz_322 <- opt("blview-322-tz", "Europe/Prague")
+if (identical(tz_322, "none")) tz_322 <- NULL
+shift_h <- as.numeric(opt("shift-h", "-1"))
+if (!is.null(tz_322) && time_offset_h != 0) cli::cli_abort("--time-offset must be 0 with the 3.2.2 local-time conversion (use --blview-322-tz=none).")
 cfg <- get_cfg()
 t0 <- Sys.time()
 sites <- read_sites(resolve_path(cfg$sites_file))
@@ -71,13 +83,24 @@ if (nrow(x312) > 0) {
   cli::cli_inform("3.1.2 calculation time minus hour end: median {stats::median(lag)} s, range {min(lag)} to {max(lag)} s (supports: value = the hour ending at hh:00).")
 }
 
+tc <- blview_time_correction(hrs, tz_322, shift_h)
+hrs <- tc$hours
+cli::cli_h2("Time correction (fix-14a item 11)")
+cli::cli_inform(c(
+  "3.2.2 local time: {if (is.null(tz_322)) 'not converted' else tz_322}; all versions shifted by {shift_h} h.",
+  "DST: {tc$n_dropped_dst} stored 3.2.2 hour end{?s} not existing in local time dropped{if (tc$n_dropped_dst > 0) paste0(' (', paste(tc$dropped_dst, collapse = ', '), ')') else ''}; {tc$n_duplicated_dst} hour{?s} duplicated after the conversion{if (tc$n_duplicated_dst > 0) paste0(' (', paste(tc$duplicated_dst, collapse = ', '), ' UTC)') else ''}.",
+  "Total shift by version (h): {paste(unique(paste(hrs$version, hrs$time_shift_h)), collapse = '; ')}."))
+r$hours <- hrs
+vt <- blview_version_table(r)
+readr::write_csv(vt, file.path(tab_dir, paste0("14_blview_versions_", site_id, ".csv")))
 dd <- blview_dedup_hours(hrs)
 readr::write_csv(dd$overlap, file.path(tab_dir, paste0("14_blview_overlap_", site_id, ".csv")))
 if (nrow(dd$overlap) > 0) {
   cli::cli_h2("Hours in more than one file (newest version kept)")
   print_tbl(dd$overlap)
 }
-std <- standardize_blview_mlh(dd$hours, site_id, exclusions, meta_site$utc_offset_h, time_offset_h, meas_excl, vt)
+std <- standardize_blview_mlh(dd$hours, site_id, exclusions, meta_site$utc_offset_h, time_offset_h, meas_excl, vt,
+                              time_correction = tc[names(tc) != "hours"])
 p <- write_standard_pblh(std$data, std$meta, std_dir)
 d <- std$data
 cli::cli_h2("{std$meta$source_id}: {nrow(d)} hours, {sum(!is.na(d$pblh_m))} with a value; excluded {std$n_excluded} (site periods), {std$n_excluded_measured} (measured-source periods)")

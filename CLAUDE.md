@@ -225,7 +225,8 @@ so code must be reproducible, documented and traceable to references.
     `read_skyvue_day()` checks counts, layers, confidences, cloud base, profile vs CSV and CRC. Before the MLH option
     (until about 2025-06-24) the CSV has 7 columns (time, cloud bases 1-4, vertical visibility, highest signal): layout
     detected from the header, cloud base and VV checked, no MLH, no profile check; a day with only a CSV or only a TXT
-    (2025-06-25) is skipped and listed (fix-14c item 9). Standard source
+    (2025-06-25) is skipped and listed (fix-14c item 9); a day with different CSV / TXT record counts (June 2025, around the MLH
+    option) is skipped too, `skip_reason` "record count mismatch", no alignment (fix-14a item 10). Standard source
     `tud_skyvue_mlh` (`scripts/14a_skyvue_mlh.R`): half-hourly medians of layers 1–3 as `x_layer<k>_*`, `pblh_m`
     `NA`. **Built-in MLH set to `inventory` (G 2026-11-12)**: no daytime growth in any layer (July 2026), confidence 1
     almost always; reader, standard source and profile decoder kept, the raw profiles are the DE-Tha asset for a
@@ -238,9 +239,13 @@ so code must be reproducible, documented and traceable to references.
     `x_consistent = FALSE`. Quality meaning not documented (indicative 3 = best, `Muenkel2012`). Stored time read as
     UTC (`time_offset_h` explicit). Lag test (cluster, G 2026-11-12): +1 h for 3.1.1 / 3.1.2 in every season, 3.2.2
     +2 h (DJF) / +3 h (other seasons); the +1 h is in the stamps, not in the matching (spec 14 amendment 1);
-    `14c --blview-322-tz=Europe/Prague` tests 3.2.2 = local time with summer time (diagnostics only, `_tz322`); the
-    standard file is unchanged until G decides. Standard source `vaisala_blview_mlh`
-    (`scripts/14b_blview_mlh.R`): hourly, all quality kept (`x_quality`), overlaps across files: newest version kept.
+    with 3.2.2 re-read as Europe/Prague local time (14c `--blview-322-tz`), 3.2.2 at +1 h like 3.1.x (SON +3 h, 68
+    days, flat). **Time correction in the standard file by default (G 2026-11-12, fix-14a item 11)**: 3.2.2
+    Europe/Prague local time (summer time) → UTC, then all versions −1 h (empirical alignment, mechanism unknown);
+    `x_time_shift_h` per row, evidence and DST hours in the sidecar; expected lag after the rerun 0 h (a check, not a
+    target). Standard source `vaisala_blview_mlh`
+    (`scripts/14b_blview_mlh.R`): hourly, all quality kept (`x_quality`), overlaps across files (after the time
+    correction): newest version kept.
 - **Standard-file column types (spec 14)**: `read_standard_pblh()` never guesses: documented non-numeric `x_` columns
   in `standard_x_col_types()` (add a row there and in `docs/specs/standard_format.md` for a new one); every other `x_`
   column is double when all values parse, else character.

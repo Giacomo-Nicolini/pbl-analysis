@@ -144,6 +144,14 @@ test_that("read_skyvue_day pairs CSV and TXT and fails on a shifted record", {
   # unequal record counts
   writeLines(l[1:4], s$csv)
   expect_error(read_skyvue_day(s$csv, s$txt), "3 records")
+  # fix-14a item 10: the count mismatch has its own class with both counts (skipped day, not a failed check),
+  # while a shifted record with equal counts stays an ordinary error
+  e <- tryCatch(read_skyvue_day(s$csv, s$txt), error = function(e) e)
+  expect_s3_class(e, "skyvue_count_mismatch")
+  expect_equal(c(e$n_csv, e$n_txt), c(3L, 4L))
+  writeLines(c(l[1], l[3:5], l[5]), s$csv)
+  e2 <- tryCatch(read_skyvue_day(s$csv, s$txt), error = function(e) e)
+  expect_false(inherits(e2, "skyvue_count_mismatch"))
 })
 
 test_that("a record with a CRC mismatch keeps its time but loses its layers", {
@@ -528,4 +536,69 @@ test_that("window metrics per SkyVUE layer although pblh_m is NA", {
   p <- w[w$source == "pblhmod_default", ]
   expect_equal(p$median_log_ratio, c(log(800 / 400), log(800 / 1200)))
   expect_true(all(p$n > 0))
+})
+
+# --- fix-14a item 11: BL-View time correction ---------------------------------------------------------------------
+
+test_that("blview_time_correction: 3.2.2 Prague local time to UTC, then -1 h for every version; DST hours counted", {
+  u <- function(x) as.POSIXct(x, tz = "UTC")
+  hours <- dplyr::tibble(
+    hour_end_utc = u(c("2025-01-15 12:00", "2025-01-15 12:00", "2025-07-15 12:00", "2025-03-30 01:00",
+                       "2025-03-30 02:00", "2025-03-30 03:00")),
+    version = c("3.1.1", "3.2.2", "3.2.2", "3.2.2", "3.2.2", "3.2.2"), mlh_m = c(500, 510, 900, 300, 310, 320),
+    file = "f.nc")
+  tc <- blview_time_correction(hours, "Europe/Prague", -1)
+  h <- tc$hours
+  expect_equal(tc$n_dropped_dst, 1L) # 02:00 does not exist in Prague on 2025-03-30
+  expect_equal(tc$dropped_dst, "2025-03-30 02:00")
+  expect_equal(nrow(h), 5)
+  key <- function(m) h[h$mlh_m == m, ]
+  expect_equal(key(500)$hour_end_utc, u("2025-01-15 11:00")) # 3.1.1: -1 h only
+  expect_equal(key(510)$hour_end_utc, u("2025-01-15 10:00")) # CET (UTC+1), then -1 h
+  expect_equal(key(900)$hour_end_utc, u("2025-07-15 09:00")) # CEST (UTC+2), then -1 h
+  expect_equal(key(300)$hour_end_utc, u("2025-03-29 23:00")) # 01:00 CET
+  expect_equal(key(320)$hour_end_utc, u("2025-03-30 00:00")) # 03:00 CEST
+  expect_equal(sort(unique(h$time_shift_h)), c(-3, -2, -1))
+  expect_equal(key(510)$time_shift_h, -2)
+  expect_equal(key(900)$time_shift_h, -3)
+  # no correction: stored time kept
+  t0 <- blview_time_correction(hours, NULL, 0)
+  expect_equal(sort(t0$hours$hour_end_utc), sort(hours$hour_end_utc))
+  expect_true(all(t0$hours$time_shift_h == 0))
+  expect_error(blview_time_correction(hours, "Mars/Olympus", -1), "time zone")
+})
+
+test_that("blview_time_correction: autumn repeated hour does not create rows, overlapping files are not DST collisions", {
+  u <- function(x) as.POSIXct(x, tz = "UTC")
+  st <- u("2025-10-26 00:00") + 3600 * (0:5) # stored local clock 00:00 ... 05:00 across the repeated 02:00-03:00
+  hours <- dplyr::tibble(hour_end_utc = c(st, st[1]), version = "3.2.2", mlh_m = c(1:6, 1), file = c(rep("a", 6), "b"))
+  tc <- blview_time_correction(hours, "Europe/Prague", -1)
+  expect_equal(tc$n_dropped_dst, 0L)
+  expect_equal(nrow(tc$hours), 7)
+  # the overlap a / b on the same stored hour is not counted as a DST duplicate (blview_dedup_hours() handles it)
+  expect_lte(tc$n_duplicated_dst, 1L)
+  expect_false(any(tc$duplicated_dst == format(u("2025-10-25 21:00"), "%Y-%m-%d %H:%M")))
+  # every converted hour is in UTC and strictly earlier than the stored one
+  expect_true(all(tc$hours$time_shift_h %in% c(-2, -3)))
+})
+
+test_that("standardize_blview_mlh records the time correction (x_time_shift_h, sidecar history and limitation)", {
+  d <- withr::local_tempdir()
+  tt <- as.numeric(as.POSIXct("2025-07-15 10:00:30", tz = "UTC")) + 60 * (0:119)
+  write_blview_nc(file.path(d, "b_322.nc"), tt, c(rep(700L, 60), rep(800L, 60)), rep(3L, 120))
+  r <- read_blview_dir(d, 0)
+  tc <- blview_time_correction(r$hours, "Europe/Prague", -1)
+  dd <- blview_dedup_hours(tc$hours)
+  ex <- read_exclusions(fixture_path("exclusion_periods.csv"))
+  s <- suppressMessages(standardize_blview_mlh(dd$hours, "XX-Tst", ex, 1, 0, time_correction = tc[names(tc) != "hours"]))
+  expect_equal(s$data$timestamp_end_utc, as.POSIXct(c("2025-07-15 07:00", "2025-07-15 08:00"), tz = "UTC"))
+  expect_equal(s$data$x_time_shift_h, c(-3, -3))
+  expect_match(s$meta$processing_history, "Europe/Prague local time")
+  expect_match(s$meta$processing_history, "-1 h, an empirical alignment")
+  expect_match(s$meta$processing_history, "SON +3 h on 68 days", fixed = TRUE)
+  expect_match(s$meta$known_limitations, "corrected empirically")
+  s0 <- suppressMessages(standardize_blview_mlh(r$hours, "XX-Tst", ex, 1, 0))
+  expect_false("x_time_shift_h" %in% names(s0$data))
+  expect_match(s0$meta$processing_history, "NOT corrected")
+  expect_error(standardize_blview_mlh(r$hours, "XX-Tst", ex, 1, 0, time_correction = list(shift_h = -1)), "not corrected")
 })

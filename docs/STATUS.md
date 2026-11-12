@@ -319,7 +319,15 @@ measured MLH) done; 4–6 not started.
    suffix `_tz322`) to test the hypothesis that 3.2.2 stamps are local time with summer time; the +1 h baseline is not
    a matching artefact (synthetic chain gives lag 0): it is in the BL-View stamps (CET stamps or a one-hour delay,
    open); `09_fp_topaffected` network bar = pooled shares. Cluster: 14c only (`docs/local/cluster_commands_spec14.md`,
-   section "fix-14c").
+   section "fix-14c"). Merged (`main`, 4338a3a).
+16. fix-14a (2026-11-12, `fix-14a-count-mismatch`, to review; spec 14 amendment 1 item 10): a SkyVUE day with
+   different CSV / TXT record counts is skipped (`skip_reason` "record count mismatch: CSV n, TXT m", `n_csv` /
+   `n_txt` in `14_skyvue_days_<site>.csv`, mismatch days per month in the log), not a failed check; no alignment.
+   Item 11 (G 2026-11-12): BL-View time correction in the CZ-Lnz standard file by default (14b,
+   `blview_time_correction()`): 3.2.2 Europe/Prague local time → UTC, then all versions −1 h (empirical, mechanism
+   unknown); `x_time_shift_h`, lag evidence and DST hours in the sidecar; 14c refuses `--blview-322-tz` on a corrected
+   file. Cluster: 14a full record, then the DE-Tha 14c runs; 14b + 14c for CZ-Lnz, expected lag 0 h
+   (`docs/local/cluster_commands_spec14.md`, sections "fix-14c" and "fix-14a").
 
 
 ## Data

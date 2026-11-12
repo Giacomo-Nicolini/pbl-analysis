@@ -7,6 +7,10 @@
 #   exit status 1 after writing everything else. fix-14c item 9: the 7-column CSV before the MLH option (until about
 #   2025-06-24) is read too (cloud base 1 and vertical visibility checked, no MLH, profile check "not available"); a
 #   day with only a CSV or only a TXT (e.g. 2025-06-25) is skipped with skip_reason in the day table, not an error.
+#   fix-14a item 10: a day whose CSV and TXT record counts differ (June 2025, around the MLH-option installation) is
+#   skipped too (skip_reason "record count mismatch: CSV n, TXT m", n_csv / n_txt in the day table; no alignment);
+#   exit status 1 only for real check failures (CRC, cloud base, vertical visibility, layers, decode). The log gives
+#   the mismatch days per month.
 # Pairing: provider "TU Dresden" in config/measured_sites.csv (status secondary).
 # Output: <standard_dir>/<site>/<site>__tud_skyvue_mlh.csv.gz + .yml; <output_dir>/tables/internal/
 #   14_skyvue_days_<site>.csv (one row per day file pair: records, CRC failures, records with MLH, profile check,
@@ -62,6 +66,13 @@ for (i in seq_len(nrow(days))) {
     next
   }
   r <- tryCatch(read_skyvue_day(days$csv[i], days$txt[i]), error = function(e) e)
+  if (inherits(r, "skyvue_count_mismatch")) {
+    # fix-14a item 10: different CSV / TXT record counts = skipped day (no alignment), not a failed check
+    info[[i]] <- dplyr::tibble(day = days$day[i], csv = fname, n_csv = r$n_csv, n_txt = r$n_txt,
+                               skip_reason = paste0("record count mismatch: CSV ", r$n_csv, ", TXT ", r$n_txt),
+                               error = NA_character_)
+    next
+  }
   if (inherits(r, "error")) {
     msg <- gsub("\\s+", " ", conditionMessage(r))
     cli::cli_alert_danger("{format(days$day[i])}: {msg}")
@@ -70,7 +81,8 @@ for (i in seq_len(nrow(days))) {
   }
   m <- attr(r, "skyvue_meta")
   info[[i]] <- dplyr::tibble(
-    day = days$day[i], csv = m$csv, csv_layout = m$csv_layout, n_records = m$n_records, n_crc_fail = m$n_crc_fail,
+    day = days$day[i], csv = m$csv, csv_layout = m$csv_layout, n_csv = m$n_records, n_txt = m$n_records,
+    n_records = m$n_records, n_crc_fail = m$n_crc_fail,
     n_mlh1 = sum(!is.na(r$mlh1_m)), n_mlh2 = sum(!is.na(r$mlh2_m)), n_mlh3 = sum(!is.na(r$mlh3_m)),
     profile_check = m$profile_check, n_profile_records_checked = m$n_profile_records_checked,
     max_rel_diff_profile = m$max_rel_diff_profile,
@@ -82,11 +94,22 @@ for (i in seq_len(nrow(days))) {
   if (i %% 20 == 0) cli::cli_inform("{i} / {nrow(days)} days ({format(round(difftime(Sys.time(), t0, units = 'mins'), 1))}).")
 }
 info <- dplyr::bind_rows(info)
+# fixed column order (bind_rows follows the first day, which may be a skipped one)
+info <- dplyr::relocate(info, dplyr::any_of(c(
+  "day", "csv", "csv_layout", "n_csv", "n_txt", "n_records", "n_crc_fail", "n_mlh1", "n_mlh2", "n_mlh3", "profile_check",
+  "n_profile_records_checked", "max_rel_diff_profile", "scale_pct", "n_gates", "resolution_m", "tilt_deg",
+  "interval_s_median", "first_utc", "last_utc", "skip_reason", "error")))
 readr::write_csv(info, file.path(tab_dir, paste0("14_skyvue_days_", site_id, ".csv")))
 recs <- dplyr::bind_rows(recs)
 n_fail <- sum(!is.na(info$error))
 n_skip <- sum(!is.na(info$skip_reason))
-if (n_skip > 0) cli::cli_alert_warning("{n_skip} day{?s} skipped (only one of .csv / .txt): {paste(format(info$day[!is.na(info$skip_reason)]), info$skip_reason[!is.na(info$skip_reason)], collapse = '; ')}.")
+if (n_skip > 0) cli::cli_alert_warning("{n_skip} day{?s} skipped: {paste(format(info$day[!is.na(info$skip_reason)]), info$skip_reason[!is.na(info$skip_reason)], collapse = '; ')}.")
+is_mm <- !is.na(info$skip_reason) & startsWith(info$skip_reason, "record count mismatch")
+n_mm <- sum(is_mm)
+mm_month <- if (n_mm > 0) {
+  tm <- table(format(info$day[is_mm], "%Y-%m"))
+  paste(names(tm), tm, sep = ": ", collapse = ", ")
+} else "none"
 if (nrow(recs) == 0) cli::cli_abort("No day passed the checks.")
 recs <- recs[order(recs$time_end_utc), ]
 if (anyDuplicated(recs$time_end_utc)) {
@@ -98,7 +121,8 @@ cli::cli_h2("Checks over {nrow(info)} day{?s}")
 ok <- info[is.na(info$error) & is.na(info$skip_reason), ]
 mr <- if (any(!is.na(ok$max_rel_diff_profile))) signif(max(ok$max_rel_diff_profile, na.rm = TRUE), 2) else "not available"
 cli::cli_inform(c(
-  "Records {sum(ok$n_records)}; CRC mismatches {sum(ok$n_crc_fail)}; days failing a check {n_fail}; days skipped {n_skip}.",
+  "Records {sum(ok$n_records)}; CRC mismatches {sum(ok$n_crc_fail)}; days failing a check {n_fail}; days skipped {n_skip} (record count mismatch {n_mm}, only one file {n_skip - n_mm}).",
+  "Record count mismatch days per month: {mm_month}.",
   "CSV layout: full {sum(ok$csv_layout == 'full')} days, short (7 columns, before the MLH option) {sum(ok$csv_layout == 'short')} days.",
   "Profile decode vs CSV (first 20 gates, unambiguous values; full layout only): {sum(ok$n_profile_records_checked, na.rm = TRUE)} records, max relative difference {mr}.",
   "Scale parameter values: {paste(unique(ok$scale_pct), collapse = ', ')} %; gates {paste(unique(ok$n_gates), collapse = ', ')} x {paste(unique(ok$resolution_m), collapse = ', ')} m; tilt {paste(unique(ok$tilt_deg), collapse = ', ')} deg.",
