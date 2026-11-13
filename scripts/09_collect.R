@@ -195,6 +195,10 @@ if (!"--no-footprint" %in% args) {
     fp_dir <- file.path(derived, "footprint")
     fp_sites <- intersect(sites, ry_ok$site_id)
     rows <- list()
+    # fix-15: a missing month is expected when it is not in chunk_list.csv (no valid rows), a gap when it is listed
+    cl_path <- file.path(fp_dir, "chunk_list.csv")
+    chunk_list <- if (file.exists(cl_path)) readr::read_csv(cl_path, col_types = readr::cols(.default = "c"), progress = FALSE)
+    n_gap <- 0L
     for (s in fp_sites) {
       y <- ry_ok$year[ry_ok$site_id == s]
       x <- tryCatch(fp_site_rows(s, y, fp_dir), error = function(e) e)
@@ -202,10 +206,19 @@ if (!"--no-footprint" %in% args) {
         cli::cli_alert_danger("{s} {y}: {conditionMessage(x)}")
         next
       }
-      if (length(attr(x, "missing"))) cli::cli_alert_warning("{s} {y}: no chunks for {paste(attr(x, 'missing'), collapse = ', ')}.")
+      if (length(attr(x, "missing"))) {
+        cm <- fp_classify_missing(attr(x, "missing"), s, chunk_list)
+        n_gap <- n_gap + sum(cm$kind == "gap")
+        msg <- fp_missing_messages(cm)
+        for (k in names(msg)) {
+          f <- switch(k, i = cli::cli_alert_info, x = cli::cli_alert_danger, cli::cli_alert_warning)
+          f(paste0(s, " ", y, ": ", msg[[k]]))
+        }
+      }
       rows[[s]] <- x
     }
     rows <- dplyr::bind_rows(rows)
+    if (n_gap > 0) cli::cli_alert_danger("{n_gap} listed case-month{?s} without chunks (real gaps): rerun those chunks (08c --pending) before using the summary.")
     if (nrow(rows)) {
       st08 <- fp_topaffected_step08(bind_site_tables(stats::setNames(
         file.path(tdir, paste0("08_topaffected_", fp_sites, "_", ry_ok$year[match(fp_sites, ry_ok$site_id)], ".csv")), fp_sites)))
@@ -224,31 +237,38 @@ if (!"--no-footprint" %in% args) {
       variants <- list(list(prefix = "09_fp_", set = "etc", subset = "valid_qc_used"),
                        list(prefix = "09s_fp_kljun_norsl_", set = "kljun_norsl", subset = "valid_qc_used"),
                        list(prefix = "09s_fp_valid_", set = "etc", subset = "valid"))
-      lab_of <- function(v) paste0("validity set ", v$set, ", subset ", v$subset, "; reference year per site; ",
-                                   "sites by land cover (IGBP) and median PBLHmod h; * = exception (> 5 pp)")
+      # fix-15: short subtitle, details in a wrapped caption (titles were clipped); heights per site row
+      lab_of <- function(v) paste0("Validity set ", v$set, ", subset ", v$subset, "; reference year per site")
+      cap_of <- function(extra = NULL) paste(c("Sites by land cover (IGBP), then median PBLHmod h.", extra,
+                                               fp_exception_caption()), collapse = " ")
+      n_ax <- length(site_order) + 1 # sites + network row
       for (v in variants) {
         ta_v <- fp_out$target_area[fp_out$target_area$set == v$set & fp_out$target_area$subset == v$subset, ]
         fe_v <- fp_out$fetch[fp_out$fetch$set == v$set & fp_out$fetch$subset == v$subset, ]
         if (nrow(ta_v)) {
           p <- plot_fp_site_diff(ta_v, "p10_pp", "median_pp", "p90_pp", site_order, ex_sites,
-                                 "Target-area fraction difference [pp] (p10-p90, median)", lab_of(v))
-          save_figure(p, paste0(v$prefix, "ta_diff"), 22, 6 + 0.32 * length(site_order))
+                                 "Target-area fraction difference [pp] (p10-p90, median)", lab_of(v), cap_of())
+          save_figure(p, paste0(v$prefix, "ta_diff"), 22, fp_fig_height(n_ax, 2))
           p <- plot_fp_site_diff(fe_v, "p10_lnratio", "median_lnratio", "p90_lnratio", site_order, ex_sites,
-                                 "ln(x_80 ratio) [-] (p10-p90, median)", lab_of(v))
-          save_figure(p, paste0(v$prefix, "fetch_ratio"), 22, 6 + 0.32 * length(site_order))
+                                 "ln(x_80 ratio) [-] (p10-p90, median)", lab_of(v), cap_of())
+          save_figure(p, paste0(v$prefix, "fetch_ratio"), 22, fp_fig_height(n_ax, 2))
         }
         ic_v <- fp_out$icos_criteria[fp_out$icos_criteria$set == v$set & fp_out$icos_criteria$subset == v$subset, ]
         if (nrow(ic_v)) {
-          p <- plot_fp_icos_criteria(ic_v, site_order, paste0(lab_of(v), "; labelling rule on valid_qc"))
-          save_figure(p, paste0(v$prefix, "icos_criteria"), 22, 5 + 0.28 * length(site_order))
+          p <- plot_fp_icos_criteria(ic_v, site_order, paste0(lab_of(v), "; labelling rule on valid_qc"), ex_sites,
+                                     cap_of("Cases dodged vertically within each site row (PBLHmod on top)."))
+          save_figure(p, paste0(v$prefix, "icos_criteria"), 22, fp_fig_height(length(site_order), 1, 0.45))
         }
       }
       for (s in c("etc", "kljun_norsl")) {
         tp <- fp_out$topaffected[fp_out$topaffected$selection == "abs_ta_diff (spec 15)" & fp_out$topaffected$set == s &
                                    fp_out$topaffected$pair == "era5_vs_pblhmod", ]
         if (nrow(tp)) {
-          p <- plot_fp_topaffected(tp, site_order, paste0("top 10 % |TA difference| ERA5 - PBLHmod, set ", s, ", subset valid"))
-          save_figure(p, if (s == "etc") "09_fp_topaffected" else "09s_fp_kljun_norsl_topaffected", 22, 5 + 0.3 * length(site_order))
+          p <- plot_fp_topaffected(tp, site_order, paste0("Top 10 % |TA difference| ERA5 - PBLHmod; set ", s, ", subset valid"),
+                                   paste("Sites by land cover (IGBP), then median PBLHmod h; network bar = pooled",
+                                         "shares (sums to 100 %); median of the site shares in 09_network_fp_topaffected."))
+          save_figure(p, if (s == "etc") "09_fp_topaffected" else "09s_fp_kljun_norsl_topaffected", 22,
+                      fp_fig_height(n_ax, 1, 0.38))
         }
       }
       cli::cli_alert_success("Figures 09_fp_* and 09s_fp_* written.")

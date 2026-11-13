@@ -602,3 +602,42 @@ test_that("standardize_blview_mlh records the time correction (x_time_shift_h, s
   expect_match(s0$meta$processing_history, "NOT corrected")
   expect_error(standardize_blview_mlh(r$hours, "XX-Tst", ex, 1, 0, time_correction = list(shift_h = -1)), "not corrected")
 })
+
+# --- fix-15: BL-View quality sets (G 2026-11-12) ----------------------------------------------------------------------
+
+test_that("measured_quality_sets: main q >= quality_min, sensitivity all and q3, classes q1 q2", {
+  q <- c(1L, 2L, 3L, NA, 2L)
+  s <- measured_quality_sets(q, 2L)
+  expect_equal(names(s$sets), c("q_ge2", "all", "q1", "q2", "q3"))
+  expect_equal(unname(s$role), c("main", "sensitivity", "class", "class", "sensitivity"))
+  expect_equal(s$sets$q_ge2, c(FALSE, TRUE, TRUE, FALSE, TRUE))
+  expect_equal(s$sets$all, rep(TRUE, 5))
+  expect_equal(s$sets$q3, c(FALSE, FALSE, TRUE, FALSE, FALSE))
+  s0 <- measured_quality_sets(q, NA_integer_) # no filter: behaviour before fix-15
+  expect_equal(names(s0$sets), c("all", "q1", "q2", "q3"))
+  expect_equal(unname(s0$role[["all"]]), "main")
+  s3 <- measured_quality_sets(q, 3L) # q_ge3 = q3: no duplicate row
+  expect_equal(names(s3$sets), c("q_ge3", "all", "q1", "q2"))
+})
+
+test_that("window metrics of BL-View: main set q >= 2 first, sensitivity all / q3 (quality_min of measured_sites.csv)", {
+  t <- as.POSIXct("2025-07-01 08:00", tz = "UTC") + 3600 * 0:5
+  meas <- dplyr::tibble(timestamp_start_utc = t, timestamp_end_utc = t + 3600, pblh_m = c(400, 800, 800, 1600, 800, 800),
+                        qc_flag = NA_integer_, x_quality = c(1L, 2L, 3L, 1L, 3L, 2L))
+  tm <- as.POSIXct("2025-07-01 08:00", tz = "UTC") + 1800 * 0:11
+  mod <- dplyr::tibble(timestamp_start_utc = tm, timestamp_end_utc = tm + 1800, pblh_m = 800, x_regime = "convective")
+  era_t <- seq(min(t), max(t) + 3600, by = 3600)
+  era <- list(era5_blh_center = dplyr::tibble(timestamp_start_utc = era_t, timestamp_end_utc = era_t, pblh_m = 800))
+  w <- secondary_window_metrics(meas, "blview_all", mod, era, 16.95, measured_compare_options(), "XX-Tst", quality_min = 2L)
+  p <- w[w$source == "pblhmod_default", ]
+  expect_equal(p$quality, c("q_ge2", "all", "q1", "q2", "q3"))
+  expect_equal(p$quality_role, c("main", "sensitivity", "class", "class", "sensitivity"))
+  expect_equal(p$n[p$quality == "q_ge2"], 4L)
+  expect_equal(p$median_log_ratio[p$quality == "q_ge2"], 0) # the q >= 2 hours all equal PBLHmod
+  w0 <- secondary_window_metrics(meas, "blview_all", mod, era, 16.95, measured_compare_options(), "XX-Tst")
+  expect_equal(unique(w0$quality), c("all", "q1", "q2", "q3"))
+  # the CZ-Lnz row of measured_sites.csv carries the decision; the other rows have no filter
+  ms <- read_measured_sites(here::here("config", "measured_sites.csv"))
+  expect_equal(ms$quality_min[ms$icos_site == "CZ-Lnz" & ms$provider == "CzechGlobe"], 2L)
+  expect_true(all(is.na(ms$quality_min[!(ms$icos_site == "CZ-Lnz" & ms$provider == "CzechGlobe")])))
+})

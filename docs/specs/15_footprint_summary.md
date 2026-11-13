@@ -116,3 +116,20 @@ Code: `R/footprint_network.R` (row table, the five tables, ICOS criteria, γ tab
   within 0.05 of the 50 % limit.
 - ERA5 − PBLHmod, all rows: median of the site medians +0.02 pp (site p10 / p90 medians −0.17 / +0.18 pp); PBLHmod
   target-area fraction: median of the site medians 89 %.
+
+## Amendment 1: fix-15 figures (G 2026-11-13, cluster run of 2026-11-13)
+
+- Titles of `09_fp_*` / `09s_fp_*` were clipped on the right: subtitle shortened to the set, subset and reference
+  year; the details (site order, network bar, exception mark) moved to a caption; both wrapped (`fp_wrap()`).
+- `09_fp_ta_diff`, `09_fp_fetch_ratio` (and `09s_`): 39 sites + network per facet row overlapped: height from
+  `fp_fig_height()` (0.42 cm per site row and facet row, + 7 cm), site labels 6.5 pt (`theme_pblh(y_text_size =)`).
+- `09_fp_icos_criteria` (and `09s_`): PBLHmod was hidden under PBLHmod-clim and ERA5: shapes from the style table
+  (new column `shape`: PBLHmod filled circle, PBLHmod-clim open circle, ERA5 open triangle, the network figure
+  convention) and a vertical dodge within each site row (PBLHmod on top); exception sites marked " *" here too.
+- Every figure with " *" explains it in a caption line (`fp_exception_caption()`): |p10| or |p90| of the
+  target-area fraction difference > 5 pp in at least one zm/L class × day/night stratum, for any case pair (set
+  `etc`, subset `valid_qc_used`; `09_network_fp_exceptions`).
+- `09_collect.R` "no chunks" message: a case-month absent from `<derived_dir>/footprint/chunk_list.csv` has no valid
+  rows and its missing chunks are expected (info line; e.g. SE-Myc 2025-07); a listed case-month without a chunk on
+  disk is a real gap (danger line, counted; rerun with `08c --pending`); without the chunk list the cause is reported
+  as unknown (`fp_classify_missing()`, `fp_missing_messages()`).

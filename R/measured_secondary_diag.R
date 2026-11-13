@@ -162,8 +162,9 @@ reference_label <- function(ids) {
 #' Spec 14 Part C (moved from scripts/14c_secondary_diagnostics.R, fix-14c): aerosol window (apparent solar time,
 #' `opts$aerosol_window`) and PBLHmod convective, on the measurement time base ([measured_time_base()]: an hourly
 #' interval [t, t + 1 h) is compared with the mean of the two PBLHmod half-hours inside it and with the mean of ERA5 at
-#' t and t + 1 h, all labelled by the interval start). By quality class where the series carries `x_quality`
-#' (BL-View); one row per source otherwise (SkyVUE layers: `pblh_m` set to the layer before the call).
+#' t and t + 1 h, all labelled by the interval start). By quality set where the series carries `x_quality`
+#' (BL-View, [measured_quality_sets()]); one row per source otherwise (SkyVUE layers: `pblh_m` set to the layer before
+#' the call).
 #'
 #' @param s Measured standard rows with `pblh_m` set to the series to evaluate.
 #' @param label Series name [character].
@@ -172,9 +173,12 @@ reference_label <- function(ids) {
 #' @param lon Site longitude [decimal degrees E].
 #' @param opts Output of [measured_compare_options()].
 #' @param site_id Station code [character].
-#' @return Tibble: `site_id`, `series`, `source` (`pblhmod_default`, `era5_blh_center`), `quality` (`all`, `q1`-`q3`),
-#'   `n_days`, the metrics of [pblh_metrics()] (ln(source / measured)); `NULL` without any measured value.
-secondary_window_metrics <- function(s, label, mod, era, lon, opts, site_id) {
+#' @param quality_min Lowest quality class of the main set [integer]; `NA` = no filter (`quality_min` of
+#'   `measured_sites.csv`).
+#' @return Tibble: `site_id`, `series`, `source` (`pblhmod_default`, `era5_blh_center`), `quality` and
+#'   `quality_role` (from [measured_quality_sets()]; `all` / `main` without `x_quality`), `n_days`, the metrics of
+#'   [pblh_metrics()] (ln(source / measured)); `NULL` without any measured value.
+secondary_window_metrics <- function(s, label, mod, era, lon, opts, site_id, quality_min = NA_integer_) {
   s <- s[!is.na(s$timestamp_start_utc), ]
   if (sum(!is.na(s$pblh_m)) == 0) return(NULL)
   step <- stats::median(as.numeric(s$timestamp_end_utc) - as.numeric(s$timestamp_start_utc))
@@ -187,13 +191,40 @@ secondary_window_metrics <- function(s, label, mod, era, lon, opts, site_id) {
     a <- apparent_solar_hour(pt$timestamp_utc + prs[[src_id]]$mid, lon)
     pt <- pt[pt$regime %in% "convective" & a >= opts$aerosol_window[1] & a < opts$aerosol_window[2], ]
     q <- if ("x_quality" %in% names(s)) s$x_quality[match(as.numeric(pt$timestamp_utc), as.numeric(s$timestamp_start_utc))]
-    cls <- if (is.null(q)) list(all = rep(TRUE, nrow(pt))) else
-      c(list(all = rep(TRUE, nrow(pt))), stats::setNames(lapply(1:3, function(k) q %in% k), paste0("q", 1:3)))
+    qs <- if (is.null(q)) list(sets = list(all = rep(TRUE, nrow(pt))), role = c(all = "main")) else
+      measured_quality_sets(q, quality_min)
+    cls <- qs$sets
     dplyr::bind_rows(lapply(names(cls), function(k) {
       x <- pt[cls[[k]], ]
       dplyr::bind_cols(dplyr::tibble(site_id = site_id, series = label, source = src_id, quality = k,
+                                     quality_role = unname(qs$role[k]),
                                      n_days = length(unique(as.Date(x$timestamp_utc)))),
                        pblh_metrics(x$mod, x$ref))
     }))
   }))
+}
+
+#' Quality sets of a measured source with a provider quality class (fix-15, G 2026-11-12)
+#'
+#' Main set = quality >= `quality_min` (CZ-Lnz BL-View: 2, `quality_min` of `measured_sites.csv`): the filter uses the
+#' instrument's own reliability index, not the agreement with the references (that would be circular). Sensitivity
+#' sets: `all` (every class) and `q3` (highest class only). The single classes `q1`, `q2` are kept as `class` rows
+#' (the evidence of the decision: within factor 2 vs ERA5 q1 79 %, q2 83 %, q3 87 %). Without `quality_min`: `all`
+#' is the main set and the classes are `class` rows (behaviour before fix-15).
+#'
+#' @param q Quality class per row [integer 1-3 or NA].
+#' @param quality_min Lowest class of the main set [integer]; `NA` = no filter.
+#' @return List: `sets` (named list of logical masks, main set first), `role` (named character: `main`,
+#'   `sensitivity`, `class`).
+measured_quality_sets <- function(q, quality_min = NA_integer_) {
+  cls <- stats::setNames(lapply(1:3, function(k) q %in% k), paste0("q", 1:3))
+  if (is.na(quality_min)) {
+    return(list(sets = c(list(all = rep(TRUE, length(q))), cls), role = c(all = "main", q1 = "class", q2 = "class",
+                                                                           q3 = "class")))
+  }
+  main <- paste0("q_ge", quality_min)
+  sets <- c(stats::setNames(list(q %in% seq.int(quality_min, 3L)), main), list(all = rep(TRUE, length(q))), cls)
+  role <- c(stats::setNames("main", main), all = "sensitivity", q1 = "class", q2 = "class", q3 = "sensitivity")
+  if (quality_min == 3L) sets$q3 <- NULL
+  list(sets = sets, role = role[names(sets)])
 }

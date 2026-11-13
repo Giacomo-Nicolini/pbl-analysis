@@ -22,12 +22,12 @@
 #'   `secondary` = series of the secondary measured sources, spec 14; `fp_pair`, `fp_share` = network footprint
 #'   summary, spec 15),
 #'   `colour` [hex or R colour name], `label`, `order` [integer, legend and plotting order within the group],
-#'   `linetype` (ggplot2 line type).
+#'   `linetype` (ggplot2 line type), `shape` (ggplot2 point shape; 16 = filled circle unless set, fix-15).
 pblh_sources_style <- local({
   k <- .pblh_col
-  row <- function(id, group, colour, label, order, linetype = "solid") {
+  row <- function(id, group, colour, label, order, linetype = "solid", shape = 16L) {
     dplyr::tibble(id = id, group = group, colour = unname(colour), label = label, order = as.integer(order),
-                  linetype = linetype)
+                  linetype = linetype, shape = as.integer(shape))
   }
   dplyr::bind_rows(
     # PBLH sources (main figures: PBLHmod, PBLHmod-clim, ERA5, measured; supplement: reference gamma values, oper)
@@ -53,12 +53,13 @@ pblh_sources_style <- local({
     row("icos_oper_qc0", "source", k["purple"], "ICOS operational (qc 0)", 9),
     row("icos_oper_all", "source", k["purple"], "ICOS operational (all)", 10, "dashed"),
     # footprint cases (spec 08 / 09 A5)
-    row("pblhmod", "footprint_case", k["blue"], "PBLHmod", 1),
-    row("pblhmod_clim", "footprint_case", k["green"], "PBLHmod-clim", 2),
-    row("era5", "footprint_case", k["vermillion"], "ERA5 (tower cell)", 3),
-    row("era5_bilinear", "footprint_case", k["vermillion"], "ERA5 (bilinear)", 4, "dashed"),
-    row("measured", "footprint_case", k["black"], "Measured MLH", 5),
-    row("bound", "footprint_case", k["grey"], "Measured MLH (lower bound)", 6, "dashed"),
+    # shapes (fix-15): PBLHmod filled circle, PBLHmod-clim open circle, ERA5 open triangle (network figure convention)
+    row("pblhmod", "footprint_case", k["blue"], "PBLHmod", 1, shape = 16),
+    row("pblhmod_clim", "footprint_case", k["green"], "PBLHmod-clim", 2, shape = 1),
+    row("era5", "footprint_case", k["vermillion"], "ERA5 (tower cell)", 3, shape = 2),
+    row("era5_bilinear", "footprint_case", k["vermillion"], "ERA5 (bilinear)", 4, "dashed", shape = 6),
+    row("measured", "footprint_case", k["black"], "Measured MLH", 5, shape = 15),
+    row("bound", "footprint_case", k["grey"], "Measured MLH (lower bound)", 6, "dashed", shape = 0),
     row("pblhmod_x0.8", "footprint_case", k["blue_light"], "PBLHmod × 0.8", 7, "dotted"),
     row("pblhmod_x1.2", "footprint_case", k["blue_dark"], "PBLHmod × 1.2", 8, "dashed"),
     row("pblhmod_gamma001", "footprint_case", k["sky"], "PBLHmod (γ 0.01)", 9),
@@ -104,7 +105,8 @@ pblh_sources_style <- local({
     row("skyvue_layer1", "secondary", k["black"], "SkyVUE layer 1", 1),
     row("skyvue_layer2", "secondary", k["grey_dark"], "SkyVUE layer 2", 2, "dashed"),
     row("skyvue_layer3", "secondary", k["grey"], "SkyVUE layer 3", 3, "dotted"),
-    row("blview_all", "secondary", k["black"], "BL-View (all versions)", 4),
+    row("blview_all", "secondary", k["black"], "BL-View (all versions; main quality set)", 4),
+    row("blview_allq", "secondary", k["grey"], "BL-View (all versions, every quality class; sensitivity)", 4, "dashed"),
     row("blview_3.1.1", "secondary", k["purple"], "BL-View 3.1.1", 5),
     row("blview_3.1.2", "secondary", k["orange"], "BL-View 3.1.2", 6),
     row("blview_3.2.2", "secondary", k["sky"], "BL-View 3.2.2", 7),
@@ -136,7 +138,7 @@ pblh_sources_style <- local({
 #' Style values of plotted categories
 #'
 #' @param ids Category ids [character].
-#' @param what Column of [pblh_sources_style]: `"colour"`, `"label"`, `"linetype"` or `"order"`.
+#' @param what Column of [pblh_sources_style]: `"colour"`, `"label"`, `"linetype"`, `"order"` or `"shape"`.
 #' @param group Group of the ids (`"source"`, `"footprint_case"`, ...).
 #' @return Named vector (names = `ids`); aborts on an id without a style row.
 style_of <- function(ids, what = "colour", group = "source") {
@@ -160,11 +162,15 @@ style_ids <- function(group = "source", ids = NULL) {
 #' Theme of all figures
 #'
 #' @param base_size Base font size [pt].
-#' @return A ggplot2 theme.
-theme_pblh <- function(base_size = 10) {
+#' @param y_text_size Size of the y-axis tick labels [pt]; `NULL` = from `base_size` (fix-15: long site axes).
+#' @return A ggplot2 theme (caption left-aligned, as the subtitle).
+theme_pblh <- function(base_size = 10, y_text_size = NULL) {
   ggplot2::theme_bw(base_size = base_size) +
     ggplot2::theme(
       panel.grid.minor = ggplot2::element_blank(),
+      plot.caption = ggplot2::element_text(hjust = 0, size = ggplot2::rel(0.8)),
+      plot.caption.position = "plot",
+      axis.text.y = if (is.null(y_text_size)) NULL else ggplot2::element_text(size = y_text_size),
       strip.background = ggplot2::element_rect(fill = "grey92", colour = NA),
       legend.position = "bottom",
       legend.key.width = ggplot2::unit(1.2, "lines"),
