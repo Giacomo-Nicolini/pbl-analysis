@@ -243,7 +243,9 @@ so code must be reproducible, documented and traceable to references.
     days, flat). **Time correction in the standard file by default (G 2026-11-12, fix-14a item 11)**: 3.2.2
     Europe/Prague local time (summer time) → UTC, then all versions −1 h (empirical alignment, mechanism unknown);
     `x_time_shift_h` per row, evidence and DST hours in the sidecar; expected lag after the rerun 0 h (a check, not a
-    target). Standard source `vaisala_blview_mlh`
+    target). **Main set quality ≥ 2 (G 2026-11-12, fix-15)**: column `quality_min` of `measured_sites.csv`; `all`
+    and `q3` only as sensitivity rows wherever CZ-Lnz appears; the standard file keeps every class. Standard source
+    `vaisala_blview_mlh`
     (`scripts/14b_blview_mlh.R`): hourly, all quality kept (`x_quality`), overlaps across files (after the time
     correction): newest version kept.
 - **Standard-file column types (spec 14)**: `read_standard_pblh()` never guesses: documented non-numeric `x_` columns

@@ -172,3 +172,49 @@ test_that("gamma supplementary tables: site quantiles and a reproducible site bo
   expect_true(n1$gamma_med_lo95 <= n1$gamma_med && n1$gamma_med <= n1$gamma_med_hi95)
   expect_equal(n1$n_days, 405L)
 })
+
+# --- fix-15 ------------------------------------------------------------------------------------------------------------
+
+test_that("fp_classify_missing: not in chunk_list = expected, listed but absent = gap, no list = unknown", {
+  cl <- dplyr::tibble(site_id = c("SE-Myc", "SE-Myc", "SE-Myc", "XX-Oth"), case = c("pblhmod", "era5", "pblhmod", "era5"),
+                      start = c("2025-06-01 00:00", "2025-08-01 00:00", "2025-08-16 00:00", "2025-07-01 00:00"))
+  miss <- c("pblhmod 2025-07", "era5 2025-07", "era5 2025-08", "pblhmod 2025-08")
+  cm <- fp_classify_missing(miss, "SE-Myc", cl)
+  expect_equal(cm$kind, c("not_listed", "not_listed", "gap", "gap")) # half-month chunk start 08-16 counts for 2025-08
+  expect_equal(cm$month, c("2025-07", "2025-07", "2025-08", "2025-08"))
+  m <- fp_missing_messages(cm)
+  expect_equal(names(m), c("i", "x"))
+  expect_match(m[["i"]], "as expected.*2025-07 \\(pblhmod, era5\\)")
+  expect_match(m[["x"]], "real gap.*2025-08")
+  expect_equal(fp_classify_missing(miss[1], "SE-Myc", NULL)$kind, "unknown")
+  expect_equal(names(fp_missing_messages(fp_classify_missing(miss[1], "SE-Myc", NULL))), "!")
+  expect_equal(nrow(fp_classify_missing(character(), "SE-Myc", cl)), 0)
+  expect_length(fp_missing_messages(fp_classify_missing(character(), "SE-Myc", cl)), 0)
+})
+
+test_that("fix-15 figures: wrapped subtitle and caption, shapes and vertical dodge in the ICOS criteria figure", {
+  long_txt <- paste(rep("validity set etc, subset valid_qc_used;", 6), collapse = " ")
+  w <- fp_wrap(long_txt, 60)
+  expect_true(all(nchar(strsplit(w, "\n")[[1]]) <= 60))
+  expect_null(fp_wrap(NULL))
+  expect_match(fp_exception_caption(), "^\\* exception site: .*> 5 pp")
+  expect_gt(fp_fig_height(40, 2), fp_fig_height(40, 1))
+  ic <- dplyr::tibble(site_id = rep(c("AA-One", "BB-Two"), each = 3), case = rep(c("pblhmod", "pblhmod_clim", "era5"), 2),
+                      share_ta90 = 0.5, share_ta90_stable = 0.2, icos_lab_share = 0.9)
+  p <- plot_fp_icos_criteria(ic, c("AA-One", "BB-Two"), long_txt, exceptions = "BB-Two", caption = fp_exception_caption())
+  b <- ggplot2::ggplot_build(p)
+  pts <- b$data[[2]]
+  # three distinct y per site row (dodge), PBLHmod on top, shapes from the style table
+  expect_equal(length(unique(round(pts$y, 6))), 6)
+  top_aa <- pts[abs(pts$y - max(pts$y)) < 1e-9, ]
+  expect_equal(unique(top_aa$shape), unname(style_of("pblhmod", "shape", "footprint_case")))
+  expect_setequal(unique(pts$shape), unname(style_of(c("pblhmod", "pblhmod_clim", "era5"), "shape", "footprint_case")))
+  expect_true(any(grepl("BB-Two *", b$layout$panel_params[[1]]$y$get_labels(), fixed = TRUE)))
+  expect_match(p$labels$subtitle, "\n")
+  expect_match(p$labels$caption, "exception site")
+  q <- plot_fp_site_diff(dplyr::tibble(scope = "site", site_id = "AA-One", regime = "stable", daynight = "night",
+                                       pair = "era5_vs_pblhmod", p10_pp = -1, median_pp = 0, p90_pp = 1),
+                         "p10_pp", "median_pp", "p90_pp", "AA-One", xlab = "x", subtitle = long_txt, caption = "c")
+  expect_match(q$labels$subtitle, "\n")
+  expect_equal(q$labels$caption, "c")
+})

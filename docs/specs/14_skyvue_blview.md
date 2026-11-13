@@ -250,3 +250,12 @@ Cluster results of the 14c diagnostics (DE-Tha July 2026, CZ-Lnz all versions) s
   evidence and the dropped / duplicated DST hours (listed). `--blview-322-tz=none --shift-h=0` keeps the stored time
   (checks only). 14c reports the shifts and refuses its own `--blview-322-tz` on a corrected file. After the rerun of
   14b and 14c, the lag test should give 0 h in every season with enough data: a check, not a target.
+- **(12) CZ-Lnz BL-View quality filter (fix-15, G 2026-11-12).** Main set = quality ≥ 2; `all` and `q3` only are
+  sensitivity rows wherever CZ-Lnz appears. Reason: filter by the instrument's own reliability index, not by the
+  agreement with the references (that would be circular). Evidence (cluster, after the fix-14a time correction):
+  within factor 2 vs ERA5 q1 79 %, q2 83 %, q3 87 %; q ≥ 2 keeps 2,928 of 3,897 window hours. Implemented as the
+  column `quality_min` of `config/measured_sites.csv` (CZ-Lnz CzechGlobe row = 2; empty elsewhere; checked 1-3 by
+  `read_measured_sites()`); the standard file keeps every class. 14c: window metrics per quality set
+  (`measured_quality_sets()`: `q_ge2` main, `all` and `q3` sensitivity, `q1` and `q2` single classes; column
+  `quality_role`); lag test and clear-day diurnal cycle on the main set (`blview_all` and the versions), plus the
+  sensitivity series `blview_allq` (every class) and `blview_q3`; column `quality_set` in `14_lag*`.

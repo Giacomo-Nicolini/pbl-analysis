@@ -8,8 +8,10 @@
 #   2. DE-Tha layers: per UTC hour, median of layers 1-3 and of their confidence vs PBLHmod and ERA5 (all days), and
 #      window metrics per layer (aerosol window 10-16 h apparent solar time, PBLHmod convective), so that G can
 #      decide a layer rule (or none).
-#   3. CZ-Lnz quality: window metrics of PBLHmod and ERA5 against the BL-View value by quality class (1, 2, 3, all)
-#      and version.
+#   3. CZ-Lnz quality: window metrics of PBLHmod and ERA5 against the BL-View value by quality set and version.
+#      fix-15 (G 2026-11-12): main set = quality >= quality_min of measured_sites.csv (CZ-Lnz 2; the instrument's own
+#      reliability index, not the agreement with the references); sensitivity rows all and q3; classes q1, q2 kept
+#      (quality_role). Lag test and diurnal cycle on the main set, plus blview_allq and blview_q3.
 # Inputs: <standard_dir>/<site>/<site>__{tud_skyvue_mlh|vaisala_blview_mlh, pblhmod_default, era5_blh_center}
 #   (scripts 14a / 14b, 04), <derived_dir>/pblhmod/<site>_pblhmod_default.csv.gz (day_id), the ICOS L2 (SW_IN,
 #   SW_IN_POT) for the clear days.
@@ -100,12 +102,23 @@ cli::cli_h1("{site_id} {src}: {format(t_from, '%Y-%m-%d')} to {format(t_to - 1, 
 cli::cli_inform("PBLHmod rows {nrow(mod)} (valid {sum(!is.na(mod$pblh_m))}); ERA5 hours {nrow(era$era5_blh_center)}.")
 
 # series of the measured source: SkyVUE layers (half-hourly), BL-View all versions and each version (hourly)
-series <- if (src == "tud_skyvue_mlh") {
+# fix-15 (G 2026-11-12): BL-View main set = quality >= quality_min of measured_sites.csv (CZ-Lnz 2). Lag test and
+# diurnal cycle: blview_all and the versions on the main set, plus the sensitivity series blview_allq (every class)
+# and blview_q3 (class 3 only). Window metrics: unfiltered series, quality sets inside secondary_window_metrics().
+q_min <- ms$quality_min
+series_wm <- if (src == "tud_skyvue_mlh") {
   stats::setNames(lapply(1:3, function(k) dplyr::mutate(meas, pblh_m = .data[[paste0("x_layer", k, "_m")]])),
                   paste0("skyvue_layer", 1:3))
 } else {
   v <- sort(unique(meas$x_version))
   c(list(blview_all = meas), stats::setNames(lapply(v, function(x) meas[meas$x_version %in% x, ]), paste0("blview_", v)))
+}
+series <- series_wm
+if (src == "vaisala_blview_mlh" && !is.na(q_min)) {
+  keep_q <- function(d, qs) d[d$x_quality %in% qs, ]
+  series <- c(lapply(series_wm, keep_q, qs = seq.int(q_min, 3L)),
+              list(blview_allq = meas, blview_q3 = keep_q(meas, 3L)))
+  cli::cli_inform("BL-View main set: quality >= {q_min} ({sum(meas$x_quality %in% seq.int(q_min, 3L) & !is.na(meas$pblh_m))} of {sum(!is.na(meas$pblh_m))} valid hours); sensitivity series blview_allq (every class) and blview_q3.")
 }
 
 # --- clear days ---
@@ -127,8 +140,14 @@ ref_bins <- list(pblhmod_default = hour_bins(mod$timestamp_start_utc, mod$timest
 meas_bins <- lapply(series, function(s) hour_bins(s$timestamp_start_utc, s$timestamp_end_utc, s$pblh_m))
 lags <- -3:6 # fix-14c: widened (the 3.2.2 peak sat at the +3 h edge)
 lag <- lag_table(meas_bins, ref_bins, mb, site_id, lags = lags)
-out_tab(lag, "lag")
 best <- best_lag(lag, by = c("site_id", "series", "reference"))
+# fix-15: quality set of each series (BL-View with quality_min: main / sensitivity; otherwise all)
+qset <- function(x) if (src == "vaisala_blview_mlh" && !is.na(q_min)) {
+  ifelse(x %in% c("blview_allq", "blview_q3"), paste0("sensitivity (", sub("blview_", "", x), ")"), paste0("main (q >= ", q_min, ")"))
+} else rep("all", length(x))
+lag$quality_set <- qset(lag$series)
+best$quality_set <- qset(best$series)
+out_tab(lag, "lag")
 out_tab(best, "lag_best")
 cli::cli_h2("Best lag of the morning growth (L > 0: measured stamps later than UTC, e.g. +1 = CET); lags {min(lags)} to +{max(lags)} h")
 if (nrow(best) > 0) {
@@ -138,7 +157,7 @@ if (nrow(best) > 0) {
   bp <- bp[order(bp$series, bp$reference, bp$season), ]
   bp$season <- as.character(bp$season)
   bp$at_edge <- bp$best_lag_h %in% range(lags)
-  print_tbl(bp[c("series", "reference", "season", "best_lag_h", "r_best", "r_lag0", "n_best", "at_edge")])
+  print_tbl(bp[c("series", "quality_set", "reference", "season", "best_lag_h", "r_best", "r_lag0", "n_best", "at_edge")])
 } else {
   cli::cli_alert_warning("No correlation (too few clear-day morning pairs).")
 }
@@ -195,21 +214,21 @@ if (nrow(lagp) > 0) {
 
 # --- window metrics (aerosol window, PBLHmod convective) per series and, for BL-View, per quality class ---
 # SkyVUE: one series per layer (pblh_m = the layer); BL-View: per quality class (secondary_window_metrics())
-wm <- dplyr::bind_rows(lapply(names(series), function(s) {
-  secondary_window_metrics(series[[s]], s, mod, era, meta$lon, opts, site_id)
+wm <- dplyr::bind_rows(lapply(names(series_wm), function(s) {
+  secondary_window_metrics(series_wm[[s]], s, mod, era, meta$lon, opts, site_id, quality_min = q_min)
 }))
 if (nrow(wm) == 0) cli::cli_alert_warning("No window metrics: no measured value in the period.")
 if (nrow(wm) > 0) {
   wm$note <- paste("ln(source / measured); window", paste(opts$aerosol_window, collapse = "-"),
-                   "h apparent solar time, PBLHmod convective; quality all / q1-q3 (BL-View only); SkyVUE: one series",
-                   "per layer")
+                   "h apparent solar time, PBLHmod convective; BL-View quality sets (quality_role: main = quality >=",
+                   q_min, ", sensitivity = all / q3, class = single classes); SkyVUE: one series per layer")
 }
 out_tab(wm, "window_metrics")
 cli::cli_h2("Window metrics (source vs measured; SkyVUE per layer, BL-View per quality class)")
 if (nrow(wm) > 0) {
   wp <- wm
   wp$source <- reference_label(wp$source)
-  print_tbl(wp[c("series", "source", "quality", "n", "n_days", "median_log_ratio", "frac_within_factor2")])
+  print_tbl(wp[c("series", "source", "quality", "quality_role", "n", "n_days", "median_log_ratio", "frac_within_factor2")])
 }
 
 # --- 2. DE-Tha layers by UTC hour ---

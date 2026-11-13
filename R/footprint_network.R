@@ -488,3 +488,50 @@ fp_table_headers <- function(threshold_pp = 5) {
       sprintf("Exception = |p10| or |p90| of TA(a) - TA(b) above %g pp in a regime x day/night stratum of a site (threshold: a reporting choice, spec 15); main set and subset only.", threshold_pp),
       "smaller_case = case with the smaller TA (sign of the median difference); median_h_a_m, median_h_b_m = median PBLH of the two cases on the stratum rows [m]."))
 }
+
+#' Classify the case-months without chunks (fix-15)
+#'
+#' A month absent from `chunk_list.csv` has no valid row for the case (08c lists only months with rows to run): its
+#' missing chunks are expected (e.g. SE-Myc 2025-07). A month listed there but without a chunk on disk is a real gap
+#' (task not run, failed or not copied).
+#'
+#' @param missing Attribute `missing` of [fp_site_rows()] ("<case> <YYYY-MM>") [character].
+#' @param site_id Station code [character].
+#' @param chunk_list `<derived_dir>/footprint/chunk_list.csv` as read (columns `site_id`, `case`, `start`), or `NULL`
+#'   when the file is not available.
+#' @return Tibble: `case`, `month` [YYYY-MM], `kind` (`not_listed` = no valid rows, expected; `gap` = listed but
+#'   missing; `unknown` = no chunk list).
+fp_classify_missing <- function(missing, site_id, chunk_list = NULL) {
+  if (length(missing) == 0) return(dplyr::tibble(case = character(), month = character(), kind = character()))
+  cs <- sub(" .*$", "", missing)
+  mo <- sub("^.* ", "", missing)
+  kind <- if (is.null(chunk_list)) {
+    rep("unknown", length(missing))
+  } else {
+    cl <- chunk_list[chunk_list$site_id == site_id, ]
+    listed <- paste(cl$case, substr(as.character(cl$start), 1, 7))
+    ifelse(paste(cs, mo) %in% listed, "gap", "not_listed")
+  }
+  dplyr::tibble(case = cs, month = mo, kind = kind)
+}
+
+#' Messages for [fp_classify_missing()]
+#'
+#' @param cm Output of [fp_classify_missing()].
+#' @return Named character vector for `cli::cli_inform()`-style output: names `i` (expected), `x` (gaps), `!`
+#'   (unknown); empty when nothing is missing.
+fp_missing_messages <- function(cm) {
+  fmt <- function(k) {
+    x <- cm[cm$kind == k, ]
+    if (nrow(x) == 0) return(NULL)
+    g <- tapply(x$case, x$month, paste, collapse = ", ")
+    paste(paste0(names(g), " (", g, ")"), collapse = "; ")
+  }
+  out <- c(i = if (!is.null(fmt("not_listed"))) paste0("no chunks, as expected (no valid rows: not in chunk_list.csv): ",
+                                                       fmt("not_listed")),
+           x = if (!is.null(fmt("gap"))) paste0("chunks MISSING although listed in chunk_list.csv (real gap): ",
+                                                fmt("gap")),
+           `!` = if (!is.null(fmt("unknown"))) paste0("no chunks (chunk_list.csv not found, cannot tell why): ",
+                                                      fmt("unknown")))
+  out
+}

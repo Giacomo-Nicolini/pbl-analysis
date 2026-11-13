@@ -327,7 +327,14 @@ measured MLH) done; 4–6 not started.
    `blview_time_correction()`): 3.2.2 Europe/Prague local time → UTC, then all versions −1 h (empirical, mechanism
    unknown); `x_time_shift_h`, lag evidence and DST hours in the sidecar; 14c refuses `--blview-322-tz` on a corrected
    file. Cluster: 14a full record, then the DE-Tha 14c runs; 14b + 14c for CZ-Lnz, expected lag 0 h
-   (`docs/local/cluster_commands_spec14.md`, sections "fix-14c" and "fix-14a").
+   (`docs/local/cluster_commands_spec14.md`, sections "fix-14c" and "fix-14a"). Merged (`main`, 7998608).
+17. fix-15 (2026-11-13, `fix-15-figures`, to review): spec 15 figures (subtitle short and wrapped, details in a
+   caption explaining the " *"; heights and site-label size for 39 sites + network; ICOS criteria with shapes from
+   the style table and a vertical dodge); **CZ-Lnz BL-View main set = quality ≥ 2 (G 2026-11-12)**, `all` and `q3`
+   as sensitivity rows (column `quality_min` of `config/measured_sites.csv`; standard file unchanged; spec 14
+   amendment 1 item 12); 09_collect.R tells expected missing months (not in `chunk_list.csv`, e.g. SE-Myc 2025-07)
+   from real gaps. Cluster: `09_collect.R` and 14c CZ-Lnz (`docs/local/cluster_commands_spec15.md`, section
+   "fix-15").
 
 
 ## Data

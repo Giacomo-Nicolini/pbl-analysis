@@ -349,9 +349,13 @@ too shallow when deep") is a **hypothesis under test**.
   one-hour delay of the hourly value; to ask the site / Vaisala. **Decided (G 2026-11-12, fix-14a item 11)**: the
   standard file is corrected by default (3.2.2 Europe/Prague local time → UTC, then all versions −1 h, empirical;
   `x_time_shift_h`); mechanism still to ask the site / Vaisala; after the rerun the lag test should give 0 h.
+- fix-15 (2026-11-13): **decided (G 2026-11-12): CZ-Lnz BL-View main set = quality ≥ 2**, `all` and `q3` only as
+  sensitivity rows wherever CZ-Lnz appears (filter by the instrument's reliability index, not by agreement with the
+  references; within factor 2 vs ERA5 q1 79 %, q2 83 %, q3 87 %; q ≥ 2 keeps 2,928 of 3,897 window hours);
+  `quality_min` in `config/measured_sites.csv`. Supersedes spec 14 open point (b) (BL-View quality rule).
 - Spec 14 (2026-11-12, secondary sources; for G): (a) SkyVUE layer rule (layer 1, the highest-confidence layer, or
   none): superseded by fix-14c (a);
-  (b) BL-View quality rule: the meaning of 1–3 is not in the BL-View User Guide; Münkel et al. (ISARS 2012) indicate
+  (b) BL-View quality rule (decided by fix-15: quality ≥ 2): the meaning of 1–3 is not in the BL-View User Guide; Münkel et al. (ISARS 2012) indicate
   3 = best for the gradient-minimum index (`14_window_metrics_CZ-Lnz.csv` by class); (c) time conventions: BL-View
   stored time read as UTC (3.1.x file names UTC, `location_utc_offset` 0; but 3.2.2 `time_zone` = 2 and extracts
   cut at 23:54 UTC) and the hour = profiles hh:00–hh:59 as the hour ending at hh:00 (3.1.2 calculation time); SkyVUE

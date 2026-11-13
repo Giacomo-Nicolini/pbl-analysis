@@ -75,12 +75,12 @@ Recurring column groups:
 | `14_blview_files_<site>` (14b) | BL-View file | `file, version, sw_version, n_profiles, first_profile_utc, last_profile_utc, n_hours, n_hours_valid, n_inconsistent, date_stamp_matches_utc, location_utc_offset, error` | none |
 | `14_blview_versions_<site>` (14b) | BL-View version (`3.1.1, 3.1.2, 3.2.2, no_mlh, error`) | `version, n_files, n_files_no_valid, first_utc, last_utc, n_hours, n_hours_valid, share_valid, n_days_valid, n_q1, n_q2, n_q3, n_inconsistent` | none |
 | `14_blview_overlap_<site>` (14b) | version kept × version dropped | `version_kept, version_dropped, n_hours, n_differ` | none |
-| `14_lag_<site>[_tz322]` (14c) | series × reference (`pblhmod_default`, `era5_blh_center`) × season (incl. `all`) × lag (−3 … +6 h) | `site_id, series, reference, season, lag_h, n, n_days, r` | `14_lag_<site>[_tz322]` |
-| `14_lag_best_<site>[_tz322]` (14c) | series × reference × season (one row each, fix-14c) | `site_id, series, reference, season, best_lag_h, r_best, r_lag0, n_best` | none |
+| `14_lag_<site>[_tz322]` (14c) | series × reference (`pblhmod_default`, `era5_blh_center`) × season (incl. `all`) × lag (−3 … +6 h); BL-View series on the main quality set plus `blview_allq`, `blview_q3` (fix-15) | `site_id, series, reference, season, lag_h, n, n_days, r, quality_set` | `14_lag_<site>[_tz322]` |
+| `14_lag_best_<site>[_tz322]` (14c) | series × reference × season (one row each, fix-14c) | `site_id, series, reference, season, best_lag_h, r_best, r_lag0, n_best, quality_set` | none |
 
 Suffix `_tz322`: run with `--blview-322-tz` (BL-View 3.2.2 stamps re-read as local time; diagnostics only); applies to every 14c table and figure of that run. Refused since fix-14a item 11 when the standard file is already time-corrected (`x_time_shift_h`); the plain CZ-Lnz tables then show the corrected stamps (expected lag 0 h).
 | `14_diurnal_clear_<site>` (14c) | series (measured series, `pblhmod_default`, `era5_blh_center`) × season × UTC hour | `series, season, hour_utc, median_m, n` | `14_diurnal_clear_<site>` |
-| `14_window_metrics_<site>` (14c) | series × source (PBLHmod, ERA5) × quality (`all`, `q1`–`q3`, BL-View only) | `site_id, series, source, quality, n_days`, metrics, `note` | none |
+| `14_window_metrics_<site>` (14c) | series × source (PBLHmod, ERA5) × quality set (BL-View: `q_ge2` main, `all` / `q3` sensitivity, `q1` / `q2` classes, fix-15; otherwise `all`) | `site_id, series, source, quality, quality_role, n_days`, metrics, `note` | none |
 | `14_skyvue_layers_hourly_<site>` (14c, DE-Tha) | series (layers 1–3, PBLHmod, ERA5) × UTC hour | `series, hour_utc, median_m, median_conf, mean_share_conf3, n` | `14_skyvue_layers_hourly_<site>` |
 
 Standard files (not tables): `<site>__tud_skyvue_mlh`, `<site>__vaisala_blview_mlh` (`docs/specs/standard_format.md`).
@@ -145,6 +145,8 @@ Standard files (not tables): `<site>__tud_skyvue_mlh`, `<site>__vaisala_blview_m
 | `09s_gamma_site` (spec 15) | site | `site_id, igbp, gamma_site, p25, p75, p10, p90, n_days, n_months, months_used` (K m-1) | `09s_gamma_site` |
 | `09s_gamma_network` (spec 15) | one row | `gamma_med, gamma_med_lo95, gamma_med_hi95, gamma_med_pooled, site_median_min, site_median_max, n_sites, n_days, n_boot, seed` | `09s_gamma_site` (line and band) |
 | `09_network_record_start` | site | `site_id, labelling_date, first_valid_utc, last_valid_utc, n_valid` (EC record start = ICOS labelling date, local date of the first valid `pblhmod_default` value; G 2026-11-12, spec 14; reads the step-04 standard file, not a per-site table) | none (supplement table) |
+
+fix-15 (spec 15 amendment 1): the `09_fp_*` / `09s_fp_*` figures carry a short wrapped subtitle and a caption (site order, network bar, the " *" exception mark); `*_icos_criteria` uses shapes per case (style table column `shape`) and a vertical dodge.
 
 Derived (not in `tables/`): `<derived_dir>/gamma/network_gamma.csv`, one row: `gamma_med, gamma_med_pooled, n_sites,
 n_days, sites`.
