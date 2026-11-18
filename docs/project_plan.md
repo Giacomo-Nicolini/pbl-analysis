@@ -208,8 +208,25 @@ too shallow when deep") is a **hypothesis under test**.
   - **5a, deterministic swap (spec 08):** the PBLH in the FFP is swapped, all other inputs unchanged: PBLHmod vs ERA5
     (tower cell; bilinear in tables only) vs measured MLH where available (FI-Hyy: exact values, plus qc-3 lower
     bounds as a "bound" sensitivity case); PBLHmod × 0.8 / × 1.2 as an anchor against Kljun et al. (2015) Table 5.
-  - **5b, Monte Carlo (later spec):** perturb h with error distributions conditional on stability and site, from
-    phases 3–4 and all measured sites.
+  - **5b, footprint uncertainty from the FFP inputs (spec 16, G 2026-11-17; no longer postponed):** six sites
+    (FR-Gri, FR-Fon, FI-Hyy, BE-Bra, CH-Dav, IT-Ren), reference year, rows valid under `etc` for the three PBLH
+    cases, stratified sample (zm/L class × day/night, 170 rows per stratum, stratum weights). Inputs perturbed
+    relative to L2 (1σ: σv 15 % (sensitivity 10 / 20 %), u* 10 %, L 20 % via 1/L (linked to u*³ in the joint
+    draws), umean 5 %, hc 10 % (d, zm, z0), z0 factor 50 % (validity only), WD 7.5°, h 30 % or `h_empirical` = σ_ln
+    of the daily ln(PBLHmod / measured) at the aerosol sites by day). A: one-at-a-time ±1σ, 17 runs per row, plus hc
+    and z0 with the `etc` roughness-sublayer test off (amendment 1, G 2026-11-18; 21 runs per row); B: 50
+    rows per stratum × 50 joint draws × 2 h options; C: attribution by squared standardised regression
+    coefficients. The PBLH-source effect of spec 15 is compared with the 1σ effects and the joint width; ICOS
+    criteria as probabilities. Validity recomputed per run (a validity flip is part of the uncertainty). Not in
+    scope: Monte Carlo climatologies, network-wide Monte Carlo, flux uncertainty. Methods note (to be completed by
+    G): sources of the input uncertainties (EC random-error references for σv and u*, hc reliability from the BIF).
+    Methods note (amendment 1): with the per-site ETC multiplier a site can sit just above the roughness-sublayer
+    limit (FI-Hyy: zm/z0 2.5 % above m), so a +1σ change of hc or z0 removes the half-hour from the `etc` set
+    instead of changing its footprint. The one-at-a-time effects of hc and z0 in the input ranking are therefore
+    computed with the roughness-sublayer test switched off (all other `etc` conditions kept), and the share of their
+    ±1σ runs that fail the test under `etc` is shown beside them: a validity flip is reported as such, never as a
+    zero effect. z0 enters the FFP calls only through validity (umean passed, z0 = NaN), so its effect with the test
+    off is zero by construction and its uncertainty is the flip share alone.
 - Express results using dimensionless zm/h and zm/L.
 - Metrics: change in fetch (peak, 50/70/80/90 %), in the footprint fraction inside the ICOS target area (relative to
   the full footprint; distribution by stability class and difference between cases), in climatology overlap (Jaccard

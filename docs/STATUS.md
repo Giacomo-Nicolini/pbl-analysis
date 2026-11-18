@@ -37,7 +37,8 @@ Last update: 2026-11-03. Read this first in a new session, then `docs/project_pl
 | 09 | Cluster deployment. Part A (PC): config (BIF folder with glob, FLUXNET year spans, `pblh_gamma_default`), per-site driver with run status, SLURM templates and submit script, footprint chunks (c5 storage, chunk list, chunk mode, new cases, measured primary source), network collection and reference-year proposal, one figure style (`pblh_sources_style`, `theme_pblh()`). Part B (cluster runs) by G | 1–5 | Part A merged (`main`, 9656cd1); Part B: BE-Bra/FI-Hyy cluster regression passed (2026-11-02); first network run (job 11449) failed at FR-Bil, FR-Lus, UK-AMo, GL-ZaF (ERA5 0-360 longitudes) and SE-Sto (polar months, cli message): amendment 1 merged (`main`, 6328d4e). Network run on 39 stations: IT-SR2 not run (no L2 data in the L2I 2026 release; `config/sites_not_run.csv`). First collection (job 11546): amendment 2 merged (`main`, ebf4f71): network figure with the PBLHmod IQR bar, GL-ZaF NEE QC: `NEE_CUT_REF_QC` fallback where `NEE_VUT_REF_QC` is entirely missing, and reference-year exception (`config/reference_year_exceptions.csv`), measured steps `meas_std`, `meas_cmp`. Amendment 3 merged (`main`, c9eb5f3): reference year prefers a measured-overlap year at ≥ 80 % of the best year (FI-Hyy → 2022), γ strategy recorded, side-result constants `gamma_med` / `gamma_site` in step 02 (two-pass order), supplementary network figure. Reference years approved (G 2026-11-04, cluster collection 2026-11-04): `config/reference_years.csv` (39 sites, column `approved`), merged (`main`, 268bd34). Footprint run (jobs 11769/11796, 2026-11-05): 27 chunks failed (24 CZ-Lnz target-area mask from the first KML layer only, 1 mask read race, 2 worker ports); fixes merged (`main`, c654af9): mask from all KML layers (union), atomic mask write, worker port with retries, `scripts/08t_target_area_masks.R` (rebuild, invalidation, rerun list) |
 | 13 | Measured MLH from MeteoSwiss / E-PROFILE at DE-RuS, DE-HoH (STRATfinder) and FI-Lom, FR-Fon, FR-Lus (CABAM, new source `meteoswiss_cabam_mlh`); pairing table with station code, WIGOS id, elevation difference, distance class, status; internal QC report (`scripts/13a_meteoswiss_qc.R`); generic spec-10 comparison for one half-hourly aerosol source; footprint pending list (`08c --pending`); measured-source exclusions (`config/measured_exclusions.csv`) and borderline flag; fix of step 08 at the sites without the ±20 % anchor cases; CZ-Lnz BL-View L3 reader prototype (pending data). Licence of the E-PROFILE files to be confirmed: internal use only | 2, 3, 5a | merged (`main`, 90c1da8); FI-Lom KEN row inventory since 2026-11-12 (no overlap) |
 | 14 | Secondary measured sources: DE-Tha SkyVUE PRO built-in MLH (reader with CSV/TXT pairing, CRC-16 and profile-decode checks; `tud_skyvue_mlh`, 3 layers, no layer chosen) and CZ-Lnz BL-View L3 (all versions; `vaisala_blview_mlh`); Part C diagnostics (time-convention lag test, SkyVUE layers, BL-View quality); status `secondary`; explicit column types of standard files; FI-Lom KEN inventory; `09_network_record_start.csv` (ICOS labelling dates) | 2, 3 | merged (`main`, e88dda8); cluster runs by G (`docs/local/cluster_commands_spec14.md`) |
-| 15 | Network footprint summary for the paper (target-area difference, fetch, top 10 % rows, Rebmann criteria and ICOS labelling rule, exceptions; figures and supplement) and γ supplementary tables, in `09_collect.R` | 5 | implemented on `spec-15-footprint-summary` (2026-11-12), to review; collection on the cluster by G (`docs/local/cluster_commands_spec15.md`) |
+| 15 | Network footprint summary for the paper (target-area difference, fetch, top 10 % rows, Rebmann criteria and ICOS labelling rule, exceptions; figures and supplement) and γ supplementary tables, in `09_collect.R` | 5 | merged (`main`, 3e1625f; figure fixes fix-15, c672f8a) |
+| 16 | Footprint uncertainty from the FFP inputs (phase 5b): one-at-a-time (A) and joint Monte Carlo (B) perturbation of σv, u*, L, umean, hc, z0, WD, h at six sites, attribution (C), the PBLH-source effect of spec 15 placed in it; `16a`–`16c` | 5b | implemented on `spec-16-footprint-uncertainty` (2026-11-17), to review; run on the cluster by G (`docs/local/cluster_commands_spec16.md`) |
 
 Phases (see `project_plan.md`): 0 done; 1 done (model, input QC, legacy regression); 2 standard format, three
 sources (spec 04) and the first measured source (spec 07, FI-Hyy) done; 3 BE-Bra (vs ERA5) and FI-Hyy (vs ERA5 and
@@ -334,7 +335,21 @@ measured MLH) done; 4–6 not started.
    as sensitivity rows (column `quality_min` of `config/measured_sites.csv`; standard file unchanged; spec 14
    amendment 1 item 12); 09_collect.R tells expected missing months (not in `chunk_list.csv`, e.g. SE-Myc 2025-07)
    from real gaps. Cluster: `09_collect.R` and 14c CZ-Lnz (`docs/local/cluster_commands_spec15.md`, section
-   "fix-15").
+   "fix-15"). Merged (`main`, c672f8a).
+18. Spec 16 (2026-11-17, `spec-16-footprint-uncertainty`, to review): footprint uncertainty from the FFP inputs
+   (phase 5b). Step 0 on the PC: 100 rows × 17 runs of design A at BE-Bra (test month) in 2,830 s with 2 workers =
+   3.33 s per run per core (1.7–2.1 s single-worker in spec 08); full design ≤ 104,040 A + ≈ 135,000 B runs (the
+   h_empirical night runs equal h_pct30 and are computed once) ≈ 239,000 runs = ≈ 133 CPU-hours at 2 s, ≈ 221 at
+   3.3 s (below the 300 CPU-hour limit; invalid runs are not computed). Chunks sized at 3.3 s, 2 CPUs, ≤ 2 h. PC smoke
+   test on the test month (BE-Bra, FI-Hyy 2022-09, without PBLHmod-clim; 103 / 101 A rows, 6 B rows × 10 draws):
+   16b 3.2–3.3 s per FFP call per core (A); base run = spec-15 value at every row (max |diff| 0 pp, x80 0 m). Test,
+   one month: TA 1σ effects u* > hc ≈ umean > σv ≈ WD > h > L ≈ 0 (z0 validity only); joint width ≈ 3.3 pp vs
+   |ERA5 − PBLHmod| ≈ 0.35 pp. Validity flips: u* 2–3 % (e_ustar); FI-Hyy every +1σ hc and z0 run (e_rsl: zm/z0
+   only 2.5 % above the 08a multiplier 3.7). Amendment 1 (G 2026-11-18): hc and z0 also run with the e_rsl test off
+   (`rsl_off`, 21 runs per row in A); smoke rerun: base still equal (0 pp), FI-Hyy hc 2.4 pp TA / 0.12 ln x80 with
+   the test off (`NA` under `etc`), rsl flips 50 % (BE-Bra 0 %, effects unchanged); 101 extra FFP calls at FI-Hyy, 0
+   at BE-Bra; `16_input_ranking` shows hc and z0 from `rsl_off` with "rsl flips n %". Cluster: 16a, then (after G)
+   the 16b array and 16c (`docs/local/cluster_commands_spec16.md`).
 
 
 ## Data

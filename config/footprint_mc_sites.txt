@@ -1,0 +1,7 @@
+# Spec 16 (phase 5b, G 2026-11-17): sites of the footprint-uncertainty Monte Carlo (one per line)
+FR-Gri
+FR-Fon
+FI-Hyy
+BE-Bra
+CH-Dav
+IT-Ren

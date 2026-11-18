@@ -79,3 +79,11 @@ test_that("tracked SLURM files and the example env hold no machine data", {
   txt <- unlist(lapply(f, readLines, warn = FALSE))
   expect_false(any(grepl("/bigdata|/home/|@unitus|g\\.nicolini|c\\.trotta|ONEFLUX", txt)))
 })
+
+test_that("the Monte Carlo template (spec 16) renders a 16b array", {
+  mc <- render_sbatch(readLines(here::here("slurm", "footprint_mc.sbatch")),
+                      sbatch_values(read_local_env(fake_env(c("SLURM_ARRAY_MAX="))), "/lists_x/mc.csv", 12))
+  expect_true("#SBATCH --array=1-12" %in% mc)
+  expect_true("#SBATCH --job-name=pblh_mc" %in% mc)
+  expect_true(any(grepl("Rscript scripts/16b_mc_run.R --chunk-list=\"/lists_x/mc.csv\"", mc, fixed = TRUE)))
+})
