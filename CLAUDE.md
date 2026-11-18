@@ -323,6 +323,24 @@ so code must be reproducible, documented and traceable to references.
   centre), float32; climatologies (monthly, half-months joined, annual) all from the block sums (sum, upsample,
   smooth, normalise); per-half-hour metrics at 1 m; 80 % regions packed as bitmasks. Old spec-08 chunks stay readable.
 
+## Footprint uncertainty (phase 5b, spec 16; G 2026-11-17)
+
+- Six sites (`config/footprint_mc_sites.txt`: FR-Gri, FR-Fon, FI-Hyy, BE-Bra, CH-Dav, IT-Ren), reference year, rows
+  valid under `etc` for pblhmod, pblhmod_clim and era5 (`common_pe`), subset `valid`; strata zm/L class × day/night,
+  170 rows each, seed per site (`mc_site_seed()`); stratum weights for every site / network statistic.
+- `scripts/16a_mc_sample.R` (sample, design-B deviates, `h_empirical` σ_ln from the aerosol sources, chunk list;
+  no FFP), `16b_mc_run.R` (chunks site × design × part, restartable by hash; `slurm_submit.R --what=mc`,
+  `slurm/footprint_mc.sbatch`), `16c_mc_collect.R` (tables `16_*`, figures `16_input_ranking*`, `16s_*`).
+- FFP through the 08b computation (`ffp_halfhour_run()`, shared with `ffp_chunk_block()`; `ffp_ci_paper()` for x_r):
+  the base run must equal the spec-15 value (0.01 pp). Inputs perturbed relative to L2 (σv 15 %, u* 10 %, L 20 % via
+  1/L, umean 5 %, hc 10 % truncated ±3σ, z0 factor 50 %, WD 7.5°, h 30 % or `h_empirical`); lognormal factors with
+  median 1 and that CV (σ_ln = sqrt(ln(1 + CV²))). Validity recomputed per run under `etc` (08a ETC multiplier
+  kept); invalid runs are not computed and are counted as validity flips. Amendment 1 (G 2026-11-18): hc and z0 also
+  run in A with the e_rsl test off (validity `rsl_off`, other conditions kept); `16_input_ranking` takes hc and z0
+  from `rsl_off` and prints the share of rsl-flipped runs beside them (a flip never reads as a zero effect).
+- With umean (z0 = NaN), x_r depends on zm, h, umean and u* only; L acts on the 2D field only through the sign of zm/L
+  (σy scale constant), so σv, L and WD change x80 only through validity.
+
 ## Cluster runs (spec 09)
 
 - **Per site**: `scripts/run_site.R SITE --steps=01,11a,02,04,08a [--force] [--with-oper]` runs each step in a fresh R

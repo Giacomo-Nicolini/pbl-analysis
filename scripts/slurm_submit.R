@@ -6,10 +6,12 @@
 #                  SLURM_MAX_ARRAY_TASKS (local.env, default 1000; cluster MaxArraySize 1001) is split into
 #                  independent arrays of at most that many tasks, submitted together (SLURM_ARRAY_MAX applies to
 #                  each array)
+#   --what=mc      one task per Monte Carlo chunk of spec 16: <derived_dir>/footprint_mc/chunk_list.csv
+#                  (scripts/16a_mc_sample.R), or --chunk-list=PATH; template slurm/footprint_mc.sbatch, split as chunks
 # Machine settings from slurm/local.env (untracked; template slurm/local.env.example), or --env=PATH.
 # The rendered scripts are written to <output_dir>/slurm/<what>_<timestamp>[_partN].sbatch and printed.
 #
-# Usage: Rscript scripts/slurm_submit.R --what=sites|chunks [--dry-run] [--steps=01,11a,02,04,08a] [--force]
+# Usage: Rscript scripts/slurm_submit.R --what=sites|chunks|mc [--dry-run] [--steps=01,11a,02,04,08a] [--force]
 #          [--with-oper] [--sites-file=PATH] [--chunk-list=PATH] [--env=PATH]
 
 for (f in list.files(here::here("R"), pattern = "\\.R$", full.names = TRUE)) source(f)
@@ -20,7 +22,7 @@ opt <- function(k, def = NULL) {
   if (length(v)) v else def
 }
 what <- opt("what")
-if (!isTRUE(what %in% c("sites", "chunks"))) cli::cli_abort("Use {.code --what=sites} or {.code --what=chunks}.")
+if (!isTRUE(what %in% c("sites", "chunks", "mc"))) cli::cli_abort("Use {.code --what=sites}, {.code --what=chunks} or {.code --what=mc}.")
 dry <- "--dry-run" %in% args
 cfg <- get_cfg()
 env <- read_local_env(opt("env", here::here("slurm", "local.env")))
@@ -48,10 +50,13 @@ if (what == "sites") {
   names(jobs) <- paste0(what, "_", stamp)
   cli::cli_inform("{length(ids)} site{?s} from {.path {src}}.")
 } else {
-  src <- opt("chunk-list", file.path(resolve_path(cfg$derived_dir, must_exist = FALSE), "footprint", "chunk_list.csv"))
-  if (!file.exists(src)) cli::cli_abort("Chunk list {.path {src}} not found: run scripts/08c_make_chunks.R first.")
+  sub_dir <- if (what == "mc") "footprint_mc" else "footprint"
+  src <- opt("chunk-list", file.path(resolve_path(cfg$derived_dir, must_exist = FALSE), sub_dir, "chunk_list.csv"))
+  if (!file.exists(src)) {
+    cli::cli_abort("Chunk list {.path {src}} not found: run scripts/{if (what == 'mc') '16a_mc_sample.R' else '08c_make_chunks.R'} first.")
+  }
   n <- nrow(readr::read_csv(src, show_col_types = FALSE, progress = FALSE))
-  tpl <- readLines(here::here("slurm", "footprint_chunks.sbatch"))
+  tpl <- readLines(here::here("slurm", if (what == "mc") "footprint_mc.sbatch" else "footprint_chunks.sbatch"))
   mx <- if (is.na(env["SLURM_MAX_ARRAY_TASKS"]) || !nzchar(env[["SLURM_MAX_ARRAY_TASKS"]])) 1000L else
     as.integer(env[["SLURM_MAX_ARRAY_TASKS"]])
   parts <- array_parts(n, mx)

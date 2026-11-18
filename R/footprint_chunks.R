@@ -175,6 +175,37 @@ read_reference_years <- function(path, site_ids = NULL) {
   ry[match(site_ids, ry$site_id), need]
 }
 
+#' FFP field and metrics of one half-hour (shared by 08b and the spec-16 Monte Carlo)
+#'
+#' Kljun's code through [ffp_field_halfhour()] (umean only, z0 = NaN, `rslayer = 1`, unsmoothed field), then the
+#' metrics of the smoothed field ([ffp_smooth()], [ffp_field_metrics()]). Guard (spec 08, 2026-10-27): a field with
+#' non-finite cells is recomputed once; cells still non-finite are set to 0 and counted, so they never enter the sums;
+#' metrics with a non-finite domain or target-area fraction are recomputed once. Moved out of `ffp_chunk_block()`
+#' unchanged (spec 16), so that the Monte Carlo runs use exactly the 08b computation.
+#'
+#' @param env Output of [load_ffp_code()].
+#' @param grid [ffp_grid()]; @param mask Target-area mask; @param r_levels Source-area levels [-].
+#' @param zm Measurement height above d [m]; @param h Boundary-layer height [m]; @param umean Mean wind speed
+#'   [m s-1]; @param L Obukhov length [m]; @param sigmav Lateral velocity standard deviation [m s-1];
+#'   @param ustar Friction velocity [m s-1]; @param wind_dir Wind direction [deg].
+#' @return List: `metrics` (one-row tibble: `ffp_ok`, and when `TRUE` `n_nonfinite`, `n_retry` and the columns of
+#'   [ffp_field_metrics()]: `f_domain`, `f_target_area` [-], `area_<r>` [m2], `xmax_<r>` [m], `edge_<r>`), `field`
+#'   (unsmoothed field [m-2] with non-finite cells set to 0, or `NULL` when the code returns an error flag).
+ffp_halfhour_run <- function(env, grid, mask, r_levels, zm, h, umean, L, sigmav, ustar, wind_dir) {
+  fld <- function() ffp_field_halfhour(env, grid, zm, h, umean, L, sigmav, ustar, wind_dir)
+  f <- fld()
+  if (is.null(f)) return(list(metrics = dplyr::tibble(ffp_ok = FALSE), field = NULL))
+  n_retry <- 0L
+  if (any(!is.finite(f))) { f <- fld(); n_retry <- 1L }
+  n_nonfinite <- sum(!is.finite(f))
+  f[!is.finite(f)] <- 0
+  met <- function() ffp_field_metrics(ffp_smooth(f), grid, mask, r_levels, keep_region = NULL)$metrics
+  m <- met()
+  if (!all(is.finite(c(m$f_domain, m$f_target_area)))) { m <- met(); n_retry <- n_retry + 1L }
+  list(metrics = dplyr::bind_cols(dplyr::tibble(ffp_ok = TRUE, n_nonfinite = n_nonfinite, n_retry = n_retry), m),
+       field = f)
+}
+
 # FFP and metrics for the rows `idx` of a task: per-half-hour metrics (1 m field, smoothed) and the 5 m block sums of
 # the unsmoothed fields per group. `env` = load_ffp_code() of the worker.
 ffp_chunk_block <- function(idx, tk, env, grid, mask, r_levels, block) {
@@ -184,23 +215,11 @@ ffp_chunk_block <- function(idx, tk, env, grid, mask, r_levels, block) {
   cnt <- list()
   for (j in seq_along(idx)) {
     i <- idx[j]
-    fld <- function() ffp_field_halfhour(env, grid, rows$zm_m[i], rows$h[i], rows$umean[i], rows$L[i], rows$sigmav[i],
-                                         rows$ustar[i], rows$wind_dir[i])
-    f <- fld()
-    if (is.null(f)) {
-      bm[[j]] <- dplyr::tibble(ffp_ok = FALSE)
-      next
-    }
-    # Guard (spec 08, 2026-10-27): a field with non-finite cells is recomputed once; cells still non-finite are set
-    # to 0 and counted, so they never enter the sums.
-    n_retry <- 0L
-    if (any(!is.finite(f))) { f <- fld(); n_retry <- 1L }
-    n_nonfinite <- sum(!is.finite(f))
-    f[!is.finite(f)] <- 0
-    met <- function() ffp_field_metrics(ffp_smooth(f), grid, mask, r_levels, keep_region = NULL)$metrics
-    m <- met()
-    if (!all(is.finite(c(m$f_domain, m$f_target_area)))) { m <- met(); n_retry <- n_retry + 1L }
-    bm[[j]] <- dplyr::bind_cols(dplyr::tibble(ffp_ok = TRUE, n_nonfinite = n_nonfinite, n_retry = n_retry), m)
+    hr <- ffp_halfhour_run(env, grid, mask, r_levels, rows$zm_m[i], rows$h[i], rows$umean[i], rows$L[i],
+                           rows$sigmav[i], rows$ustar[i], rows$wind_dir[i])
+    bm[[j]] <- hr$metrics
+    if (is.null(hr$field)) next
+    f <- hr$field
     f5 <- ffp_block_sums(f, block)
     for (g in names(tk$grp)) {
       if (!tk$grp[[g]][i]) next

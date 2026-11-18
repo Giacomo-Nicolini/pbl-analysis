@@ -131,7 +131,23 @@ pblh_sources_style <- local({
     row("qc_good", "element", k["blue"], "share quality 0", 14),
     row("qc_window", "element", k["orange"], "share window-flagged", 15),
     row("qc_midday", "element", k["vermillion"], "midday median (10-16 h AST)", 16),
-    row("qc_night", "element", k["blue_dark"], "night median (22-04 h AST)", 17)
+    row("qc_night", "element", k["blue_dark"], "night median (22-04 h AST)", 17),
+    # footprint uncertainty (spec 16): inputs of the Monte Carlo, PBLH-source reference, site and network points
+    row("sigmav", "mc_input", k["blue"], "σv", 1),
+    row("ustar", "mc_input", k["vermillion"], "u*", 2),
+    row("L", "mc_input", k["purple"], "L", 3),
+    row("umean", "mc_input", k["orange"], "umean", 4),
+    row("hc", "mc_input", k["green"], "hc (d, zm, z0)", 5),
+    row("z0f", "mc_input", k["grey"], "z0 factor (validity only)", 6),
+    row("wd", "mc_input", k["sky"], "wind direction", 7),
+    row("h", "mc_input", k["black"], "h (PBLHmod ± 30 %)", 8),
+    row("mc_source_era5", "element", k["vermillion"], "PBLH source: |ERA5 − PBLHmod| (spec 15)", 20, "dashed"),
+    row("mc_source_clim", "element", k["green"], "PBLH source: |PBLHmod-clim − PBLHmod|", 21, "dotted"),
+    row("mc_site", "element", "grey50", "site (median)", 22),
+    row("mc_network", "element", k["black"], "network (median of sites, IQR)", 23),
+    row("mc_one_to_one", "element", "grey40", "1:1", 24, "dashed"),
+    row("mc_rsl_off", "element", "grey40", "rsl test off", 25),
+    row("mc_rsl_flip", "element", "grey30", "rsl flips", 26)
   )
 })
 

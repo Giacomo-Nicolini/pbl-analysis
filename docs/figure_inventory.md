@@ -151,6 +151,29 @@ fix-15 (spec 15 amendment 1): the `09_fp_*` / `09s_fp_*` figures carry a short w
 Derived (not in `tables/`): `<derived_dir>/gamma/network_gamma.csv`, one row: `gamma_med, gamma_med_pooled, n_sites,
 n_days, sites`.
 
+## Footprint uncertainty: steps 16a, 16b, 16c (spec 16, phase 5b)
+
+Six sites (`config/footprint_mc_sites.txt`), reference year, stratified sample (zm/L class × day/night). Derived:
+`<derived_dir>/footprint_mc/<site>_draws.rds` (sample, weights, base inputs, spec-15 values, design-B deviates, seed),
+`chunk_list.csv`, `h_empirical_sigma.csv`, `<site>/<site>_<part>_runs.csv.gz` (one row per run) and `_meta.rds`.
+Every table has a `#` header (definitions, units, seed).
+
+| Table | Grain | Columns | Figures |
+|---|---|---|---|
+| `16_oat_<site>` | sampled row × run (base, each input at −1σ / +1σ; hc and z0 also with validity `rsl_off`, spec 16 amendment 1; design A) | `row_id, timestamp_start_utc, stratum, valid_qc, valid_qc_used, input, side, validity, valid_etc, fail, rsl_fail, valid_run, ffp_ok, ta_pct, d_ta_pp, x80_m, d_lnx80, base_diff_pp, base_diff_x80_m` | `16_input_ranking`, `16_input_ranking_x80`, `16s_validity_flips` |
+| `16_mc_<site>` | design-B row × h option (`h_pct30`, `h_empirical`) | `row_id, stratum, h_option, n_draws, n_valid, share_invalid, ta_p05, ta_p16, ta_p50, ta_p84, ta_p95, lnx80_p05 … lnx80_p95, width_ta_pp, width_lnx80, valid_qc, valid_qc_used` | `16s_mc_width` |
+| `16_attribution_<site>` | stratum (six and `all`) × h option × response (`ta_pp`, `lnx80`) × input | `stratum, h_option, response, input, share, r2, n` | none |
+| `16_network_uncertainty` | kind (`oat_1sigma`, `source_effect`, `joint_width`, `ratio`) × scope (site, network) × site × stratum (six and `all`, stratum-weighted) × quantity (`ta_pp`, `lnx80`) × item (inputs; `hc|rsl_off`, `z0f|rsl_off`) | `kind, scope, site_id, quantity, item, stratum, n, median, p25, p75, share_gt_1s, share_gt_2s, share_rsl_flip` | `16_input_ranking`, `16_input_ranking_x80` |
+| `16_icos_uncertainty` | site × h option × case × criterion (`rebmann_ta90`, `icos_lab_ta70`) | `site_id, h_option, case, criterion, threshold_share, share_base, pass_base, share_p05, share_p50, share_p95, prob_pass, uncertain, n_rows, n_draws, method` | none |
+
+Figures: `16_input_ranking` (paper candidate, Results 3.2) and `16_input_ranking_x80`: 1σ effect per input and
+stratum (facets regime × day/night), sites small points, network large point with the IQR over sites, network
+median |ERA5 − PBLHmod| (and |PBLHmod-clim − PBLHmod|) as reference lines; hc and z0 from the runs without the
+`etc` roughness-sublayer test ("rsl test off"), with the network share of rsl-flipped runs beside them ("rsl flips
+n %"; spec 16 amendment 1); `16s_mc_width`: joint 1σ width vs
+|ERA5 − PBLHmod| per row (log-log, 1:1); `16s_validity_flips`: share of perturbed runs invalid under `etc`, by input
+and stratum. PC smoke-test outputs carry "test, one month" in the headers and subtitles.
+
 ## Stored footprint groups (spec 08 / 09 A5, storage c5)
 
 Each chunk (site × case × month or half-month, `<derived_dir>/footprint/<site>/chunks/<site>_<case>_<part>`) stores:
