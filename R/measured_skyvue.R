@@ -95,21 +95,33 @@ skyvue_fields <- function(x, n, what) {
   matrix(unlist(f), ncol = n, byrow = TRUE)
 }
 
-#' Read a SkyVUE PRO message-006 text file (one day)
+#' Read a SkyVUE PRO message file (message 006 or 004; one day)
 #'
-#' Splits the file into messages at SOH/EOT, checks the message number (006), the seven-line layout
-#' (`CampbellSkyVUEPRO2026`, Sect. 6.3.6) and the CRC-16 of every record (Sect. 6.2). The file carries no time stamp:
-#' records are paired with the CSV export by order ([read_skyvue_day()]).
+#' Splits the file into messages at SOH/EOT, checks the message number, the line layout (`CampbellSkyVUEPRO2026`,
+#' Sect. 6.3.6) and the CRC-16 of every record (Sect. 6.2). The file carries no time stamp: records are paired with
+#' the CSV export by order ([read_skyvue_day()]).
+#'
+#' Message 006: seven lines (header, status, sky condition, profile header, mixing layers, profile, ETX line).
+#' Message 004 (DE-Tha 2025-02-07 to 2025-03-11, before the MLH option; close-out 2026-11-19): six lines, the same
+#' without the mixing-layer line; read with the 006 field layouts of the other lines (the field counts are checked,
+#' so a different layout aborts). Its mixing layers are `NA` ("no MLH option"), not an error. The message type is
+#' read per record.
+#'
+#' A truncated last message (SOH without ETX / EOT at the end of the file; DE-Tha 2026-06-21, 2026-06-28) is dropped,
+#' counted in `n_truncated_dropped` and reported with a warning; the rest of the day is kept. Any other incomplete or
+#' overlapping message aborts.
 #'
 #' @param path Path of `E1227_<ddmmyy>_Midnight.txt` [character].
 #' @param keep_profile Keep the hex profile lines (`profile_hex`, about 10 kB per record) [logical].
-#' @return Tibble, one row per record in file order: `detection_status` (0-6, `/` as `NA`), `warning_alarm` (`0`, `W`,
+#' @return Tibble, one row per record in file order: `message_id` (`"006"`, `"004"`), `detection_status` (0-6, `/` as
+#'   `NA`), `warning_alarm` (`0`, `W`,
 #'   `A`), `window_tr_pct` [%], `h1_m`..`h4_m` [m, line 2 heights], `status_flags` (12 hex characters), `scale_pct`
 #'   [%], `resolution_m` [m], `n_gates` [-], `laser_energy_pct` [%], `laser_temp_c` [degC], `tilt_deg` [deg],
 #'   `background_mv` [mV], `pulses_k` [x 1000], `sample_rate_mhz` [MHz], `bs_sum` [-, line 4 sum], `mlh1_m`..`mlh3_m`
-#'   [m above the instrument; `NA` = `/////`], `mlh1_q`..`mlh3_q` [quality 1-3, 3 = highest confidence; 0 where no
-#'   layer], `crc_ok` [logical], optionally `profile_hex`. Attribute `skyvue_txt_meta`: `file`, `n_records`,
-#'   `n_crc_fail`, `message_id`, `record_bytes` (distinct lengths).
+#'   [m above the instrument; `NA` = `/////` and in message 004], `mlh1_q`..`mlh3_q` [quality 1-3, 3 = highest
+#'   confidence; 0 where no layer, `NA` in message 004], `crc_ok` [logical], optionally `profile_hex`. Attribute
+#'   `skyvue_txt_meta`: `file`, `n_records`, `n_crc_fail`, `message_id` (distinct), `n_004`, `n_truncated_dropped`,
+#'   `record_bytes` (distinct lengths).
 read_skyvue_txt <- function(path, keep_profile = FALSE) {
   if (!file.exists(path)) cli::cli_abort("SkyVUE file {.path {path}} not found.")
   b <- readBin(path, "raw", n = file.size(path))
@@ -117,6 +129,16 @@ read_skyvue_txt <- function(path, keep_profile = FALSE) {
   etx <- which(b == as.raw(3L))
   eot <- which(b == as.raw(4L))
   if (length(soh) == 0) cli::cli_abort("{.path {path}}: no SOH character (not a SkyVUE message file).")
+  # truncated last message: the last SOH has no EOT after it (and at most a dangling ETX): drop it, keep the rest
+  n_trunc <- 0L
+  if (length(soh) == length(eot) + 1L && (length(eot) == 0 || soh[length(soh)] > eot[length(eot)])) {
+    last <- soh[length(soh)]
+    soh <- soh[-length(soh)]
+    etx <- etx[etx < last]
+    n_trunc <- 1L
+    cli::cli_alert_warning("{basename(path)}: truncated last message (byte {last} of {length(b)}, no ETX / EOT) dropped; {length(soh)} complete message{?s} kept.")
+    if (length(soh) == 0) cli::cli_abort("{.path {path}}: no complete message.")
+  }
   if (length(etx) != length(soh) || length(eot) != length(soh) || any(etx <= soh) || any(eot != etx + 5L)) {
     cli::cli_abort("{.path {path}}: SOH / ETX / EOT do not form {length(soh)} complete messages (ETX {length(etx)}, EOT {length(eot)}).")
   }
@@ -137,19 +159,30 @@ read_skyvue_txt <- function(path, keep_profile = FALSE) {
   rm(b, mat)
   lines <- strsplit(txt, "\r\n", fixed = TRUE)
   nl <- lengths(lines)
-  # Lines: 1 header (ends with STX), 2 status, 3 sky condition, 4 profile header, 5 MLH, 6 profile
-  if (any(nl != 6)) cli::cli_abort("{.path {path}}: {sum(nl != 6)} message{?s} without the 6 text lines of message 006 (first record {which(nl != 6)[1]}).")
-  L <- matrix(unlist(lines), ncol = 6, byrow = TRUE)
-  head1 <- sub("\002$", "", L[, 1])
-  if (any(!grepl("^CS.{4}006$", head1))) {
-    cli::cli_abort("{.path {path}}: not message 006 ({.val {unique(head1[!grepl('^CS.{4}006$', head1)])[1]}}).")
+  # Message 006 text lines: 1 header (ends with STX), 2 status, 3 sky condition, 4 profile header, 5 MLH, 6 profile;
+  # message 004: the same without line 5 (5 text lines)
+  head1 <- sub("\002$", "", vapply(lines, `[`, "", 1))
+  mid <- ifelse(grepl("^CS.{4}006$", head1), "006", ifelse(grepl("^CS.{4}004$", head1), "004", NA_character_))
+  if (anyNA(mid)) {
+    cli::cli_abort("{.path {path}}: not message 006 or 004 ({.val {unique(head1[is.na(mid)])[1]}}).")
   }
+  n_exp <- ifelse(mid == "006", 6L, 5L)
+  if (any(nl != n_exp)) {
+    i <- which(nl != n_exp)[1]
+    cli::cli_abort("{.path {path}}: {sum(nl != n_exp)} message{?s} without the {n_exp[i]} text lines of message {mid[i]} (first record {i}).")
+  }
+  ln <- function(k006, k004) vapply(seq_along(lines), function(i) lines[[i]][if (mid[i] == "006") k006 else k004], "")
+  L <- cbind(head1, ln(2, 2), ln(3, 3), ln(4, 4), ifelse(mid == "006", ln(5, 1), NA_character_), ln(6, 5))
+  rm(lines)
+  is6 <- mid == "006"
   s2 <- skyvue_fields(L[, 2], 7, "status")
   s4 <- skyvue_fields(L[, 4], 10, "profile header")
-  s5 <- skyvue_fields(L[, 5], 6, "mixing layer")
+  s5 <- matrix(NA_character_, nrow(L), 6)
+  if (any(is6)) s5[is6, ] <- skyvue_fields(L[is6, 5], 6, "mixing layer")
   num <- function(x) skyvue_num(x)
   ds <- substr(s2[, 1], 1, 1)
   out <- dplyr::tibble(
+    message_id = mid,
     detection_status = suppressWarnings(as.integer(ifelse(ds == "/", NA, ds))),
     warning_alarm = substr(s2[, 1], 2, 2), window_tr_pct = num(s2[, 2]),
     h1_m = num(s2[, 3]), h2_m = num(s2[, 4]), h3_m = num(s2[, 5]), h4_m = num(s2[, 6]), status_flags = s2[, 7],
@@ -164,7 +197,8 @@ read_skyvue_txt <- function(path, keep_profile = FALSE) {
   if (any(bad_len)) cli::cli_abort("{.path {path}}: {sum(bad_len)} profile line{?s} not n_gates x 5 hex characters.")
   if (keep_profile) out$profile_hex <- L[, 6] else attr(out, "profile_head_hex") <- substr(L[, 6], 1, 100)
   attr(out, "skyvue_txt_meta") <- list(file = basename(path), n_records = n_rec, n_crc_fail = sum(!crc_ok),
-                                       message_id = unique(head1), record_bytes = sort(unique(len)))
+                                       message_id = sort(unique(mid)), n_004 = sum(!is6),
+                                       n_truncated_dropped = n_trunc, record_bytes = sort(unique(len)))
   out
 }
 
@@ -178,15 +212,38 @@ read_skyvue_txt <- function(path, keep_profile = FALSE) {
 #' 2025-06-26: status, profile, sky condition, mixing layers and confidences) and `"short"` (7 columns until about
 #' 2025-06-24, before the MLH option: `UTC Timestamp`, `Cloud Base 1..4`, `Vertical Visibility`, `Highest Signal`).
 #'
+#' A CSV without a header line (the first line is a record; DE-Tha 2026-06-22, 2026-06-29; close-out 2026-11-19) is
+#' detected from its first line (a `dd.mm.yyyy HH:MM:SS` time stamp) and read with the header of the layout that
+#' belongs to the day's message type (`message_id`: 006 = full, 004 = short, [skyvue_csv_header()]); the column count
+#' must match that header, else the reader aborts. Attribute `header_missing` = `TRUE` (logged by the caller).
+#'
 #' @param path Path of `E1227_<ddmmyy>_Midnight.csv` [character].
+#' @param message_id Message type of the day's TXT file (`"006"`, `"004"`), needed only for a CSV without a header
+#'   [character].
 #' @return Tibble in file order: `time_end_utc` [POSIXct UTC, end of the record interval], `cloud_base1_m` ..
 #'   `cloud_base4_m`, `vertical_visibility_m`, `highest_signal_m` [m], `ceil_status`, `mlh1_m`..`mlh3_m` [m],
 #'   `mlh1_q`..`mlh3_q` [1-3], `ceil_resolution_m` [m], `profile_csv` (the raw profile field, first 600 characters);
-#'   in the short layout the columns it lacks are `NA`. Attribute `layout` (`"full"` or `"short"`).
-read_skyvue_csv <- function(path) {
+#'   in the short layout the columns it lacks are `NA`. Attributes `layout` (`"full"` or `"short"`) and
+#'   `header_missing` [logical].
+read_skyvue_csv <- function(path, message_id = NULL) {
   if (!file.exists(path)) cli::cli_abort("SkyVUE file {.path {path}} not found.")
-  d <- readr::read_csv(path, col_types = readr::cols(.default = readr::col_character()), na = character(),
-                       progress = FALSE, name_repair = "minimal")
+  first <- readLines(path, n = 1, warn = FALSE)
+  no_header <- length(first) == 1 && grepl("^[0-9]{2}\\.[0-9]{2}\\.[0-9]{4} [0-9]{2}:[0-9]{2}:[0-9]{2},", first)
+  if (no_header) {
+    if (is.null(message_id) || length(message_id) != 1 || !message_id %in% c("006", "004")) {
+      cli::cli_abort("{.path {path}}: no header line, and no single message type (006 / 004) to take the layout from.")
+    }
+    hdr <- skyvue_csv_header(if (message_id == "006") "full" else "short")
+    d <- readr::read_csv(path, col_names = FALSE, col_types = readr::cols(.default = readr::col_character()),
+                         na = character(), progress = FALSE)
+    if (ncol(d) != length(hdr)) {
+      cli::cli_abort("{.path {path}}: no header line; {ncol(d)} columns, the {if (message_id == '006') 'full' else 'short'} layout of message {message_id} has {length(hdr)}.")
+    }
+    names(d) <- hdr
+  } else {
+    d <- readr::read_csv(path, col_types = readr::cols(.default = readr::col_character()), na = character(),
+                         progress = FALSE, name_repair = "minimal")
+  }
   col <- function(pattern) {
     k <- grep(pattern, names(d))
     if (length(k) != 1) cli::cli_abort("{.path {path}}: {length(k)} column{?s} match {.val {pattern}}.")
@@ -223,7 +280,28 @@ read_skyvue_csv <- function(path) {
     profile_csv = if (full) substr(col("^Backscatter Profile\\("), 1, 600) else rep(NA_character_, nrow(d))
   )
   attr(out, "layout") <- layout
+  attr(out, "header_missing") <- no_header
   out
+}
+
+#' Header lines of the two SkyVUE CSV layouts (column names only)
+#'
+#' Full layout: the 26 columns of the DE-Tha export with the MLH option (sample of 2026-07-15); short layout: the 7
+#' columns before it (`UTC Timestamp`, `Cloud Base 1..4`, `Vertical Visibility`, `Highest Signal`; units as in the full
+#' header). Used for a CSV written without its header line ([read_skyvue_csv()]).
+#'
+#' @param layout `"full"` or `"short"`.
+#' @return Column names [character].
+skyvue_csv_header <- function(layout = c("full", "short")) {
+  layout <- match.arg(layout)
+  cb <- paste0("Cloud Base ", 1:4, "( Meters )")
+  if (layout == "short") {
+    return(c("UTC Timestamp", cb, "Vertical Visibility( Meters )", "Highest Signal( Meters )"))
+  }
+  c("UTC Timestamp", cb, "Vertical Visibility( Meters )", "Ceil Status( Status )",
+    "Backscatter Profile( (100000*srad*km)^-1 )", paste0("Sky Condition ", 1:5, "( Oktas )"),
+    paste0("Sky Condition Height ", 1:5, "( Distance )"), paste0("Mixing Layer ", 1:3, "( Meters )"),
+    paste0("Confidence ", 1:3, "( Confidence 1-3 )"), "Highest Signal( Meters )", "Ceil Resolution( Meters )")
 }
 
 #' First gates of the SkyVUE CSV profile field, where the parse is unambiguous
@@ -270,17 +348,37 @@ skyvue_csv_profile_head <- function(x, n = 20L) {
 #' the CSV, the option was not active); the CSV-profile comparison is not available (no profile column) and is
 #' reported as such.
 #'
+#' Close-out 2026-11-19 (DE-Tha days that failed in 14a): message 004 days are read (no mixing-layer line: layers `NA`,
+#' `mlh_note` "no MLH option (message 004)", the MLH comparison skipped on those records); a truncated last TXT message
+#' is dropped ([read_skyvue_txt()]) and, when the CSV has exactly that many more records, the same last CSV rows too
+#' (`n_csv_dropped`; otherwise the count mismatch stands); a CSV without a header line is read with the layout of the
+#' day's message type ([read_skyvue_csv()], `csv_header`). Each case is logged with a warning.
+#'
 #' @param csv,txt Paths of the day's `.csv` and `.txt` files [character].
 #' @param keep_profile Keep the hex profile lines [logical].
 #' @param n_check Profile gates compared with the CSV [-].
 #' @return Tibble of [read_skyvue_txt()] with `time_end_utc` [POSIXct UTC] first. Attribute `skyvue_meta`: `csv`,
-#'   `txt`, `csv_layout` (`full` / `short`), `n_records`, `n_crc_fail`, `profile_check` (`done` / `not available
+#'   `txt`, `csv_layout` (`full` / `short`), `csv_header` (`present` / `missing: layout of message <id>`),
+#'   `message_id`, `n_004` [-], `mlh_note`, `n_truncated_dropped`, `n_csv_dropped` [-],
+#'   `n_records`, `n_crc_fail`, `profile_check` (`done` / `not available
 #'   (short CSV layout)`), `n_profile_records_checked`, `max_rel_diff_profile` [-], `scale_values` [%],
 #'   `interval_s_median` [s].
 read_skyvue_day <- function(csv, txt, keep_profile = FALSE, n_check = 20L) {
-  a <- read_skyvue_csv(csv)
-  layout <- attr(a, "layout")
   b <- read_skyvue_txt(txt, keep_profile = keep_profile)
+  tm <- attr(b, "skyvue_txt_meta")
+  a <- read_skyvue_csv(csv, message_id = if (length(tm$message_id) == 1) tm$message_id else NULL)
+  layout <- attr(a, "layout")
+  if (isTRUE(attr(a, "header_missing"))) {
+    cli::cli_alert_warning("{basename(csv)}: no header line; read with the {layout} layout of message {tm$message_id}.")
+  }
+  # truncated last TXT message: the CSV row of the same (last) record is dropped too, only when the counts differ by
+  # exactly the dropped messages (close-out 2026-11-19); any other difference stays a count mismatch
+  n_csv_drop <- 0L
+  if (tm$n_truncated_dropped > 0 && nrow(a) == nrow(b) + tm$n_truncated_dropped) {
+    n_csv_drop <- tm$n_truncated_dropped
+    a <- a[seq_len(nrow(b)), ]
+    cli::cli_alert_warning("{basename(csv)}: last {n_csv_drop} record{?s} dropped with the truncated TXT message.")
+  }
   if (nrow(a) != nrow(b)) {
     # fix-14a item 10: a count mismatch has its own condition class (skyvue_count_mismatch, fields n_csv and n_txt)
     # so that callers can skip the day instead of counting it as a failed check; no alignment is attempted
@@ -297,12 +395,13 @@ read_skyvue_day <- function(csv, txt, keep_profile = FALSE, n_check = 20L) {
   ok_crc <- b$crc_ok
   cl <- b$detection_status %in% 1:4
   first_bad(!ok_crc | !cl | same(round(a$cloud_base1_m), b$h1_m), "cloud base 1 (detection status 1-4)")
+  is6 <- b$message_id == "006" # message 004 has no mixing-layer line (no MLH option): not compared
   if (layout == "full") {
     for (k in 1:3) {
-      first_bad(!ok_crc | same(a[[paste0("mlh", k, "_m")]], b[[paste0("mlh", k, "_m")]]), paste("mixing layer", k, "heights"))
+      first_bad(!ok_crc | !is6 | same(a[[paste0("mlh", k, "_m")]], b[[paste0("mlh", k, "_m")]]), paste("mixing layer", k, "heights"))
       qa <- dplyr::coalesce(a[[paste0("mlh", k, "_q")]], 0L)
       qb <- dplyr::coalesce(b[[paste0("mlh", k, "_q")]], 0L)
-      first_bad(!ok_crc | qa == qb, paste("mixing layer", k, "confidences"))
+      first_bad(!ok_crc | !is6 | qa == qb, paste("mixing layer", k, "confidences"))
     }
     hex <- if (keep_profile) b$profile_hex else attr(b, "profile_head_hex")
     dec <- skyvue_decode_profile(substr(hex, 1, 5 * n_check), b$scale_pct, gates = seq_len(n_check))
@@ -332,7 +431,13 @@ read_skyvue_day <- function(csv, txt, keep_profile = FALSE, n_check = 20L) {
   }
   out <- dplyr::bind_cols(dplyr::tibble(time_end_utc = a$time_end_utc), b)
   attr(out, "skyvue_meta") <- list(
-    csv = basename(csv), txt = basename(txt), csv_layout = layout, n_records = nrow(out), n_crc_fail = sum(!ok_crc),
+    csv = basename(csv), txt = basename(txt), csv_layout = layout,
+    csv_header = if (isTRUE(attr(a, "header_missing"))) paste("missing: layout of message", tm$message_id) else "present",
+    message_id = paste(tm$message_id, collapse = " "), n_004 = tm$n_004,
+    mlh_note = if (tm$n_004 == nrow(out)) "no MLH option (message 004)" else if (tm$n_004 > 0)
+      paste0("no MLH option on ", tm$n_004, " records (message 004)") else NA_character_,
+    n_truncated_dropped = tm$n_truncated_dropped, n_csv_dropped = n_csv_drop,
+    n_records = nrow(out), n_crc_fail = sum(!ok_crc),
     profile_check = profile_check, n_profile_records_checked = n_prof, max_rel_diff_profile = max_rel,
     scale_values = sort(unique(b$scale_pct)),
     interval_s_median = if (nrow(out) > 1) stats::median(diff(as.numeric(out$time_end_utc))) else NA_real_
