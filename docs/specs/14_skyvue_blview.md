@@ -259,3 +259,22 @@ Cluster results of the 14c diagnostics (DE-Tha July 2026, CZ-Lnz all versions) s
   (`measured_quality_sets()`: `q_ge2` main, `all` and `q3` sensitivity, `q1` and `q2` single classes; column
   `quality_role`); lag test and clear-day diurnal cycle on the main set (`blview_all` and the versions), plus the
   sensitivity series `blview_allq` (every class) and `blview_q3`; column `quality_set` in `14_lag*`.
+
+## Amendment 2 (close-out, G 2026-11-19): SkyVUE reader, the 37 DE-Tha days that failed in 14a
+
+- **Message 004** (6 lines, no MLH; 2025-02-07 to 2025-03-11): read per record; the same line layouts as message 006
+  without the mixing-layer line (status, sky condition, profile header, profile; field counts checked, so another
+  layout aborts). Profiles, cloud and status fields decoded; layers `NA`; day flagged `mlh_note` "no MLH option
+  (message 004)"; not an error. The CSV / TXT MLH comparison is skipped on 004 records.
+- **Truncated last message** (2026-06-21, 2026-06-28): the trailing SOH without ETX / EOT is dropped and logged
+  (`n_truncated_dropped`); when the CSV has exactly that many more records, its last rows are dropped too
+  (`n_csv_dropped`; the truncated message is the last record of the day in both files); the rest of the day is kept.
+  Any other incomplete message still aborts.
+- **CSV without a header** (2026-06-22, 2026-06-29): detected when the first line is a `dd.mm.yyyy HH:MM:SS` record;
+  read with the header of the layout of the day's message type (006 full, 004 short; `skyvue_csv_header()`, column
+  names of the full export), the column count checked; logged (`csv_header`).
+- Record-count check: unchanged (G 2026-11-19): a day with different CSV / TXT counts is skipped and logged (fix-14a
+  item 10), not failed.
+- Day table `14_skyvue_days_<site>` gains `csv_header`, `message_id`, `mlh_note`, `n_truncated_dropped`,
+  `n_csv_dropped`; the 14a log counts each case. Tests on synthetic hand cases (no real data). Cluster rerun: 14a and
+  14c for DE-Tha only (local runbook).

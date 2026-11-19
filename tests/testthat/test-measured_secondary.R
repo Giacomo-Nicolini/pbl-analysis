@@ -31,7 +31,7 @@ fmt_e <- function(v) {
 make_skyvue_day <- function(dir, n = 4, t0 = as.POSIXct("2026-07-15 00:00:09", tz = "UTC"), step = 9,
                             mlh = matrix(c(375, 650, NA), n, 3, byrow = TRUE), conf = matrix(c(2L, 1L, 0L), n, 3, byrow = TRUE),
                             cbh = rep(2802, n), corrupt = integer(), status = rep(1L, n), vv = rep(NA_real_, n),
-                            layout = "full", vv_csv = vv) {
+                            layout = "full", vv_csv = vv, message = "006", truncate_last = FALSE, csv_header_line = TRUE) {
   set.seed(1)
   ints <- matrix(sample(-200:6000, n * 20, replace = TRUE), n, 20)
   ints[, 3] <- 0L # a zero gate: the CSV parse stops there (ambiguous)
@@ -42,15 +42,18 @@ make_skyvue_day <- function(dir, n = 4, t0 = as.POSIXct("2026-07-15 00:00:09", t
   t <- t0 + step * (seq_len(n) - 1)
   for (i in seq_len(n)) {
     h1 <- if (status[i] == 5L) vv[i] else if (status[i] %in% 1:4) cbh[i] else NA # line 2: h1 = VV at status 5
-    body <- paste0("CS0016006\002\r\n",
+    mlh_line <- if (message == "006") { # message 004: no mixing-layer line (close-out 2026-11-19)
+      paste0(paste(m5(mlh[i, 1]), m5(conf[i, 1]), m5(mlh[i, 2]), m5(conf[i, 2]), m5(mlh[i, 3]), m5(conf[i, 3])), "\r\n")
+    } else ""
+    body <- paste0("CS0016", message, "\002\r\n",
                    status[i], "0 096 ", m5(h1), " ///// ///// ///// c00000000000\r\n",
                    "  3 0141  8 0241  0 ////  0 ////  0 ////\r\n",
                    "00100 05 0020 100 +39 00 0096 0020 30 131\r\n",
-                   paste(m5(mlh[i, 1]), m5(conf[i, 1]), m5(mlh[i, 2]), m5(conf[i, 2]), m5(mlh[i, 3]), m5(conf[i, 3])),
-                   "\r\n", hex[i], "\r\n\003")
+                   mlh_line, hex[i], "\r\n\003")
     crc <- crc16_manual(as.integer(charToRaw(body)))
     if (i %in% corrupt) crc <- bitwXor(crc, 1L)
     txt[i] <- paste0("\001", body, sprintf("%04x", crc), "\004\r\n")
+    if (truncate_last && i == n) txt[i] <- substr(txt[i], 1, 60) # file ends inside the last message
     prof <- paste(fmt_e(ints[i, ] * 1e-8), collapse = ",")
     q <- function(x) paste0("\"", x, "\"")
     num <- function(x) ifelse(is.na(x), "/////", gsub(".", ",", format(x, nsmall = 0), fixed = TRUE))
@@ -68,7 +71,7 @@ make_skyvue_day <- function(dir, n = 4, t0 = as.POSIXct("2026-07-15 00:00:09", t
   csv <- file.path(dir, "E1227_150726_Midnight.csv")
   txtf <- file.path(dir, "E1227_150726_Midnight.txt")
   hdr <- if (layout == "full") csv_header else csv_header[c(1:6, 25)] # UTC Timestamp, Cloud Base 1-4, VV, Highest Signal
-  writeLines(c(paste(hdr, collapse = ","), rows), csv)
+  writeLines(c(if (csv_header_line) paste(hdr, collapse = ","), rows), csv)
   writeBin(charToRaw(paste(txt, collapse = "")), txtf)
   list(csv = csv, txt = txtf, ints = ints, t = t)
 }
@@ -225,6 +228,82 @@ test_that("short CSV layout (7 columns, before the MLH option): paired by order,
   # an unknown layout is refused
   writeLines(c("UTC Timestamp,Something( Meters )", "15.07.2026 00:00:09,1"), s$csv)
   expect_error(read_skyvue_csv(s$csv), "unknown SkyVUE CSV layout")
+})
+
+test_that("message 004 (no MLH line): profiles, cloud and status decoded, layers NA, flagged 'no MLH option'", {
+  d <- withr::local_tempdir()
+  st <- c(1L, 0L, 5L, 1L)
+  s <- make_skyvue_day(d, n = 4, status = st, vv = c(NA, NA, 120, NA), layout = "short", message = "004")
+  b <- read_skyvue_txt(s$txt, keep_profile = TRUE)
+  expect_equal(b$message_id, rep("004", 4))
+  expect_true(all(b$crc_ok))
+  expect_equal(b$detection_status, st)
+  expect_equal(b$h1_m, c(2802, NA, 120, 2802))
+  expect_equal(b$window_tr_pct, rep(96, 4))
+  expect_equal(b$n_gates, rep(20L, 4))
+  expect_equal(skyvue_decode_profile(b$profile_hex, b$scale_pct) * 1e8, s$ints * 1, ignore_attr = TRUE)
+  expect_true(all(is.na(b$mlh1_m)) && all(is.na(b$mlh1_q)))
+  expect_equal(attr(b, "skyvue_txt_meta")$n_004, 4L)
+  r <- read_skyvue_day(s$csv, s$txt)
+  m <- attr(r, "skyvue_meta")
+  expect_equal(m$mlh_note, "no MLH option (message 004)")
+  expect_equal(m$message_id, "004")
+  expect_equal(nrow(r), 4)
+  # full CSV layout with message 004: the MLH comparison is skipped on 004 records, profile still checked
+  s2 <- make_skyvue_day(withr::local_tempdir(), n = 3, message = "004")
+  r2 <- read_skyvue_day(s2$csv, s2$txt)
+  expect_equal(attr(r2, "skyvue_meta")$profile_check, "done")
+  expect_true(all(is.na(r2$mlh1_m)))
+  # another message number is still refused
+  s3 <- make_skyvue_day(withr::local_tempdir(), n = 2, message = "002")
+  expect_error(read_skyvue_txt(s3$txt), "not message 006 or 004")
+})
+
+test_that("a truncated last TXT message is dropped with its CSV record; the rest of the day is kept", {
+  d <- withr::local_tempdir()
+  s <- make_skyvue_day(d, n = 4, truncate_last = TRUE)
+  b <- suppressMessages(read_skyvue_txt(s$txt))
+  expect_equal(nrow(b), 3)
+  expect_equal(attr(b, "skyvue_txt_meta")$n_truncated_dropped, 1L)
+  expect_message(r <- read_skyvue_day(s$csv, s$txt), "truncated last message")
+  m <- attr(r, "skyvue_meta")
+  expect_equal(c(m$n_records, m$n_truncated_dropped, m$n_csv_dropped), c(3L, 1L, 1L))
+  expect_equal(r$time_end_utc, s$t[1:3])
+  # CSV with one more record than that (two more than the TXT): still a count mismatch (skipped by 14a, item 10)
+  l <- readLines(s$csv)
+  writeLines(c(l, l[length(l)]), s$csv)
+  e <- tryCatch(suppressMessages(read_skyvue_day(s$csv, s$txt)), error = function(e) e)
+  expect_s3_class(e, "skyvue_count_mismatch")
+  # an incomplete message that is not the last one still aborts
+  raw <- readBin(s$txt, "raw", file.size(s$txt))
+  eot <- which(raw == as.raw(4L))
+  writeBin(raw[-eot[1]], s$txt)
+  expect_error(suppressMessages(read_skyvue_txt(s$txt)), "complete messages|overlapping")
+})
+
+test_that("a CSV without a header line is read with the layout of the message type", {
+  expect_equal(skyvue_csv_header("full"), csv_header)
+  d <- withr::local_tempdir()
+  s <- make_skyvue_day(d, n = 3, csv_header_line = FALSE)
+  expect_error(read_skyvue_csv(s$csv), "no header line")
+  a <- read_skyvue_csv(s$csv, message_id = "006")
+  expect_true(attr(a, "header_missing"))
+  expect_equal(attr(a, "layout"), "full")
+  expect_equal(nrow(a), 3) # the first line is a record, not a header
+  expect_message(r <- read_skyvue_day(s$csv, s$txt), "no header line")
+  m <- attr(r, "skyvue_meta")
+  expect_equal(m$csv_header, "missing: layout of message 006")
+  expect_equal(m$profile_check, "done")
+  expect_equal(r$mlh1_m, rep(375, 3))
+  # short layout from message 004
+  s2 <- make_skyvue_day(withr::local_tempdir(), n = 3, layout = "short", message = "004", csv_header_line = FALSE)
+  r2 <- suppressMessages(read_skyvue_day(s2$csv, s2$txt))
+  expect_equal(attr(r2, "skyvue_meta")$csv_layout, "short")
+  # a column count that does not fit the message type aborts
+  expect_error(read_skyvue_csv(s2$csv, message_id = "006"), "the full layout of message 006 has 26")
+  # with a header: unchanged
+  s3 <- make_skyvue_day(withr::local_tempdir(), n = 2)
+  expect_false(attr(read_skyvue_csv(s3$csv), "header_missing"))
 })
 
 test_that("the real SkyVUE sample passes every pairing and decode check", {

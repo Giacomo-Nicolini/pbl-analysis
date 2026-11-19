@@ -226,7 +226,10 @@ so code must be reproducible, documented and traceable to references.
     (until about 2025-06-24) the CSV has 7 columns (time, cloud bases 1-4, vertical visibility, highest signal): layout
     detected from the header, cloud base and VV checked, no MLH, no profile check; a day with only a CSV or only a TXT
     (2025-06-25) is skipped and listed (fix-14c item 9); a day with different CSV / TXT record counts (June 2025, around the MLH
-    option) is skipped too, `skip_reason` "record count mismatch", no alignment (fix-14a item 10). Standard source
+    option) is skipped too, `skip_reason` "record count mismatch", no alignment (fix-14a item 10). Close-out (G 2026-11-19, spec 14 amendment
+    2): message 004 days (2025-02-07 → 03-11, no MLH line) read with layers NA, `mlh_note` "no MLH option"; a
+    truncated last TXT message dropped (with the matching last CSV record); a CSV without a header read with the
+    header of the day's message type; each logged in the day table. Standard source
     `tud_skyvue_mlh` (`scripts/14a_skyvue_mlh.R`): half-hourly medians of layers 1–3 as `x_layer<k>_*`, `pblh_m`
     `NA`. **Built-in MLH set to `inventory` (G 2026-11-12)**: no daytime growth in any layer (July 2026), confidence 1
     almost always; reader, standard source and profile decoder kept, the raw profiles are the DE-Tha asset for a
