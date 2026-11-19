@@ -268,6 +268,10 @@ test_that("a truncated last TXT message is dropped with its CSV record; the rest
   expect_message(r <- read_skyvue_day(s$csv, s$txt), "truncated last message")
   m <- attr(r, "skyvue_meta")
   expect_equal(c(m$n_records, m$n_truncated_dropped, m$n_csv_dropped), c(3L, 1L, 1L))
+  expect_equal(m$csv_dropped_utc, format(s$t[4], "%Y-%m-%d %H:%M:%S"))
+  expect_message(read_skyvue_day(s$csv, s$txt), format(s$t[4], "%Y-%m-%d %H:%M:%S"), fixed = TRUE)
+  s0 <- make_skyvue_day(withr::local_tempdir(), n = 2) # complete day: nothing dropped
+  expect_true(is.na(attr(read_skyvue_day(s0$csv, s0$txt), "skyvue_meta")$csv_dropped_utc))
   expect_equal(r$time_end_utc, s$t[1:3])
   # CSV with one more record than that (two more than the TXT): still a count mismatch (skipped by 14a, item 10)
   l <- readLines(s$csv)
