@@ -20,11 +20,68 @@ fp_wrap <- function(x, width = 100) {
 #' Caption line explaining the exception mark (spec 15 table 5)
 #'
 #' @param threshold_pp Exception threshold [pp].
+#' @param min_n Smallest number of rows of a flagged cell [-].
 #' @return Text [character].
-fp_exception_caption <- function(threshold_pp = 5) {
+fp_exception_caption <- function(threshold_pp = 5, min_n = 50) {
   paste0("* exception site: |p10| or |p90| of the target-area fraction difference > ", threshold_pp, " pp in at ",
-         "least one zm/L class x day/night stratum, for any case pair (set etc, subset valid_qc_used; ",
-         "09_network_fp_exceptions).")
+         "least one zm/L class x day/night stratum with at least ", min_n, " rows, for any case pair (set etc, subset ",
+         "valid_qc_used; 09_network_fp_exceptions, where cells with fewer rows are listed as below_min_n).")
+}
+
+#' Network footprint figures of spec 15 (main set and the two supplementary variants, top-affected shares)
+#'
+#' Shared by `scripts/09_collect.R` and the re-render from collected tables (`scripts/09r_fp_figures.R`).
+#'
+#' @param fp_out Named list of the network tables ([fp_network_summary()], or read back).
+#' @param site_order Site ids in plotting order ([fp_site_order()]) [character].
+#' @return The figure names written, invisibly (via [save_figure()]).
+fp_network_figures <- function(fp_out, site_order) {
+  ex_sites <- fp_exception_sites(fp_out$exceptions)
+  variants <- list(list(prefix = "09_fp_", set = "etc", subset = "valid_qc_used"),
+                   list(prefix = "09s_fp_kljun_norsl_", set = "kljun_norsl", subset = "valid_qc_used"),
+                   list(prefix = "09s_fp_valid_", set = "etc", subset = "valid"))
+  # fix-15: short subtitle, details in a wrapped caption (titles were clipped); heights per site row
+  lab_of <- function(v) paste0("Validity set ", v$set, ", subset ", v$subset, "; reference year per site")
+  ex <- fp_out$exceptions
+  thr <- if (nrow(ex) && "threshold_pp" %in% names(ex)) ex$threshold_pp[1] else 5
+  mn <- if (nrow(ex) && "min_n" %in% names(ex)) ex$min_n[1] else 50
+  cap_of <- function(extra = NULL) paste(c("Sites by land cover (IGBP), then median PBLHmod h.", extra,
+                                           fp_exception_caption(thr, mn)), collapse = " ")
+  n_ax <- length(site_order) + 1 # sites + network row
+  out <- character()
+  for (v in variants) {
+    ta_v <- fp_out$target_area[fp_out$target_area$set == v$set & fp_out$target_area$subset == v$subset, ]
+    fe_v <- fp_out$fetch[fp_out$fetch$set == v$set & fp_out$fetch$subset == v$subset, ]
+    if (nrow(ta_v)) {
+      p <- plot_fp_site_diff(ta_v, "p10_pp", "median_pp", "p90_pp", site_order, ex_sites,
+                             "Target-area fraction difference [pp] (p10-p90, median)", lab_of(v), cap_of())
+      save_figure(p, paste0(v$prefix, "ta_diff"), 22, fp_fig_height(n_ax, 2))
+      p <- plot_fp_site_diff(fe_v, "p10_lnratio", "median_lnratio", "p90_lnratio", site_order, ex_sites,
+                             "ln(x_80 ratio) [-] (p10-p90, median)", lab_of(v), cap_of())
+      save_figure(p, paste0(v$prefix, "fetch_ratio"), 22, fp_fig_height(n_ax, 2))
+      out <- c(out, paste0(v$prefix, c("ta_diff", "fetch_ratio")))
+    }
+    ic_v <- fp_out$icos_criteria[fp_out$icos_criteria$set == v$set & fp_out$icos_criteria$subset == v$subset, ]
+    if (nrow(ic_v)) {
+      p <- plot_fp_icos_criteria(ic_v, site_order, paste0(lab_of(v), "; labelling rule on valid_qc"), ex_sites,
+                                 cap_of("Cases dodged vertically within each site row (PBLHmod on top)."))
+      save_figure(p, paste0(v$prefix, "icos_criteria"), 22, fp_fig_height(length(site_order), 1, 0.45))
+      out <- c(out, paste0(v$prefix, "icos_criteria"))
+    }
+  }
+  for (s in c("etc", "kljun_norsl")) {
+    tp <- fp_out$topaffected[fp_out$topaffected$selection == "abs_ta_diff (spec 15)" & fp_out$topaffected$set == s &
+                               fp_out$topaffected$pair == "era5_vs_pblhmod", ]
+    if (nrow(tp)) {
+      p <- plot_fp_topaffected(tp, site_order, paste0("Top 10 % |TA difference| ERA5 - PBLHmod; set ", s, ", subset valid"),
+                               paste("Sites by land cover (IGBP), then median PBLHmod h; network bar = pooled",
+                                     "shares (sums to 100 %); median of the site shares in 09_network_fp_topaffected."))
+      f <- if (s == "etc") "09_fp_topaffected" else "09s_fp_kljun_norsl_topaffected"
+      save_figure(p, f, 22, fp_fig_height(n_ax, 1, 0.38))
+      out <- c(out, f)
+    }
+  }
+  invisible(out)
 }
 
 #' Figure height for a site axis (fix-15: 39 sites + network per facet row must stay readable)

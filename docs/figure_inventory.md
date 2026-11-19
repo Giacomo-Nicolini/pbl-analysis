@@ -141,7 +141,8 @@ Standard files (not tables): `<site>__tud_skyvue_mlh`, `<site>__vaisala_blview_m
 | `09_network_fp_fetch` (spec 15) | as `09_network_fp_target_area` | `scope, site_id, set, subset, pair, case_a, case_b, regime, daynight, n, n_sites, p10_lnratio, median_lnratio, p90_lnratio, median_x80_a_m, p90_x80_a_m, median_x80_b_m, p90_x80_b_m` | `09_fp_fetch_ratio`, `09s_fp_*_fetch_ratio` |
 | `09_network_fp_topaffected` (spec 15) | selection × scope × site × set (`etc`, `kljun_norsl`, `kljun`) × pair | `scope, site_id, set, pair, n_rows, threshold_pp, n_top, share_unstable, share_neutral, share_stable, share_regime_stable, share_regime_unstable_diag, share_regime_convective, share_night, share_DJF, share_MAM, share_JJA, share_SON, share_removed_by_qc, share_removed_by_qc_or_used, selection` (`abs_ta_diff (spec 15)`, or `abs_lnx80_era5_pblhmod (step 08)` = aggregation of the per-site `08_topaffected`) | `09_fp_topaffected`, `09s_fp_kljun_norsl_topaffected` (pair ERA5 − PBLHmod; network bar = pooled shares, fix-14c) |
 | `09_network_fp_icos_criteria` (spec 15) | site × set × subset × case | `site_id, set, subset, case, n, share_ta90, pass_ta90, n_stable, share_ta90_stable, pass_ta90_stable, share_ta80, n_lab, icos_lab_share, icos_lab_pass, ta90_differs, ta90_stable_differs, icos_lab_differs` (Rebmann et al. 2018 pp. 475, 487; ICOS labelling rule (ETC) on `valid_qc`) | `09_fp_icos_criteria`, `09s_fp_*_icos_criteria` |
-| `09_network_fp_exceptions` (spec 15) | site × pair × crossed stratum with \|p10\| or \|p90\| > 5 pp (main set `etc`, subset `valid_qc_used`) | `site_id, set, subset, pair, regime, daynight, n, p10_pp, median_pp, p90_pp, smaller_case, median_h_a_m, median_h_b_m, threshold_pp` | marked " *" in `09_fp_ta_diff`, `09_fp_fetch_ratio` |
+| `09_network_fp_exceptions` (spec 15) | site × pair × crossed stratum with \|p10\| or \|p90\| > 5 pp (main set `etc`, subset `valid_qc_used`) | `site_id, set, subset, pair, regime, daynight, n, p10_pp, median_pp, p90_pp, smaller_case, median_h_a_m, median_h_b_m, threshold_pp, min_n, status` (`exception` if n ≥ `min_n` = 50, else `below_min_n`: listed after the exceptions, not flagged; close-out 2026-11-19) | sites with a `status = exception` cell marked " *" in the `09_fp_*` / `09s_fp_*` figures |
+| `09_network_fp_site_order` (close-out 2026-11-19; `#` header) | site | `site_id, igbp, median_h_pblhmod_m, order` (IGBP, then median PBLHmod h of `common_pe`, `etc` / `valid_qc_used`) | site axis of the `09_fp_*` / `09s_fp_*` figures; read by `scripts/09r_fp_figures.R` (re-render from the tables) |
 | `09s_gamma_site` (spec 15) | site | `site_id, igbp, gamma_site, p25, p75, p10, p90, n_days, n_months, months_used` (K m-1) | `09s_gamma_site` |
 | `09s_gamma_network` (spec 15) | one row | `gamma_med, gamma_med_lo95, gamma_med_hi95, gamma_med_pooled, site_median_min, site_median_max, n_sites, n_days, n_boot, seed` | `09s_gamma_site` (line and band) |
 | `09_network_record_start` | site | `site_id, labelling_date, first_valid_utc, last_valid_utc, n_valid` (EC record start = ICOS labelling date, local date of the first valid `pblhmod_default` value; G 2026-11-12, spec 14; reads the step-04 standard file, not a per-site table) | none (supplement table) |
@@ -160,7 +161,7 @@ Every table has a `#` header (definitions, units, seed).
 
 | Table | Grain | Columns | Figures |
 |---|---|---|---|
-| `16_oat_<site>` | sampled row × run (base, each input at −1σ / +1σ; hc and z0 also with validity `rsl_off`, spec 16 amendment 1; design A) | `row_id, timestamp_start_utc, stratum, valid_qc, valid_qc_used, input, side, validity, valid_etc, fail, rsl_fail, valid_run, ffp_ok, ta_pct, d_ta_pp, x80_m, d_lnx80, base_diff_pp, base_diff_x80_m` | `16_input_ranking`, `16_input_ranking_x80`, `16s_validity_flips` |
+| `16_oat_<site>` | sampled row × run (base, each input at −1σ / +1σ; hc and z0 also with validity `rsl_off`, spec 16 amendment 1; design A) | `row_id, timestamp_start_utc, stratum, w_row, valid_qc, valid_qc_used, input, side, validity, valid_etc, fail, rsl_fail, valid_run, ffp_ok, ta_pct, d_ta_pp, x80_m, d_lnx80, base_diff_pp, base_diff_x80_m` | `16_input_ranking`, `16_input_ranking_x80`, `16s_validity_flips` |
 | `16_mc_<site>` | design-B row × h option (`h_pct30`, `h_empirical`) | `row_id, stratum, h_option, n_draws, n_valid, share_invalid, ta_p05, ta_p16, ta_p50, ta_p84, ta_p95, lnx80_p05 … lnx80_p95, width_ta_pp, width_lnx80, valid_qc, valid_qc_used` | `16s_mc_width` |
 | `16_attribution_<site>` | stratum (six and `all`) × h option × response (`ta_pp`, `lnx80`) × input | `stratum, h_option, response, input, share, r2, n` | none |
 | `16_network_uncertainty` | kind (`oat_1sigma`, `source_effect`, `joint_width`, `ratio`) × scope (site, network) × site × stratum (six and `all`, stratum-weighted) × quantity (`ta_pp`, `lnx80`) × item (inputs; `hc|rsl_off`, `z0f|rsl_off`) | `kind, scope, site_id, quantity, item, stratum, n, median, p25, p75, share_gt_1s, share_gt_2s, share_rsl_flip` | `16_input_ranking`, `16_input_ranking_x80` |
@@ -169,10 +170,16 @@ Every table has a `#` header (definitions, units, seed).
 Figures: `16_input_ranking` (paper candidate, Results 3.2) and `16_input_ranking_x80`: 1σ effect per input and
 stratum (facets regime × day/night), sites small points, network large point with the IQR over sites, network
 median |ERA5 − PBLHmod| (and |PBLHmod-clim − PBLHmod|) as reference lines; hc and z0 from the runs without the
-`etc` roughness-sublayer test ("rsl test off"), with the network share of rsl-flipped runs beside them ("rsl flips
-n %"; spec 16 amendment 1); `16s_mc_width`: joint 1σ width vs
-|ERA5 − PBLHmod| per row (log-log, 1:1); `16s_validity_flips`: share of perturbed runs invalid under `etc`, by input
-and stratum. PC smoke-test outputs carry "test, one month" in the headers and subtitles.
+`etc` roughness-sublayer test ("rsl test off", spec 16 amendment 1); one legend below the panels (inputs by colour,
+source references as lines); the caption lists the sites with their reference years and names the site × input cells
+whose runs fail the test under `etc` (close-out 2026-11-19: no network median flip share in the figure);
+`16s_mc_width`: joint 1σ width vs |ERA5 − PBLHmod| per row (log-log, 1:1); `16s_validity_flips`: per site (one panel
+each), share of the runs at −1σ and +1σ invalid under `etc` by input, stratum-weighted (`w_row`), with the share
+failing the roughness-sublayer test in brackets (close-out 2026-11-19; before: pooled over sites by stratum). Titles
+say "reference year per site". PC smoke-test outputs carry "test, one month" in the headers and subtitles.
+`16c --from-tables=DIR` redraws `16_input_ranking`, `16_input_ranking_x80` and `16s_validity_flips` from collected
+tables (`w_row` missing in tables before the close-out: weights from the eligible rows per stratum of
+`09_network_fp_target_area`, set `etc`, subset `valid`, checked against the sample).
 
 ## Stored footprint groups (spec 08 / 09 A5, storage c5)
 

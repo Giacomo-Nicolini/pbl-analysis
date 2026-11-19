@@ -322,15 +322,40 @@ fp_icos_criteria_table <- function(r, set, subset, cases = c("pblhmod", "pblhmod
 
 #' Network table 5: exceptions, |p10| or |p90| of the TA difference above a threshold in a regime x day/night stratum
 #'
-#' The threshold (5 pp) is a reporting choice (spec 15). Only the crossed strata (no `all` margin), per site.
+#' The threshold (5 pp) is a reporting choice (spec 15). Only the crossed strata (no `all` margin), per site. A cell
+#' with fewer than `min_n` rows is not flagged: it is listed with `status = "below_min_n"` after the exceptions
+#' (close-out 2026-11-19, G: min n 50; p10 / p90 of a few rows are not a stratum statistic).
 #'
 #' @param ta Output of [fp_target_area_table()].
 #' @param r Pooled rows (for the median h per case in the stratum).
 #' @param threshold_pp Threshold [pp].
+#' @param min_n Smallest number of rows of a flagged cell [-].
 #' @return Tibble: `site_id`, `set`, `subset`, `pair`, `regime`, `daynight`, `n`, `p10_pp`, `median_pp`, `p90_pp`,
 #'   `smaller_case` (case with the smaller TA: sign of the median difference; `equal` at 0), `median_h_a_m`,
-#'   `median_h_b_m` [m], `threshold_pp`.
-fp_exceptions_table <- function(ta, r, threshold_pp = 5) {
+#'   `median_h_b_m` [m], `threshold_pp`, `min_n`, `status` (`exception`, `below_min_n`) ([fp_exception_status()]).
+fp_exceptions_table <- function(ta, r, threshold_pp = 5, min_n = 50) {
+  fp_exception_status(fp_exceptions_cells(ta, r, threshold_pp), min_n)
+}
+
+#' Exception status of the cells above the threshold: `exception` if n >= `min_n`, else `below_min_n`
+#'
+#' Also applied to a collected `09_network_fp_exceptions.csv` written before the minimum (re-render, close-out
+#' 2026-11-19).
+#'
+#' @param ex Cells above the threshold (columns of [fp_exceptions_table()] up to `threshold_pp`).
+#' @param min_n Smallest number of rows of a flagged cell [-].
+#' @return `ex` with `min_n` and `status`, exceptions first (order otherwise kept).
+fp_exception_status <- function(ex, min_n = 50) {
+  ex$min_n <- rep(min_n, nrow(ex))
+  ex$status <- ifelse(ex$n >= min_n, "exception", "below_min_n")
+  ex[order(ex$status != "exception"), ]
+}
+
+#' Sites with at least one exception (status `exception`) [character]
+#' @param ex Output of [fp_exceptions_table()].
+fp_exception_sites <- function(ex) unique(ex$site_id[ex$status %in% "exception"])
+
+fp_exceptions_cells <- function(ta, r, threshold_pp = 5) {
   x <- if (nrow(ta) == 0) ta else ta[ta$scope == "site" & ta$regime != "all" & ta$daynight != "all" &
                                        (abs(ta$p10_pp) > threshold_pp | abs(ta$p90_pp) > threshold_pp), ]
   if (nrow(x) == 0) {
@@ -444,12 +469,13 @@ fp_topaffected_step08 <- function(tabs) {
 #' @param top_sets Validity sets of table 3 [character].
 #' @param main_set,main_subset Set and subset of tables 4, 5 [character].
 #' @param threshold_pp Exception threshold [pp] (reporting choice).
+#' @param min_n Smallest number of rows of a flagged exception cell [-] (close-out 2026-11-19).
 #' @param step08_top Output of [fp_topaffected_step08()] (added to table 3) or `NULL`.
 #' @return Named list: `target_area`, `fetch`, `topaffected`, `icos_criteria`, `exceptions`; the ICOS table also for
 #'   the sensitivity sets x subsets (column `set`, `subset`).
 fp_network_summary <- function(rows, sets = c("etc", "kljun_norsl"), subsets = c("valid", "valid_qc_used"),
                                top_sets = c("etc", "kljun_norsl", "kljun"), main_set = "etc",
-                               main_subset = "valid_qc_used", threshold_pp = 5, step08_top = NULL) {
+                               main_subset = "valid_qc_used", threshold_pp = 5, min_n = 50, step08_top = NULL) {
   ta <- fp_target_area_table(rows, sets, subsets)
   fe <- fp_fetch_table(rows, sets, subsets)
   top <- dplyr::mutate(fp_topaffected_table(rows, top_sets), selection = "abs_ta_diff (spec 15)")
@@ -457,15 +483,29 @@ fp_network_summary <- function(rows, sets = c("etc", "kljun_norsl"), subsets = c
   ic <- dplyr::bind_rows(lapply(sets, function(s) dplyr::bind_rows(lapply(subsets, function(u) {
     fp_icos_criteria_table(rows, s, u)
   }))))
-  ex <- fp_exceptions_table(ta[ta$set == main_set & ta$subset == main_subset, ], rows, threshold_pp)
+  ex <- fp_exceptions_table(ta[ta$set == main_set & ta$subset == main_subset, ], rows, threshold_pp, min_n)
   list(target_area = ta, fetch = fe, topaffected = top, icos_criteria = ic, exceptions = ex)
+}
+
+#' Site order of the network footprint figures: land cover (IGBP), then the median PBLHmod h of the main rows
+#'
+#' @param rows Pooled rows ([fp_site_rows()]); @param igbp Land cover per site (names = site ids) [character].
+#' @param set,subset Main set and subset.
+#' @return Tibble `site_id`, `igbp`, `median_h_pblhmod_m` [m], `order` [-] (written as
+#'   `09_network_fp_site_order.csv`, so that the figures can be redrawn from the tables).
+fp_site_order <- function(rows, igbp, set = "etc", subset = "valid_qc_used") {
+  cm <- fp_common(rows, set, subset)
+  sites <- names(igbp)
+  mh <- tapply(rows$h__pblhmod[cm], rows$site_id[cm], stats::median)[sites]
+  o <- order(igbp, mh)
+  dplyr::tibble(site_id = sites[o], igbp = unname(igbp[o]), median_h_pblhmod_m = as.numeric(mh[o]), order = seq_along(o))
 }
 
 #' Header lines of the network footprint tables (definitions, sign convention, units)
 #'
 #' @param threshold_pp Exception threshold [pp].
 #' @return Named list of character vectors (one per table of [fp_network_summary()]).
-fp_table_headers <- function(threshold_pp = 5) {
+fp_table_headers <- function(threshold_pp = 5, min_n = 50) {
   common <- c(
     "Spec 15 network footprint summary (scripts/09_collect.R, R/footprint_network.R); reference year per site.",
     "Pairs: difference = first case minus second (era5 - pblhmod, pblhmod_clim - pblhmod, era5 - pblhmod_clim).",
@@ -486,6 +526,7 @@ fp_table_headers <- function(threshold_pp = 5) {
       "*_differs = TRUE where pass / fail differs between the cases at the site."),
     exceptions = c(common,
       sprintf("Exception = |p10| or |p90| of TA(a) - TA(b) above %g pp in a regime x day/night stratum of a site (threshold: a reporting choice, spec 15); main set and subset only.", threshold_pp),
+      sprintf("status: exception if the cell has n >= %g rows (min_n), else below_min_n (listed after the exceptions, not flagged; close-out 2026-11-19).", min_n),
       "smaller_case = case with the smaller TA (sign of the median difference); median_h_a_m, median_h_b_m = median PBLH of the two cases on the stratum rows [m]."))
 }
 

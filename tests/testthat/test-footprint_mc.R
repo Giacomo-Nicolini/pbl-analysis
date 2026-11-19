@@ -124,6 +124,35 @@ test_that("rsl_off runs: hc and z0 valid without e_rsl, same FFP inputs as the e
   expect_s3_class(p, "ggplot")
   lab <- ggplot2::ggplot_build(p)$layout$panel_scales_y[[1]]$get_labels()
   expect_true(any(grepl("rsl test off", lab)))
+  # close-out 2026-11-19: one legend (inputs by colour, source references as lines), no flip text in the ranking
+  expect_false(any(vapply(p$layers, function(l) inherits(l$geom, "GeomText"), logical(1))))
+  expect_equal(p$scales$get_scales("linetype")$guide, "none")
+  expect_true("w_row" %in% names(oat))
+  # flip shares per site: hc and z0 fail e_rsl at +1 sigma only -> 50 % of their runs
+  fs <- mc_flip_shares(dplyr::mutate(oat, site_id = "XX-Tst"))
+  expect_equal(fs$share_invalid[fs$input == "hc"], 0.5)
+  expect_equal(fs$share_rsl[fs$input == "z0f"], 0.5)
+  expect_equal(fs$share_invalid_plus[fs$input == "hc"], 1)
+  expect_equal(fs$share_invalid[fs$input == "umean"], 0)
+  expect_s3_class(plot_mc_validity_flips(fs), "ggplot")
+})
+
+test_that("flip shares are stratum-weighted; weights from eligible counts match mc_sample()", {
+  set.seed(1)
+  st <- c(rep("unstable_day", 30), rep("stable_night", 4))
+  smp <- mc_sample(st, 10) # 10 of 30, all 4
+  smp$row_id <- seq_len(nrow(smp))
+  oat <- dplyr::bind_rows(lapply(c(-1, 1), function(sd) dplyr::tibble(
+    site_id = "XX-Tst", row_id = smp$row_id, stratum = smp$stratum, input = "ustar", side = sd, validity = "etc",
+    valid_etc = smp$stratum == "unstable_day", rsl_fail = FALSE)))
+  w <- mc_weights_from_counts(oat, dplyr::tibble(site_id = "XX-Tst", stratum = c("unstable_day", "stable_night"),
+                                                 n_stratum = c(30, 4)))
+  expect_equal(w$w_row, smp$w_row[match(w$row_id, smp$row_id)])
+  fs <- mc_flip_shares(w)
+  expect_equal(fs$share_invalid, 4 / 34) # eligible share of the stable stratum, not 4 / 14 of the sample
+  expect_error(mc_weights_from_counts(oat, dplyr::tibble(site_id = "XX-Tst", stratum = c("unstable_day", "stable_night"),
+                                                         n_stratum = c(30, 9))), "do not match")
+  expect_error(mc_flip_shares(dplyr::select(oat, -dplyr::any_of("w_row"))), "w_row")
 })
 
 test_that("validity: zm/L at the stable (1) and unstable (-15.5) limits", {

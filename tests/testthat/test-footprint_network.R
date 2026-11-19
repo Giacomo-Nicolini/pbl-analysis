@@ -108,8 +108,18 @@ test_that("exceptions: |p10| or |p90| strictly above the threshold, in crossed s
                   h = list(pblhmod = 300, pblhmod_clim = 300, era5 = 900))      # -5.01 pp
   r <- dplyr::bind_rows(r1, r2)
   ta <- fp_target_area_table(r, "etc", "valid_qc_used")
-  ex <- fp_exceptions_table(ta, r, 5)
+  ex <- fp_exceptions_table(ta, r, 5, min_n = 10)
   expect_equal(unique(ex$site_id), "XX-Bbb")
+  expect_true(all(ex$status == "exception"))
+  # close-out 2026-11-19: a cell below the minimum n is listed, not flagged
+  ex50 <- fp_exceptions_table(ta, r, 5)
+  expect_equal(nrow(ex50), nrow(ex))
+  expect_true(all(ex50$status == "below_min_n"))
+  expect_equal(fp_exception_sites(ex50), character())
+  expect_equal(fp_exception_sites(ex), "XX-Bbb")
+  st <- fp_exception_status(data.frame(site_id = c("A", "B", "C"), n = c(3, 50, 28)), 50)
+  expect_equal(st$site_id, c("B", "A", "C")) # exceptions first
+  expect_equal(st$status, c("exception", "below_min_n", "below_min_n"))
   e <- ex[ex$pair == "era5_vs_pblhmod", ]
   expect_equal(nrow(e), 1) # crossed stratum only (stable x night), not the margins
   expect_equal(c(e$regime, e$daynight), c("stable", "night"))

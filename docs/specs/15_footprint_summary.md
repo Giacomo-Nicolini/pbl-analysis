@@ -95,8 +95,8 @@ Code: `R/footprint_network.R` (row table, the five tables, ICOS criteria, γ tab
   In the figure, the bar of the network median of the site shares need not sum to 100 %.
 - **ICOS criteria.** Rebmann on `common_pe` of the given set × subset (all rows; stable = zm/L class); ICOS
   labelling rule on `common_pe` of (set, `valid_qc`); the pass flags (≥ 50 %, ≥ 70 % share) include the boundary.
-- **Exceptions.** Strictly above 5 pp (|p10| or |p90|), crossed strata only, main set and subset; no minimum n
-  (n reported).
+- **Exceptions.** Strictly above 5 pp (|p10| or |p90|), crossed strata only, main set and subset; n reported.
+  Minimum n 50 rows per site × stratum since the close-out (amendment 2): cells below it are listed, not flagged.
 - **Figures.** Sites ordered by land cover (IGBP, `config/sites.csv`), then median PBLHmod h of the main rows;
   exceptions marked with " *"; network rows at the bottom. The top-affected figure shows the ERA5 − PBLHmod pair.
 - **γ.** `gamma_site_table()`: quantiles of the valid daily ERA5 γ per site, year-months and calendar months used;
@@ -133,3 +133,17 @@ Code: `R/footprint_network.R` (row table, the five tables, ICOS criteria, γ tab
   rows and its missing chunks are expected (info line; e.g. SE-Myc 2025-07); a listed case-month without a chunk on
   disk is a real gap (danger line, counted; rerun with `08c --pending`); without the chunk list the cause is reported
   as unknown (`fp_classify_missing()`, `fp_missing_messages()`).
+
+## Amendment 2: minimum n of the exception cells (G 2026-11-19, close-out)
+
+- A site × stratum cell is flagged only with at least 50 rows (`fp_exceptions_table(min_n = 50)`): p10 / p90 of a few
+  rows are not a stratum statistic. `09_network_fp_exceptions` gains `min_n` and `status` (`exception`,
+  `below_min_n`); the cells below the minimum follow the exceptions in the same table and do not mark the site.
+  The caption (`fp_exception_caption()`) states the minimum.
+- Cluster tables of 2026-11-13, reclassified: exceptions CH-Dav, DE-Tha, IT-Ren (cells n 59–609); below the minimum
+  FR-Fon unstable night (n 3), DE-HoH unstable night (n 28) and IT-Ren unstable night (n 27; IT-Ren stays an
+  exception from its other cells). FR-Fon and DE-HoH lose the " *".
+- `09_collect.R` writes `09_network_fp_site_order.csv` (IGBP, median PBLHmod h); `scripts/09r_fp_figures.R --tables=DIR
+  [--site-order=...] [--min-n=50]` redraws the `09_fp_*` / `09s_fp_*` figures and the exceptions table from collected
+  tables (the figure code is shared: `fp_network_figures()`). The 2026-11-13 tables predate the site-order file: the
+  order was taken from the cluster figure.

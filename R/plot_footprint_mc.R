@@ -15,11 +15,12 @@ mc_strata_facets <- function(d) {
 #' @param quantity `"ta_pp"` (TA fraction [pp]) or `"lnx80"` (ln x80 [-]).
 #' @param subtitle,caption Texts (wrapped).
 #' @param rsl_off Inputs whose effect is taken from the runs without the e_rsl test (items `<input>|rsl_off`, spec 16
-#'   amendment 1), labelled "rsl test off"; for these (and any input with a flip) the network share of runs that fail
-#'   e_rsl is written beside the points, so that a flip never reads as a zero effect.
+#'   amendment 1), labelled "rsl test off". Their share of runs failing e_rsl under the etc set is shown per site in
+#'   [plot_mc_validity_flips()] (close-out 2026-11-19: no network median here).
 #' @return A ggplot: inputs on y (ordered by the network median over all strata, largest on top), the 1-sigma effect
 #'   on x; sites as small points, network as the large point with the IQR over sites; vertical reference lines at the
-#'   network median |ERA5 - PBLHmod| (and |PBLHmod-clim - PBLHmod|) of the stratum.
+#'   network median |ERA5 - PBLHmod| (and |PBLHmod-clim - PBLHmod|) of the stratum. One legend below the panels:
+#'   inputs by colour (points) and the PBLH-source references (lines).
 plot_mc_input_ranking <- function(s, quantity = "ta_pp", subtitle = NULL, caption = NULL, rsl_off = c("hc", "z0f")) {
   d <- s[s$kind == "oat_1sigma" & s$quantity == quantity, ]
   ro <- paste0(rsl_off, "|rsl_off")
@@ -28,44 +29,50 @@ plot_mc_input_ranking <- function(s, quantity = "ta_pp", subtitle = NULL, captio
   d$item[d$item %in% paste0(have, "|rsl_off")] <- sub("\\|rsl_off$", "", d$item[d$item %in% paste0(have, "|rsl_off")])
   net_all <- d[d$scope == "network" & d$stratum == "all", ]
   d <- mc_strata_facets(d)
+  src_all <- c("mc_source_era5", "mc_source_clim")
   ref <- mc_strata_facets(s[s$kind == "source_effect" & s$quantity == quantity & s$scope == "network", ])
   ref$id <- ifelse(ref$item == "era5_vs_pblhmod", "mc_source_era5", "mc_source_clim")
   ref <- ref[!is.na(ref$median), ]
+  src <- src_all[src_all %in% ref$id]
   ids <- style_ids("mc_input", unique(d$item))
   ord <- ids[order(net_all$median[match(ids, net_all$item)], na.last = FALSE)]
-  labs <- style_of(ord, "label", "mc_input")
+  labs <- stats::setNames(style_of(ord, "label", "mc_input"), ord)
   labs[ord %in% have] <- paste0(labs[ord %in% have], ", ", style_of("mc_rsl_off", "label", "element"))
   d$item <- factor(d$item, levels = ord)
   site <- d[d$scope == "site", ]
   net <- d[d$scope == "network", ]
-  fl <- net[!is.na(net$share_rsl_flip) & (net$item %in% have | net$share_rsl_flip > 0), ]
-  fl$txt <- paste0(style_of("mc_rsl_flip", "label", "element"), " ", round(100 * fl$share_rsl_flip), " %")
   xl <- if (quantity == "ta_pp") "1σ effect on the target-area fraction [pp]" else "1σ effect on ln x80 [-]"
+  # one legend: inputs (top to bottom as on the y axis) as points, then the source references as lines
+  brk <- c(rev(ord), src)
+  n_in <- length(ord)
+  cols <- stats::setNames(c(style_of(ids, "colour", "mc_input"), style_of(src_all, "colour", "element")), c(ids, src_all))
+  lts <- stats::setNames(style_of(src_all, "linetype", "element"), src_all)
   g <- ggplot2::ggplot(mapping = ggplot2::aes(y = item)) +
-    ggplot2::geom_vline(data = ref, ggplot2::aes(xintercept = median, linetype = id, colour = id), linewidth = 0.5) +
+    ggplot2::geom_vline(data = ref, ggplot2::aes(xintercept = median, linetype = id, colour = id), linewidth = 0.5,
+                        key_glyph = "path") +
     ggplot2::geom_point(data = site, ggplot2::aes(x = median), colour = style_of("mc_site", "colour", "element"),
                         size = 0.9, na.rm = TRUE) +
     ggplot2::geom_errorbar(data = net, ggplot2::aes(xmin = p25, xmax = p75, colour = item), width = 0, linewidth = 0.5,
-                           orientation = "y", na.rm = TRUE) +
+                           orientation = "y", na.rm = TRUE, show.legend = FALSE) +
     ggplot2::geom_point(data = net, ggplot2::aes(x = median, colour = item), size = 2.2, na.rm = TRUE) +
-    ggplot2::geom_text(data = fl, ggplot2::aes(x = Inf, label = txt), hjust = 1.03, vjust = 0.5, size = 2.5,
-                       colour = style_of("mc_rsl_flip", "colour", "element")) +
     ggplot2::facet_grid(daynight ~ regime) +
-    ggplot2::scale_colour_manual(values = c(style_of(ids, "colour", "mc_input"),
-                                            style_of(c("mc_source_era5", "mc_source_clim"), "colour", "element")),
-                                 breaks = c("mc_source_era5", "mc_source_clim"),
-                                 labels = style_of(c("mc_source_era5", "mc_source_clim"), "label", "element"), name = NULL) +
-    ggplot2::scale_linetype_manual(values = style_of(c("mc_source_era5", "mc_source_clim"), "linetype", "element"),
-                                   labels = style_of(c("mc_source_era5", "mc_source_clim"), "label", "element"), name = NULL) +
+    ggplot2::scale_colour_manual(values = cols, breaks = brk, labels = c(labs[rev(ord)], style_of(src, "label", "element")),
+                                 name = NULL, guide = ggplot2::guide_legend(
+                                   ncol = 3, byrow = FALSE,
+                                   override.aes = list(linetype = c(rep("blank", n_in), lts[src]),
+                                                       shape = c(rep(16, n_in), rep(NA, length(src))),
+                                                       size = c(rep(2.2, n_in), rep(NA, length(src))),
+                                                       linewidth = c(rep(0, n_in), rep(0.6, length(src)))))) +
+    ggplot2::scale_linetype_manual(values = lts, guide = "none") +
     ggplot2::scale_y_discrete(labels = labs) +
     ggplot2::labs(x = xl, y = NULL, subtitle = fp_wrap(subtitle), caption = fp_wrap(caption, 130)) +
     theme_pblh()
-  # right margin of each panel kept free for the flip shares (written on the input's row, never over a point)
-  ex <- ggplot2::expansion(mult = c(0.03, if (nrow(fl)) 0.6 else 0.05))
+  ex <- ggplot2::expansion(mult = c(0.03, 0.05))
   g <- g + if (quantity == "ta_pp") ggplot2::scale_x_continuous(trans = "sqrt", expand = ex) else
     ggplot2::scale_x_continuous(expand = ex)
-  g <- g + ggplot2::theme(panel.spacing.x = ggplot2::unit(1.2, "lines"))
-  g
+  g + ggplot2::theme(panel.spacing.x = ggplot2::unit(1.2, "lines"), legend.position = "bottom",
+                     legend.key.width = ggplot2::unit(1.6, "lines"), legend.key.height = ggplot2::unit(0.8, "lines"),
+                     legend.key.spacing.y = ggplot2::unit(0, "lines"))
 }
 
 #' Joint 1-sigma width against the PBLH-source effect, per row
@@ -91,24 +98,29 @@ plot_mc_width <- function(mc, src, h_option = "h_pct30", floor_pp = 0.001, subti
     theme_pblh()
 }
 
-#' Share of perturbed runs that become invalid (design A), by input and stratum
+#' Share of perturbed runs that become invalid under the etc set (design A), per site and input
 #'
-#' @param oat Bound [mc_oat_table()] outputs (all sites).
+#' @param fs Output of [mc_flip_shares()].
 #' @param subtitle,caption Texts.
-#' @return A ggplot (bars per input, facets by stratum).
-plot_mc_validity_flips <- function(oat, subtitle = NULL, caption = NULL) {
-  o <- oat[oat$input != "base", ]
-  if ("validity" %in% names(o)) o <- o[o$validity == "etc", ] # flips under the etc set (rsl_off runs excluded)
-  d <- dplyr::summarise(dplyr::group_by(o, stratum, input), share = mean(!valid_etc), n = dplyr::n(), .groups = "drop")
-  d <- mc_strata_facets(d)
-  ids <- style_ids("mc_input", unique(d$input))
-  d$input <- factor(d$input, levels = rev(ids))
-  ggplot2::ggplot(d, ggplot2::aes(100 * share, input, fill = input)) +
-    ggplot2::geom_col(width = 0.7) +
-    ggplot2::facet_grid(daynight ~ regime) +
+#' @return A ggplot: one panel per site, bars per input (share of the runs at -1 and +1 sigma invalid, stratum-weighted),
+#'   the value written beside each non-zero bar with the share failing the e_rsl test in brackets.
+plot_mc_validity_flips <- function(fs, subtitle = NULL, caption = NULL) {
+  ids <- style_ids("mc_input", unique(fs$input))
+  fs$input <- factor(fs$input, levels = rev(ids))
+  pc <- function(p) ifelse(p < 5e-4, "< 0.1", ifelse(p < 0.01, sprintf("%.1f", 100 * p), sprintf("%.0f", 100 * p)))
+  fs$txt <- ifelse(fs$share_invalid > 0,
+                   paste0(pc(fs$share_invalid), " %",
+                          ifelse(fs$share_rsl > 0, paste0(" (", style_of("mc_rsl_flip", "label", "element"), " ",
+                                                          pc(fs$share_rsl), " %)"), "")), "")
+  ggplot2::ggplot(fs, ggplot2::aes(100 * share_invalid, input)) +
+    ggplot2::geom_col(ggplot2::aes(fill = input), width = 0.7) +
+    ggplot2::geom_text(ggplot2::aes(label = txt), hjust = -0.05, size = 2.4,
+                       colour = style_of("mc_rsl_flip", "colour", "element")) +
+    ggplot2::facet_wrap(~site_id, ncol = 3) +
     ggplot2::scale_fill_manual(values = style_of(ids, "colour", "mc_input"), guide = "none") +
     ggplot2::scale_y_discrete(labels = style_of(ids, "label", "mc_input")) +
+    ggplot2::scale_x_continuous(limits = c(0, 100), breaks = seq(0, 100, 25), expand = ggplot2::expansion(mult = c(0, 0.02))) +
     ggplot2::labs(x = "Perturbed runs (−1σ and +1σ) invalid under the etc set [%]", y = NULL,
                   subtitle = fp_wrap(subtitle), caption = fp_wrap(caption, 130)) +
-    theme_pblh()
+    theme_pblh() + ggplot2::theme(panel.spacing.x = ggplot2::unit(1.2, "lines"))
 }
