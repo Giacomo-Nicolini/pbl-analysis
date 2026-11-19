@@ -15,7 +15,7 @@
 #   are read, layers NA, mlh_note "no MLH option (message 004)"; a truncated last TXT message is dropped (and the
 #   matching last CSV record), the rest of the day kept; a CSV without a header line is read with the header layout
 #   of the day's message type. Each is logged and listed in the day table (mlh_note, n_truncated_dropped,
-#   n_csv_dropped, csv_header, message_id). The count-mismatch rule of item 10 is unchanged (skipped, not failed).
+#   n_csv_dropped with csv_dropped_utc, csv_header, message_id). The count-mismatch rule of item 10 is unchanged (skipped, not failed).
 # Pairing: provider "TU Dresden" in config/measured_sites.csv (status secondary).
 # Output: <standard_dir>/<site>/<site>__tud_skyvue_mlh.csv.gz + .yml; <output_dir>/tables/internal/
 #   14_skyvue_days_<site>.csv (one row per day file pair: records, CRC failures, records with MLH, profile check,
@@ -88,7 +88,7 @@ for (i in seq_len(nrow(days))) {
   info[[i]] <- dplyr::tibble(
     day = days$day[i], csv = m$csv, csv_layout = m$csv_layout, csv_header = m$csv_header, message_id = m$message_id,
     mlh_note = m$mlh_note, n_truncated_dropped = m$n_truncated_dropped, n_csv_dropped = m$n_csv_dropped,
-    n_csv = m$n_records + m$n_csv_dropped, n_txt = m$n_records,
+    csv_dropped_utc = m$csv_dropped_utc, n_csv = m$n_records + m$n_csv_dropped, n_txt = m$n_records,
     n_records = m$n_records, n_crc_fail = m$n_crc_fail,
     n_mlh1 = sum(!is.na(r$mlh1_m)), n_mlh2 = sum(!is.na(r$mlh2_m)), n_mlh3 = sum(!is.na(r$mlh3_m)),
     profile_check = m$profile_check, n_profile_records_checked = m$n_profile_records_checked,
@@ -103,7 +103,7 @@ for (i in seq_len(nrow(days))) {
 info <- dplyr::bind_rows(info)
 # fixed column order (bind_rows follows the first day, which may be a skipped one)
 info <- dplyr::relocate(info, dplyr::any_of(c(
-  "day", "csv", "csv_layout", "csv_header", "message_id", "mlh_note", "n_truncated_dropped", "n_csv_dropped", "n_csv", "n_txt", "n_records", "n_crc_fail", "n_mlh1", "n_mlh2", "n_mlh3", "profile_check",
+  "day", "csv", "csv_layout", "csv_header", "message_id", "mlh_note", "n_truncated_dropped", "n_csv_dropped", "csv_dropped_utc", "n_csv", "n_txt", "n_records", "n_crc_fail", "n_mlh1", "n_mlh2", "n_mlh3", "profile_check",
   "n_profile_records_checked", "max_rel_diff_profile", "scale_pct", "n_gates", "resolution_m", "tilt_deg",
   "interval_s_median", "first_utc", "last_utc", "skip_reason", "error")))
 readr::write_csv(info, file.path(tab_dir, paste0("14_skyvue_days_", site_id, ".csv")))
@@ -132,7 +132,7 @@ cli::cli_inform(c(
   "Record count mismatch days per month: {mm_month}.",
   "CSV layout: full {sum(ok$csv_layout == 'full')} days, short (7 columns, before the MLH option) {sum(ok$csv_layout == 'short')} days.",
   "Message 004 (no MLH option, layers NA): {sum(!is.na(ok$mlh_note))} day{?s}{if (any(!is.na(ok$mlh_note))) paste0(', ', format(min(ok$day[!is.na(ok$mlh_note)])), ' to ', format(max(ok$day[!is.na(ok$mlh_note)]))) else ''}.",
-  "Truncated last TXT message dropped: {sum(ok$n_truncated_dropped > 0)} day{?s} ({paste(format(ok$day[ok$n_truncated_dropped > 0]), collapse = ', ')}); CSV records dropped with it: {sum(ok$n_csv_dropped)}.",
+  "Truncated last TXT message dropped: {sum(ok$n_truncated_dropped > 0)} day{?s} ({paste(format(ok$day[ok$n_truncated_dropped > 0]), collapse = ', ')}); CSV records dropped with it: {sum(ok$n_csv_dropped)}{if (any(!is.na(ok$csv_dropped_utc))) paste0(' (', paste(ok$csv_dropped_utc[!is.na(ok$csv_dropped_utc)], collapse = ', '), ' UTC)') else ''}.",
   "CSV without a header line (layout of the message type): {sum(ok$csv_header != 'present')} day{?s} ({paste(format(ok$day[ok$csv_header != 'present']), collapse = ', ')}).",
   "Profile decode vs CSV (first 20 gates, unambiguous values; full layout only): {sum(ok$n_profile_records_checked, na.rm = TRUE)} records, max relative difference {mr}.",
   "Scale parameter values: {paste(unique(ok$scale_pct), collapse = ', ')} %; gates {paste(unique(ok$n_gates), collapse = ', ')} x {paste(unique(ok$resolution_m), collapse = ', ')} m; tilt {paste(unique(ok$tilt_deg), collapse = ', ')} deg.",

@@ -170,6 +170,9 @@ valid +1σ run).
 - `16_input_ranking` (and `16_input_ranking_x80`): hc and z0 effects from `rsl_off`, labelled "rsl test off", with the
   network share of rsl-flipped runs written beside them ("rsl flips n %"), so a flip never reads as a zero effect.
   Stated in the figure caption and in the methods note. `16s_validity_flips` stays on the `etc` runs.
+  **Superseded (G 2026-11-19, close-out):** the flip shares are no longer written beside the bars; the figure caption
+  replaces that wording (it names the site × input cells whose runs fail the test and points to
+  `16s_validity_flips`, which shows the share per site). See "Close-out figure fixes" below.
 
 ## Close-out figure fixes (G, 2026-11-19; re-rendered from the cluster tables, no cluster run)
 

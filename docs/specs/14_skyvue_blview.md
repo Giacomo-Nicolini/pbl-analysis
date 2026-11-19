@@ -268,7 +268,7 @@ Cluster results of the 14c diagnostics (DE-Tha July 2026, CZ-Lnz all versions) s
   (message 004)"; not an error. The CSV / TXT MLH comparison is skipped on 004 records.
 - **Truncated last message** (2026-06-21, 2026-06-28): the trailing SOH without ETX / EOT is dropped and logged
   (`n_truncated_dropped`); when the CSV has exactly that many more records, its last rows are dropped too
-  (`n_csv_dropped`; the truncated message is the last record of the day in both files); the rest of the day is kept.
+  (`n_csv_dropped`, the dropped row's time stamp in `csv_dropped_utc` and the log, G 2026-11-19; the truncated message is the last record of the day in both files); the rest of the day is kept.
   Any other incomplete message still aborts.
 - **CSV without a header** (2026-06-22, 2026-06-29): detected when the first line is a `dd.mm.yyyy HH:MM:SS` record;
   read with the header of the layout of the day's message type (006 full, 004 short; `skyvue_csv_header()`, column

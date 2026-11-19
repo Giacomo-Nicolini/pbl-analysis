@@ -359,7 +359,8 @@ skyvue_csv_profile_head <- function(x, n = 20L) {
 #' @param n_check Profile gates compared with the CSV [-].
 #' @return Tibble of [read_skyvue_txt()] with `time_end_utc` [POSIXct UTC] first. Attribute `skyvue_meta`: `csv`,
 #'   `txt`, `csv_layout` (`full` / `short`), `csv_header` (`present` / `missing: layout of message <id>`),
-#'   `message_id`, `n_004` [-], `mlh_note`, `n_truncated_dropped`, `n_csv_dropped` [-],
+#'   `message_id`, `n_004` [-], `mlh_note`, `n_truncated_dropped`, `n_csv_dropped` [-], `csv_dropped_utc` (time
+#'   stamps of the dropped CSV rows, `YYYY-MM-DD HH:MM:SS` UTC, space-separated; `NA` if none),
 #'   `n_records`, `n_crc_fail`, `profile_check` (`done` / `not available
 #'   (short CSV layout)`), `n_profile_records_checked`, `max_rel_diff_profile` [-], `scale_values` [%],
 #'   `interval_s_median` [s].
@@ -374,10 +375,12 @@ read_skyvue_day <- function(csv, txt, keep_profile = FALSE, n_check = 20L) {
   # truncated last TXT message: the CSV row of the same (last) record is dropped too, only when the counts differ by
   # exactly the dropped messages (close-out 2026-11-19); any other difference stays a count mismatch
   n_csv_drop <- 0L
+  csv_dropped_utc <- NA_character_
   if (tm$n_truncated_dropped > 0 && nrow(a) == nrow(b) + tm$n_truncated_dropped) {
     n_csv_drop <- tm$n_truncated_dropped
+    csv_dropped_utc <- paste(format(a$time_end_utc[(nrow(b) + 1):nrow(a)], "%Y-%m-%d %H:%M:%S"), collapse = " ")
     a <- a[seq_len(nrow(b)), ]
-    cli::cli_alert_warning("{basename(csv)}: last {n_csv_drop} record{?s} dropped with the truncated TXT message.")
+    cli::cli_alert_warning("{basename(csv)}: last {n_csv_drop} record{?s} dropped with the truncated TXT message (time stamp {csv_dropped_utc} UTC).")
   }
   if (nrow(a) != nrow(b)) {
     # fix-14a item 10: a count mismatch has its own condition class (skyvue_count_mismatch, fields n_csv and n_txt)
@@ -436,7 +439,7 @@ read_skyvue_day <- function(csv, txt, keep_profile = FALSE, n_check = 20L) {
     message_id = paste(tm$message_id, collapse = " "), n_004 = tm$n_004,
     mlh_note = if (tm$n_004 == nrow(out)) "no MLH option (message 004)" else if (tm$n_004 > 0)
       paste0("no MLH option on ", tm$n_004, " records (message 004)") else NA_character_,
-    n_truncated_dropped = tm$n_truncated_dropped, n_csv_dropped = n_csv_drop,
+    n_truncated_dropped = tm$n_truncated_dropped, n_csv_dropped = n_csv_drop, csv_dropped_utc = csv_dropped_utc,
     n_records = nrow(out), n_crc_fail = sum(!ok_crc),
     profile_check = profile_check, n_profile_records_checked = n_prof, max_rel_diff_profile = max_rel,
     scale_values = sort(unique(b$scale_pct)),
