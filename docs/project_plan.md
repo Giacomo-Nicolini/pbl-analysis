@@ -227,6 +227,11 @@ too shallow when deep") is a **hypothesis under test**.
     ±1σ runs that fail the test under `etc` is reported per site (`16s_validity_flips`, named in the ranking
     caption; close-out 2026-11-19: no network median): a validity flip is reported as such, never as a zero effect. z0 enters the FFP calls only through validity (umean passed, z0 = NaN), so its effect with the test
     off is zero by construction and its uncertainty is the flip share alone.
+    **Status (2026-11-19): done; analysis on stand-by.** Cluster run at the six sites (reference years; 277,997 runs,
+    192,268 FFP calls ≈ 176 CPU-hours at 3.3 s), base runs equal to the spec-15 values at every row; figures fixed
+    and re-rendered from the collected tables (close-out). Reopens only if the co-author review changes the 1σ
+    values (rerun 16a, 16b, 16c; `docs/STATUS.md`, stand-by section) or the h_empirical sites change (DE-HoH
+    Ummendorf).
 - Express results using dimensionless zm/h and zm/L.
 - Metrics: change in fetch (peak, 50/70/80/90 %), in the footprint fraction inside the ICOS target area (relative to
   the full footprint; distribution by stability class and difference between cases), in climatology overlap (Jaccard

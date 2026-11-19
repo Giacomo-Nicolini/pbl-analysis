@@ -1,6 +1,59 @@
 # Project status (handover note)
 
-Last update: 2026-11-03. Read this first in a new session, then `docs/project_plan.md` and `CLAUDE.md`.
+Last update: 2026-11-19. Read this first in a new session, then `docs/project_plan.md` and `CLAUDE.md`.
+
+## Analysis on stand-by from 2026-11-19
+
+Everything up to spec 16 and the close-out fixes is merged on `main` (spec 16 figures and spec 15 exception minimum:
+`57a9460`; SkyVUE reader fixes: `e5e52b7`). Pending on the cluster (not blocking): 14a + 14c for DE-Tha with the new
+SkyVUE reader (`docs/local/cluster_commands_spec14.md`, section "Close-out"). Nothing else is running or scheduled.
+The analysis reopens for one of the following; steps listed, nothing run.
+
+**1. Ummendorf ceilometer for DE-HoH** (about 9 km instead of Magdeburg MAG 24.48 km), if MeteoSwiss provides it.
+- Data: the E-PROFILE client file under `<measured_dir>/DE-HoH/`. 11b reads the *single*
+  `MeteoSwiss_(STRATfinder|CABAM)_*.nc` of the site folder: move the Magdeburg file out of `measured_dir` (e.g. an
+  archive folder beside it) first. New qc bits abort the reader (`meteoswiss_qc_bits()`): review them if it stops.
+- `config/measured_sites.csv`: new DE-HoH row for Ummendorf (provider MeteoSwiss, `provider_site` / `station_code` =
+  the file's station code, `wigos_id`, `provider_lat/lon/alt_m`, `distance_km` with `haversine_km()`,
+  `elevation_diff_m`, `distance_class` (9 km stays `daytime_convective`, 5–25 km), `borderline` FALSE, method class,
+  instruments, licence, notes), `primary_source_id` (`meteoswiss_stratfinder_mlh` for a CHM15k, `meteoswiss_cabam_mlh`
+  for a CL31), `status` `used`; the MAG row: `primary_source_id` empty, `status` `inventory`.
+  `config/measured_exclusions.csv`: only if the QC report shows source periods to drop (G decides).
+  `config/measured_run_sites.txt`: unchanged (DE-HoH already listed).
+- Reruns, DE-HoH only: `scripts/13a_meteoswiss_qc.R` (QC report) → `run_site.R DE-HoH --steps=meas_std,meas_cmp,08a`
+  (11b standard file, 10 comparison; 08a hashes the measured standard file, so check that the DE-HoH reference year
+  of the proposal is still the approved one in `config/reference_years.csv`, else G re-approves) → `08c --pending` → the pending chunk array (`measured`
+  case and the `pblhmod`, `pblhmod_clim`, `era5` chunks of the months with measured values, `common_pme`) →
+  `run_site.R DE-HoH --steps=08` → `09_collect.R` (network tables, spec-15 summary). Then `11_gamma_evaluation.R`
+  (one job; DE-HoH is one of its sites; decision 3b stays unless G reopens it).
+- Spec 16: `h_empirical` is the median σ_ln over the primary aerosol sources, DE-HoH included. `16a
+  --recompute-h-empirical` prints the new σ_ln; only if it moves does design B need a rerun (B chunks hold both h
+  options: ≈ 95 CPU-hours at 3.3 s) and 16c. DE-HoH is not one of the six Monte Carlo sites.
+- Paper and docs: distance table, `CLAUDE.md` E-PROFILE section, `docs/figure_inventory.md` only if a table changes.
+
+**2. BE-Maa: RMI Diepenbeek CL51 data** (about 16 km from the tower, approximate station coordinates; check from the
+files). New reader for the secondary set (spec 14 conventions):
+- Before coding: file format, time reference, the MLH algorithm (Vaisala BL-View / manufacturer = `secondary`; an
+  RMI retrieval of its own could be a primary candidate: G decides), licence and owner (internal use until cleared).
+- Code (new branch, spec 14 amendment or a new spec): `R/measured_rmi.R` (reader with unit and qc-bit checks, tests
+  on a synthetic fixture), a standard source id (e.g. `rmi_cl51_mlh`), a script `scripts/14d_rmi_mlh.R` (standard
+  file, exclusions applied and counted), documented non-numeric `x_` columns in `standard_x_col_types()` and
+  `docs/specs/standard_format.md`, a style row in `pblh_sources_style`, the `config/measured_sites.csv` row
+  (`status` `secondary`), the BE-Maa case in `scripts/14c_secondary_diagnostics.R` (window metrics, lag test, diurnal
+  cycle vs PBLHmod, PBLHmod-clim, ERA5), `docs/figure_inventory.md` (`14_*` tables and figures).
+- Cluster: the new 14d script and 14c for BE-Maa only; secondary sources are never pooled and enter no footprint case.
+
+**3. Different 1σ values for the spec-16 inputs after the co-author review.**
+- Change the CVs in `mc_input_spec()` (`R/footprint_mc.R`; σv also as an argument) and the header line of
+  `scripts/16c_mc_collect.R` that lists them; the methods note in `docs/project_plan.md` (5b) and spec 16.
+- Reruns: `16a` (same seed per site, so the sample and the standard deviates are unchanged; the new spec is stored
+  in the draws file; with `--recompute-h-empirical` only if the h option changes) → `16b` array (every chunk: the
+  chunk hash includes the perturbed inputs) → `16c`. The spec-15 footprints and the base runs are unchanged.
+- CPU estimate from the last cluster run (collected tables, reference years, six sites): 277,997 runs, 192,268 FFP
+  calls after removing invalid and duplicated runs (A 88,757, B 103,511) ≈ 176 CPU-hours at 3.3 s per call (PC
+  rate; ≈ 107 at 2 s). Larger σ make more runs invalid (fewer calls), smaller σ fewer; if every run were computed:
+  ≈ 255 CPU-hours at 3.3 s (below the 300 CPU-hour limit of spec 16). The 16b wall times are in `sacct` of the 16b array (not copied back). Re-render only (no rerun) with
+  `16c --from-tables=DIR`.
 
 ## PBLH sources (names used in the code and in the standard files)
 
@@ -38,7 +91,7 @@ Last update: 2026-11-03. Read this first in a new session, then `docs/project_pl
 | 13 | Measured MLH from MeteoSwiss / E-PROFILE at DE-RuS, DE-HoH (STRATfinder) and FI-Lom, FR-Fon, FR-Lus (CABAM, new source `meteoswiss_cabam_mlh`); pairing table with station code, WIGOS id, elevation difference, distance class, status; internal QC report (`scripts/13a_meteoswiss_qc.R`); generic spec-10 comparison for one half-hourly aerosol source; footprint pending list (`08c --pending`); measured-source exclusions (`config/measured_exclusions.csv`) and borderline flag; fix of step 08 at the sites without the ±20 % anchor cases; CZ-Lnz BL-View L3 reader prototype (pending data). Licence of the E-PROFILE files to be confirmed: internal use only | 2, 3, 5a | merged (`main`, 90c1da8); FI-Lom KEN row inventory since 2026-11-12 (no overlap) |
 | 14 | Secondary measured sources: DE-Tha SkyVUE PRO built-in MLH (reader with CSV/TXT pairing, CRC-16 and profile-decode checks; `tud_skyvue_mlh`, 3 layers, no layer chosen) and CZ-Lnz BL-View L3 (all versions; `vaisala_blview_mlh`); Part C diagnostics (time-convention lag test, SkyVUE layers, BL-View quality); status `secondary`; explicit column types of standard files; FI-Lom KEN inventory; `09_network_record_start.csv` (ICOS labelling dates) | 2, 3 | merged (`main`, e88dda8); cluster runs by G (`docs/local/cluster_commands_spec14.md`) |
 | 15 | Network footprint summary for the paper (target-area difference, fetch, top 10 % rows, Rebmann criteria and ICOS labelling rule, exceptions; figures and supplement) and γ supplementary tables, in `09_collect.R` | 5 | merged (`main`, 3e1625f; figure fixes fix-15, c672f8a) |
-| 16 | Footprint uncertainty from the FFP inputs (phase 5b): one-at-a-time (A) and joint Monte Carlo (B) perturbation of σv, u*, L, umean, hc, z0, WD, h at six sites, attribution (C), the PBLH-source effect of spec 15 placed in it; `16a`–`16c` | 5b | implemented on `spec-16-footprint-uncertainty` (2026-11-17), to review; run on the cluster by G (`docs/local/cluster_commands_spec16.md`) |
+| 16 | Footprint uncertainty from the FFP inputs (phase 5b): one-at-a-time (A) and joint Monte Carlo (B) perturbation of σv, u*, L, umean, hc, z0, WD, h at six sites, attribution (C), the PBLH-source effect of spec 15 placed in it; `16a`–`16c` | 5b | merged (`main`, 573e9e2; amendment 1 rsl_off); cluster run done (six sites, reference years; collection job 18905); close-out figure fixes merged (`main`, 57a9460) |
 
 Phases (see `project_plan.md`): 0 done; 1 done (model, input QC, legacy regression); 2 standard format, three
 sources (spec 04) and the first measured source (spec 07, FI-Hyy) done; 3 BE-Bra (vs ERA5) and FI-Hyy (vs ERA5 and
@@ -349,7 +402,15 @@ measured MLH) done; 4–6 not started.
    (`rsl_off`, 21 runs per row in A); smoke rerun: base still equal (0 pp), FI-Hyy hc 2.4 pp TA / 0.12 ln x80 with
    the test off (`NA` under `etc`), rsl flips 50 % (BE-Bra 0 %, effects unchanged); 101 extra FFP calls at FI-Hyy, 0
    at BE-Bra; `16_input_ranking` shows hc and z0 from `rsl_off` with "rsl flips n %". Cluster: 16a, then (after G)
-   the 16b array and 16c (`docs/local/cluster_commands_spec16.md`).
+   the 16b array and 16c (`docs/local/cluster_commands_spec16.md`). Merged (`main`, 573e9e2); cluster run done.
+19. Close-out (G 2026-11-19, before the stand-by): spec 16 figures (one legend below the panels, "reference year per
+   site", validity flips per site in `16s_validity_flips`: FI-Hyy hc and z0 and CH-Dav z0 lose every +1σ run to the
+   rsl test, 50 % of their runs; no network median in the main figure; `w_row` in `16_oat`; `16c --from-tables`);
+   spec 15 exceptions with a minimum of 50 rows per site × stratum (FR-Fon n 3, DE-HoH n 28 and an IT-Ren cell n 27
+   now `below_min_n`; exceptions CH-Dav, DE-Tha, IT-Ren; `scripts/09r_fp_figures.R`, `09_network_fp_site_order.csv`),
+   re-rendered from the cluster tables; merged (`main`, 57a9460). SkyVUE reader (spec 14 amendment 2): message 004,
+   truncated last message, CSV without a header; count-mismatch rule unchanged (G); merged (`main`, e5e52b7). Cluster:
+   14a + 14c for DE-Tha.
 
 
 ## Data
