@@ -141,13 +141,13 @@ pblh_sources_style <- local({
     row("z0f", "mc_input", k["grey"], "z0 factor (validity only)", 6),
     row("wd", "mc_input", k["sky"], "wind direction", 7),
     row("h", "mc_input", k["black"], "h (PBLHmod ± 30 %)", 8),
-    row("mc_source_era5", "element", k["vermillion"], "PBLH source: |ERA5 − PBLHmod| (spec 15)", 20, "dashed"),
-    row("mc_source_clim", "element", k["green"], "PBLH source: |PBLHmod-clim − PBLHmod|", 21, "dotted"),
+    row("mc_source_era5", "element", "grey25", "PBLH source: |ERA5 − PBLHmod| (spec 15)", 20, "dashed"),
+    row("mc_source_clim", "element", "grey55", "PBLH source: |PBLHmod-clim − PBLHmod|", 21, "dotted"),
     row("mc_site", "element", "grey50", "site (median)", 22),
     row("mc_network", "element", k["black"], "network (median of sites, IQR)", 23),
     row("mc_one_to_one", "element", "grey40", "1:1", 24, "dashed"),
     row("mc_rsl_off", "element", "grey40", "rsl test off", 25),
-    row("mc_rsl_flip", "element", "grey30", "rsl flips", 26)
+    row("mc_rsl_flip", "element", "grey30", "rsl test fails", 26)
   )
 })
 

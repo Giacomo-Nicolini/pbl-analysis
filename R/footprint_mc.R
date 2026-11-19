@@ -520,7 +520,8 @@ mc_join_runs <- function(draws, runs) {
 #' Design A table: change of each run against the row's base run
 #'
 #' @param x Output of [mc_join_runs()] (design A rows).
-#' @return Tibble, one row per sampled row x run: `row_id`, `timestamp_start_utc`, `stratum`, `valid_qc`,
+#' @return Tibble, one row per sampled row x run: `row_id`, `timestamp_start_utc`, `stratum`, `w_row` [0-1, row
+#'   weight of 16a, [mc_sample()]], `valid_qc`,
 #'   `valid_qc_used`, `input` (`base` for the base run), `side` (-1, 0, +1), `validity` (`etc`, `rsl_off`),
 #'   `valid_etc`, `fail`, `rsl_fail`, `valid_run`, `ffp_ok`, `ta_pct`
 #'   [%], `d_ta_pp` [pp, run minus base], `x80_m` [m], `d_lnx80` [-, ln(x80 run / x80 base)], `base_diff_pp` [pp,
@@ -530,7 +531,7 @@ mc_oat_table <- function(x) {
   b <- a[a$run == "base", ]
   m <- match(a$row_id, b$row_id)
   dplyr::tibble(row_id = a$row_id, timestamp_start_utc = a$timestamp_start_utc, stratum = a$stratum,
-                valid_qc = a$valid_qc, valid_qc_used = a$valid_qc_used, input = ifelse(is.na(a$input), "base", a$input),
+                w_row = if ("w_row" %in% names(a)) a$w_row else NA_real_, valid_qc = a$valid_qc, valid_qc_used = a$valid_qc_used, input = ifelse(is.na(a$input), "base", a$input),
                 side = a$side, validity = a$validity, valid_etc = a$valid_etc, fail = a$fail, rsl_fail = a$rsl_fail,
                 valid_run = a$valid_run, ffp_ok = a$ffp_ok, ta_pct = a$ta_pct,
                 d_ta_pp = a$ta_pct - b$ta_pct[m], x80_m = a$x_80, d_lnx80 = log(a$x_80 / b$x_80[m]),
@@ -553,6 +554,53 @@ mc_oat_effects <- function(oat) {
   dplyr::tibble(row_id = mi$row_id, stratum = mi$stratum, input = mi$input, validity = mi$validity,
                 eff_ta_pp = mc_half_range(mi$d_ta_pp, pl$d_ta_pp[k]), eff_lnx80 = mc_half_range(mi$d_lnx80, pl$d_lnx80[k]),
                 rsl_flip = (as.numeric(mi$rsl_fail %in% TRUE) + as.numeric(pl$rsl_fail[k] %in% TRUE)) / 2)
+}
+
+#' Row weights of design-A tables written without `w_row`, from the eligible rows per stratum
+#'
+#' Same weights as [mc_sample()]: the stratum's share of the eligible rows divided by the rows sampled in it. Used to
+#' re-render from collected `16_oat_<site>.csv` tables of runs before `w_row` was written (counts: spec-15 table
+#' `09_network_fp_target_area.csv`, set etc, subset valid, which is the 16a eligible set). Check: a stratum sampled
+#' below the site's largest stratum sample must have all its eligible rows sampled (`n_sampled == n_stratum`).
+#'
+#' @param oat Bound [mc_oat_table()] outputs with `site_id`.
+#' @param counts Tibble `site_id`, `stratum`, `n_stratum` [-, eligible rows].
+#' @return `oat` with `w_row` [0-1] (sum 1 over the sampled rows of a site).
+mc_weights_from_counts <- function(oat, counts) {
+  b <- dplyr::distinct(oat[c("site_id", "row_id", "stratum")])
+  ns <- dplyr::count(b, site_id, stratum, name = "n_sampled")
+  ns <- dplyr::left_join(ns, counts[c("site_id", "stratum", "n_stratum")], by = c("site_id", "stratum"))
+  if (anyNA(ns$n_stratum)) {
+    m <- ns[is.na(ns$n_stratum), ]
+    cli::cli_abort("No eligible count for {paste(m$site_id, m$stratum, collapse = ', ')}.")
+  }
+  ns <- dplyr::mutate(dplyr::group_by(ns, site_id), full = n_sampled == max(n_sampled),
+                      w = n_stratum / sum(n_stratum) / n_sampled)
+  bad <- ns[ns$n_sampled > ns$n_stratum | (!ns$full & ns$n_sampled != ns$n_stratum), ]
+  if (nrow(bad)) cli::cli_abort("Eligible counts do not match the sample: {paste(bad$site_id, bad$stratum, collapse = ', ')}.")
+  oat$w_row <- ns$w[match(paste(oat$site_id, oat$stratum), paste(ns$site_id, ns$stratum))]
+  oat
+}
+
+#' Share of the one-at-a-time runs that become invalid under the etc set, per site and input
+#'
+#' Stratum-weighted over the sampled rows of the site (`w_row`); runs at -1 and +1 sigma together, and each side.
+#'
+#' @param oat Bound [mc_oat_table()] outputs with `site_id` and `w_row`.
+#' @return Tibble: `site_id`, `input`, `n_rows` [-], `share_invalid` [0-1, runs at -1 and +1 sigma invalid under etc],
+#'   `share_rsl` [0-1, runs failing the e_rsl test (zm >= m z0)], `share_invalid_minus`, `share_invalid_plus` [0-1].
+mc_flip_shares <- function(oat) {
+  o <- oat[oat$input != "base", ]
+  if ("validity" %in% names(o)) o <- o[o$validity == "etc", ]
+  if (!"rsl_fail" %in% names(o)) o$rsl_fail <- FALSE
+  if (!"w_row" %in% names(o) || anyNA(o$w_row)) cli::cli_abort("Row weights {.field w_row} missing.")
+  wm <- function(x, w) if (length(x)) sum(w * x) / sum(w) else NA_real_
+  o$inv <- as.numeric(!(o$valid_etc %in% TRUE))
+  o$rsl <- as.numeric(o$rsl_fail %in% TRUE)
+  dplyr::summarise(dplyr::group_by(o, site_id, input), n_rows = dplyr::n_distinct(row_id),
+                   share_invalid = wm(inv, w_row), share_rsl = wm(rsl, w_row),
+                   share_invalid_minus = wm(inv[side == -1], w_row[side == -1]),
+                   share_invalid_plus = wm(inv[side == 1], w_row[side == 1]), .groups = "drop")
 }
 
 #' PBLH-source effect of the sampled rows (spec 15, from the 08b chunks)

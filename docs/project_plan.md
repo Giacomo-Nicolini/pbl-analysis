@@ -224,8 +224,8 @@ too shallow when deep") is a **hypothesis under test**.
     limit (FI-Hyy: zm/z0 2.5 % above m), so a +1σ change of hc or z0 removes the half-hour from the `etc` set
     instead of changing its footprint. The one-at-a-time effects of hc and z0 in the input ranking are therefore
     computed with the roughness-sublayer test switched off (all other `etc` conditions kept), and the share of their
-    ±1σ runs that fail the test under `etc` is shown beside them: a validity flip is reported as such, never as a
-    zero effect. z0 enters the FFP calls only through validity (umean passed, z0 = NaN), so its effect with the test
+    ±1σ runs that fail the test under `etc` is reported per site (`16s_validity_flips`, named in the ranking
+    caption; close-out 2026-11-19: no network median): a validity flip is reported as such, never as a zero effect. z0 enters the FFP calls only through validity (umean passed, z0 = NaN), so its effect with the test
     off is zero by construction and its uncertainty is the flip share alone.
 - Express results using dimensionless zm/h and zm/L.
 - Metrics: change in fetch (peak, 50/70/80/90 %), in the footprint fraction inside the ICOS target area (relative to
@@ -355,7 +355,8 @@ too shallow when deep") is a **hypothesis under test**.
 - Spec 15 (2026-11-12, network footprint summary; for G): (a) row set `common_pe` (all three cases valid) instead of
   the pairwise common rows of the step-08 tables; (b) top 10 % selected on subset `valid` (to measure the QC / used
   removals); the expected "93 % removed" is `kljun_norsl` (`kljun`: 84 %, 17 sites); the step-08 shares are by
-  PBLHmod regime, spec 15 also by zm/L class; (c) exceptions: no minimum n (n reported); (d) Rebmann pass / fail
+  PBLHmod regime, spec 15 also by zm/L class; (c) exceptions: **decided (G 2026-11-19): minimum n 50** per site × stratum, cells below listed separately
+  (spec 15 amendment 2); (d) Rebmann pass / fail
   flips between cases only near the 50 % limit (20 rows outside the main set × subset, shares within 0.05 of 0.5);
   (e) figure order: land cover, then median PBLHmod h.
 - fix-14c (2026-11-12, spec 14 amendment 1): (a) **decided (G): SkyVUE built-in MLH not used** (`inventory`: no

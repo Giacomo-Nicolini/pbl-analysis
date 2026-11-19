@@ -337,7 +337,8 @@ so code must be reproducible, documented and traceable to references.
   median 1 and that CV (σ_ln = sqrt(ln(1 + CV²))). Validity recomputed per run under `etc` (08a ETC multiplier
   kept); invalid runs are not computed and are counted as validity flips. Amendment 1 (G 2026-11-18): hc and z0 also
   run in A with the e_rsl test off (validity `rsl_off`, other conditions kept); `16_input_ranking` takes hc and z0
-  from `rsl_off` and prints the share of rsl-flipped runs beside them (a flip never reads as a zero effect).
+  from `rsl_off`; the share of rsl-flipped runs is shown per site in `16s_validity_flips` and named in the ranking
+  caption (a flip never reads as a zero effect; close-out G 2026-11-19: no network median).
 - With umean (z0 = NaN), x_r depends on zm, h, umean and u* only; L acts on the 2D field only through the sign of zm/L
   (σy scale constant), so σv, L and WD change x80 only through validity.
 
@@ -378,7 +379,8 @@ so code must be reproducible, documented and traceable to references.
   tables and the hh chunks of the reference years; `--no-footprint` skips it). Spec 15 conventions: pairs era5 −
   pblhmod, pblhmod_clim − pblhmod, era5 − pblhmod_clim (first minus second); row set `common_pe` = valid with an FFP
   result in all three cases; main set `etc`, subset `valid_qc_used`; regime = zm/L class × day/night; exceptions >
-  5 pp (reporting choice); ICOS labelling rule (ETC, G 2026-11-12): share of the `valid_qc` half-hours with TA ≥ 70 %,
+  5 pp (reporting choice) in cells of ≥ 50 rows (smaller cells listed as `below_min_n`, not flagged; G 2026-11-19;
+  figures redrawn from the tables with `scripts/09r_fp_figures.R`); ICOS labelling rule (ETC, G 2026-11-12): share of the `valid_qc` half-hours with TA ≥ 70 %,
   met if ≥ 70 %. γ supplement `09s_gamma_site.csv`, `09s_gamma_network.csv` (site bootstrap, seed 20261112).
   Network figure (G 2026-11-03): PBLHmod median ln(PBLHmod / ERA5) as filled dots with a p25–p75 bar
   (`p25_log_ratio`, `p75_log_ratio` of `pblh_metrics()`), PBLHmod-clim as open circles drawn on top, no bar.

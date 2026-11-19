@@ -35,7 +35,9 @@
 #   09_network_fp_fetch.csv        ln(x_80 ratio) between cases and x_80 per case [m], same strata
 #   09_network_fp_topaffected.csv  the 10 % rows with the largest |TA difference|: shares and what removes them
 #   09_network_fp_icos_criteria.csv  Rebmann et al. (2018) criteria and the ICOS labelling rule (ETC) per site and case
-#   09_network_fp_exceptions.csv   strata with |p10| or |p90| of the TA difference > 5 pp
+#   09_network_fp_exceptions.csv   strata with |p10| or |p90| of the TA difference > 5 pp; status exception (n >= 50
+#                                  rows) or below_min_n (listed, not flagged; close-out 2026-11-19)
+#   09_network_fp_site_order.csv   site order of the figures (IGBP, then median PBLHmod h), for scripts/09r_fp_figures.R
 #   09s_gamma_site.csv, 09s_gamma_network.csv  gamma per site (quantiles) and gamma_med with a site bootstrap
 #   Figures 09_fp_ta_diff, 09_fp_fetch_ratio, 09_fp_topaffected, 09_fp_icos_criteria (set etc, subset valid_qc_used);
 #   supplement 09s_fp_kljun_norsl_* and 09s_fp_valid_*; 09s_gamma_site.
@@ -229,48 +231,14 @@ if (!"--no-footprint" %in% args) {
         cli::cli_alert_success("09_network_fp_{k}.csv: {nrow(fp_out[[k]])} rows")
       }
       # figures: main set etc / valid_qc_used; supplement kljun_norsl / valid_qc_used and etc / valid
-      igbp <- st_sites$igbp[match(fp_sites, st_sites$site_id)]
-      cm <- fp_common(rows, "etc", "valid_qc_used")
-      mh <- tapply(rows$h__pblhmod[cm], rows$site_id[cm], stats::median)[fp_sites]
-      site_order <- fp_sites[order(igbp, mh)] # land cover, then median PBLHmod h (main rows)
-      ex_sites <- unique(fp_out$exceptions$site_id)
-      variants <- list(list(prefix = "09_fp_", set = "etc", subset = "valid_qc_used"),
-                       list(prefix = "09s_fp_kljun_norsl_", set = "kljun_norsl", subset = "valid_qc_used"),
-                       list(prefix = "09s_fp_valid_", set = "etc", subset = "valid"))
-      # fix-15: short subtitle, details in a wrapped caption (titles were clipped); heights per site row
-      lab_of <- function(v) paste0("Validity set ", v$set, ", subset ", v$subset, "; reference year per site")
-      cap_of <- function(extra = NULL) paste(c("Sites by land cover (IGBP), then median PBLHmod h.", extra,
-                                               fp_exception_caption()), collapse = " ")
-      n_ax <- length(site_order) + 1 # sites + network row
-      for (v in variants) {
-        ta_v <- fp_out$target_area[fp_out$target_area$set == v$set & fp_out$target_area$subset == v$subset, ]
-        fe_v <- fp_out$fetch[fp_out$fetch$set == v$set & fp_out$fetch$subset == v$subset, ]
-        if (nrow(ta_v)) {
-          p <- plot_fp_site_diff(ta_v, "p10_pp", "median_pp", "p90_pp", site_order, ex_sites,
-                                 "Target-area fraction difference [pp] (p10-p90, median)", lab_of(v), cap_of())
-          save_figure(p, paste0(v$prefix, "ta_diff"), 22, fp_fig_height(n_ax, 2))
-          p <- plot_fp_site_diff(fe_v, "p10_lnratio", "median_lnratio", "p90_lnratio", site_order, ex_sites,
-                                 "ln(x_80 ratio) [-] (p10-p90, median)", lab_of(v), cap_of())
-          save_figure(p, paste0(v$prefix, "fetch_ratio"), 22, fp_fig_height(n_ax, 2))
-        }
-        ic_v <- fp_out$icos_criteria[fp_out$icos_criteria$set == v$set & fp_out$icos_criteria$subset == v$subset, ]
-        if (nrow(ic_v)) {
-          p <- plot_fp_icos_criteria(ic_v, site_order, paste0(lab_of(v), "; labelling rule on valid_qc"), ex_sites,
-                                     cap_of("Cases dodged vertically within each site row (PBLHmod on top)."))
-          save_figure(p, paste0(v$prefix, "icos_criteria"), 22, fp_fig_height(length(site_order), 1, 0.45))
-        }
-      }
-      for (s in c("etc", "kljun_norsl")) {
-        tp <- fp_out$topaffected[fp_out$topaffected$selection == "abs_ta_diff (spec 15)" & fp_out$topaffected$set == s &
-                                   fp_out$topaffected$pair == "era5_vs_pblhmod", ]
-        if (nrow(tp)) {
-          p <- plot_fp_topaffected(tp, site_order, paste0("Top 10 % |TA difference| ERA5 - PBLHmod; set ", s, ", subset valid"),
-                                   paste("Sites by land cover (IGBP), then median PBLHmod h; network bar = pooled",
-                                         "shares (sums to 100 %); median of the site shares in 09_network_fp_topaffected."))
-          save_figure(p, if (s == "etc") "09_fp_topaffected" else "09s_fp_kljun_norsl_topaffected", 22,
-                      fp_fig_height(n_ax, 1, 0.38))
-        }
-      }
+      # land cover, then median PBLHmod h (main rows); written so that the figures can be redrawn from the tables
+      so <- fp_site_order(rows, stats::setNames(st_sites$igbp[match(fp_sites, st_sites$site_id)], fp_sites))
+      write_csv_header(so, file.path(tdir, "09_network_fp_site_order.csv"), c(
+        "Spec 15 network footprint figures: site order (land cover IGBP, then median PBLHmod h [m] of the common_pe rows, set etc, subset valid_qc_used); reference year per site."))
+      exs <- fp_exception_sites(fp_out$exceptions)
+      lo <- fp_out$exceptions[fp_out$exceptions$status == "below_min_n", ]
+      cli::cli_inform("Exception sites (n >= {fp_out$exceptions$min_n[1]}): {if (length(exs)) paste(exs, collapse = ', ') else 'none'}; cells below the minimum: {if (nrow(lo)) paste0(lo$site_id, ' ', lo$regime, '_', lo$daynight, ' n ', lo$n, collapse = '; ') else 'none'}.")
+      fp_network_figures(fp_out, so$site_id)
       cli::cli_alert_success("Figures 09_fp_* and 09s_fp_* written.")
     }
   }

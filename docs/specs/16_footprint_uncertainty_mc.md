@@ -171,6 +171,23 @@ valid +1σ run).
   network share of rsl-flipped runs written beside them ("rsl flips n %"), so a flip never reads as a zero effect.
   Stated in the figure caption and in the methods note. `16s_validity_flips` stays on the `etc` runs.
 
+## Close-out figure fixes (G, 2026-11-19; re-rendered from the cluster tables, no cluster run)
+
+- `16_input_ranking`, `16_input_ranking_x80`: one legend below the panels (inputs by colour, the PBLH-source
+  references as lines; reference lines in neutral greys so they do not share a colour with an input); title and
+  subtitle say "reference year per site", the caption lists the sites with their years.
+- The network median flip share ("rsl flips n %") is dropped from the main figure (it read 0 % while FI-Hyy and CH-Dav
+  lose half of their hc / z0 runs); the caption names the site × input cells with failing runs and points to
+  `16s_validity_flips`, which now shows the share per site (one panel per site, runs at −1σ and +1σ together,
+  stratum-weighted with the 16a row weights, the e_rsl share in brackets). This replaces the "beside the bars" wording
+  of amendment 1.
+- `16_oat_<site>` gains `w_row` (16a row weight). `16c --from-tables=DIR [--fp-table=FILE]` redraws the three figures
+  from collected tables; for tables without `w_row` the weights come from the eligible rows per stratum of the spec-15
+  `09_network_fp_target_area` (set `etc`, subset `valid` = the 16a eligible set; checked: every stratum sampled below
+  170 rows has n equal to the spec-15 count).
+- Cluster result (reference years): rsl failures under `etc` at FI-Hyy (hc and z0, every +1σ run: 50 % of the runs)
+  and CH-Dav (z0, every +1σ run: 50 %); elsewhere < 0.5 %; u* 1–4 % (e_ustar) at every site.
+
 ## Summary to report back
 
 As in `CLAUDE.md`, plus: the runtime estimate and the proposed chunking; the smoke-test input ranking at BE-Bra and
