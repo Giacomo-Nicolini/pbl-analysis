@@ -31,7 +31,8 @@ fmt_e <- function(v) {
 make_skyvue_day <- function(dir, n = 4, t0 = as.POSIXct("2026-07-15 00:00:09", tz = "UTC"), step = 9,
                             mlh = matrix(c(375, 650, NA), n, 3, byrow = TRUE), conf = matrix(c(2L, 1L, 0L), n, 3, byrow = TRUE),
                             cbh = rep(2802, n), corrupt = integer(), status = rep(1L, n), vv = rep(NA_real_, n),
-                            layout = "full", vv_csv = vv, message = "006", truncate_last = FALSE, csv_header_line = TRUE) {
+                            layout = "full", vv_csv = vv, message = "006", truncate_last = FALSE, csv_header_line = TRUE,
+                            fragment = integer(), cbh_csv = cbh) {
   set.seed(1)
   ints <- matrix(sample(-200:6000, n * 20, replace = TRUE), n, 20)
   ints[, 3] <- 0L # a zero gate: the CSV parse stops there (ambiguous)
@@ -54,10 +55,11 @@ make_skyvue_day <- function(dir, n = 4, t0 = as.POSIXct("2026-07-15 00:00:09", t
     if (i %in% corrupt) crc <- bitwXor(crc, 1L)
     txt[i] <- paste0("\001", body, sprintf("%04x", crc), "\004\r\n")
     if (truncate_last && i == n) txt[i] <- substr(txt[i], 1, 60) # file ends inside the last message
+    if (i %in% fragment) txt[i] <- substr(txt[i], 1, 60) # incomplete message mid-file (the next SOH follows)
     prof <- paste(fmt_e(ints[i, ] * 1e-8), collapse = ",")
     q <- function(x) paste0("\"", x, "\"")
     num <- function(x) ifelse(is.na(x), "/////", gsub(".", ",", format(x, nsmall = 0), fixed = TRUE))
-    cb_csv <- if (status[i] %in% 1:4) q(paste0(cbh[i], ",00000425904")) else "/////"
+    cb_csv <- if (status[i] %in% 1:4) q(paste0(cbh_csv[i], ",00000425904")) else "/////"
     if (layout == "full") {
       rows[i] <- paste(format(t[i], "%d.%m.%Y %H:%M:%S"), cb_csv, "/////", "/////", "/////",
                        num(vv_csv[i]), "c00000000000", q(prof), "3", "8", "0", "0", "0", "1410", "2410", "/////", "/////",
@@ -283,6 +285,74 @@ test_that("a truncated last TXT message is dropped with its CSV record; the rest
   eot <- which(raw == as.raw(4L))
   writeBin(raw[-eot[1]], s$txt)
   expect_error(suppressMessages(read_skyvue_txt(s$txt)), "complete messages|overlapping")
+})
+
+test_that("an incomplete TXT message mid-file is dropped; its CSV row is found by matching (fix-14a June 2026)", {
+  d <- withr::local_tempdir()
+  n <- 12
+  mlh <- cbind(300 + 10 * seq_len(n), NA, NA) # distinct layers: the matching has one answer
+  conf <- cbind(rep(2L, n), 0L, 0L)
+  s <- make_skyvue_day(d, n = n, mlh = mlh, conf = conf, fragment = 5L)
+  b <- suppressMessages(read_skyvue_txt(s$txt))
+  tm <- attr(b, "skyvue_txt_meta")
+  expect_equal(nrow(b), n - 1)
+  expect_equal(c(tm$n_truncated_dropped, tm$fragment_after), c(1L, 4L))
+  expect_match(tm$fragment_pos, "^after record 4 \\(byte [0-9]+\\)$")
+  expect_message(read_skyvue_txt(s$txt), "incomplete message")
+  # CSV with one row more (n_csv == n_txt + 1): row 5 found and dropped, its time logged
+  expect_message(r <- read_skyvue_day(s$csv, s$txt), format(s$t[5], "%Y-%m-%d %H:%M:%S"), fixed = TRUE)
+  m <- attr(r, "skyvue_meta")
+  expect_equal(r$time_end_utc, s$t[-5])
+  expect_equal(r$mlh1_m, mlh[-5, 1])
+  expect_equal(c(m$n_csv, m$n_txt, m$n_records, m$n_csv_dropped, m$n_fragment_tied), c(n, n - 1, n - 1, 1L, 0L))
+  expect_equal(m$csv_dropped_utc, format(s$t[5], "%Y-%m-%d %H:%M:%S"))
+  expect_equal(m$n_pair_mismatch_dropped, 0L)
+  # CSV without that row (n_csv == n_txt): paired by order
+  l <- readLines(s$csv)
+  writeLines(l[-6], s$csv) # line 1 is the header
+  r2 <- suppressMessages(read_skyvue_day(s$csv, s$txt))
+  expect_equal(r2$time_end_utc, s$t[-5])
+  expect_equal(attr(r2, "skyvue_meta")$n_csv_dropped, 0L)
+  # CSV without a different row: the pairing check fails (shifted records) as before
+  writeLines(l[-3], s$csv)
+  expect_error(suppressMessages(read_skyvue_day(s$csv, s$txt)), "differ")
+  # equal cloud base and layers on every record: the profile head still tells the rows apart
+  s3 <- make_skyvue_day(withr::local_tempdir(), n = 8, fragment = 3L)
+  m3 <- attr(suppressMessages(read_skyvue_day(s3$csv, s3$txt)), "skyvue_meta")
+  expect_equal(m3$csv_dropped_utc, format(s3$t[3], "%Y-%m-%d %H:%M:%S"))
+  expect_equal(m3$n_fragment_tied, 0L)
+  # short layout (no profile, no layers) with equal records: a tie, resolved to the row at the fragment position
+  s4 <- make_skyvue_day(withr::local_tempdir(), n = 8, fragment = 3L, layout = "short")
+  m4 <- attr(suppressMessages(read_skyvue_day(s4$csv, s4$txt)), "skyvue_meta")
+  expect_equal(m4$csv_dropped_utc, format(s4$t[3], "%Y-%m-%d %H:%M:%S"))
+  expect_equal(m4$n_fragment_tied, 1L)
+  # an abort after the fragment scan carries the partial meta (14a counts it on failed days)
+  writeLines(l[-3], s$csv)
+  e <- tryCatch(suppressMessages(read_skyvue_day(s$csv, s$txt)), error = function(e) e)
+  expect_equal(e$skyvue_partial$n_truncated_dropped, 1L)
+  expect_equal(e$skyvue_partial$csv_header, "present")
+})
+
+test_that("isolated pairing mismatches are dropped and logged up to the tolerance (fix-14a June 2026)", {
+  d <- withr::local_tempdir()
+  cb <- rep(2802, 6)
+  cb[3] <- 2900 # CSV cloud base 1 differs on record 3
+  s <- make_skyvue_day(d, n = 6, cbh_csv = cb)
+  # default tolerance: up to 5 records and 0.1 % of the day; 1 of 6 records is above 0.1 %: the day fails
+  expect_error(read_skyvue_day(s$csv, s$txt), "cloud base 1 \\(detection status 1-4\\) differ on 1 record")
+  expect_message(r <- read_skyvue_day(s$csv, s$txt, max_mismatch_share = 0.2), "failing a pairing check dropped")
+  m <- attr(r, "skyvue_meta")
+  expect_equal(nrow(r), 5)
+  expect_equal(r$time_end_utc, s$t[-3])
+  expect_equal(m$n_pair_mismatch_dropped, 1L)
+  expect_equal(m$pair_mismatch_utc, format(s$t[3], "%Y-%m-%d %H:%M:%S"))
+  expect_equal(m$pair_mismatch_check, "cloud base 1 (detection status 1-4)")
+  expect_equal(c(m$n_csv, m$n_txt, m$n_records), c(6L, 6L, 5L))
+  # more than max_mismatch records: fails
+  cb[c(2, 4)] <- 2900
+  s2 <- make_skyvue_day(withr::local_tempdir(), n = 6, cbh_csv = cb)
+  expect_error(read_skyvue_day(s2$csv, s2$txt, max_mismatch = 2L, max_mismatch_share = 1), "3 records fail a check")
+  expect_equal(nrow(read_skyvue_day(s2$csv, s2$txt, max_mismatch = 3L, max_mismatch_share = 1)), 3)
 })
 
 test_that("a CSV without a header line is read with the layout of the message type", {

@@ -107,9 +107,13 @@ skyvue_fields <- function(x, n, what) {
 #' so a different layout aborts). Its mixing layers are `NA` ("no MLH option"), not an error. The message type is
 #' read per record.
 #'
-#' A truncated last message (SOH without ETX / EOT at the end of the file; DE-Tha 2026-06-21, 2026-06-28) is dropped,
-#' counted in `n_truncated_dropped` and reported with a warning; the rest of the day is kept. Any other incomplete or
-#' overlapping message aborts.
+#' Incomplete messages (fragments) are dropped, counted in `n_truncated_dropped` and reported with a warning (byte
+#' position and the number of complete records before them); the rest of the day is kept. A fragment is a SOH whose
+#' message has neither ETX nor EOT before the next SOH (mid-file, probably a logger restart; fix-14a June 2026:
+#' DE-Tha 2026-06-21, -22, -28) or before the end of the file (truncated last message, close-out 2026-11-19; there a
+#' dangling ETX is allowed). Any other layout (an ETX without its EOT mid-file, two ETX or EOT in one message, EOT not
+#' 5 bytes after ETX) aborts. An abort after the fragment scan carries the partial meta (`n_truncated_dropped`) in
+#' the condition field `skyvue_partial`.
 #'
 #' @param path Path of `E1227_<ddmmyy>_Midnight.txt` [character].
 #' @param keep_profile Keep the hex profile lines (`profile_hex`, about 10 kB per record) [logical].
@@ -120,8 +124,9 @@ skyvue_fields <- function(x, n, what) {
 #'   `background_mv` [mV], `pulses_k` [x 1000], `sample_rate_mhz` [MHz], `bs_sum` [-, line 4 sum], `mlh1_m`..`mlh3_m`
 #'   [m above the instrument; `NA` = `/////` and in message 004], `mlh1_q`..`mlh3_q` [quality 1-3, 3 = highest
 #'   confidence; 0 where no layer, `NA` in message 004], `crc_ok` [logical], optionally `profile_hex`. Attribute
-#'   `skyvue_txt_meta`: `file`, `n_records`, `n_crc_fail`, `message_id` (distinct), `n_004`, `n_truncated_dropped`,
-#'   `record_bytes` (distinct lengths).
+#'   `skyvue_txt_meta`: `file`, `n_records`, `n_crc_fail`, `message_id` (distinct), `n_004`, `n_truncated_dropped`
+#'   (fragments dropped, last or mid-file), `fragment_after` (complete records before each fragment) [-],
+#'   `fragment_byte` (byte position of its SOH) [-], `record_bytes` (distinct lengths).
 read_skyvue_txt <- function(path, keep_profile = FALSE) {
   if (!file.exists(path)) cli::cli_abort("SkyVUE file {.path {path}} not found.")
   b <- readBin(path, "raw", n = file.size(path))
@@ -129,77 +134,111 @@ read_skyvue_txt <- function(path, keep_profile = FALSE) {
   etx <- which(b == as.raw(3L))
   eot <- which(b == as.raw(4L))
   if (length(soh) == 0) cli::cli_abort("{.path {path}}: no SOH character (not a SkyVUE message file).")
-  # truncated last message: the last SOH has no EOT after it (and at most a dangling ETX): drop it, keep the rest
-  n_trunc <- 0L
-  if (length(soh) == length(eot) + 1L && (length(eot) == 0 || soh[length(soh)] > eot[length(eot)])) {
-    last <- soh[length(soh)]
-    soh <- soh[-length(soh)]
-    etx <- etx[etx < last]
-    n_trunc <- 1L
-    cli::cli_alert_warning("{basename(path)}: truncated last message (byte {last} of {length(b)}, no ETX / EOT) dropped; {length(soh)} complete message{?s} kept.")
+  # every ETX / EOT belongs to the message of the last SOH before it (its window up to the next SOH)
+  ie <- findInterval(etx, soh)
+  io <- findInterval(eot, soh)
+  if (any(ie == 0L) || any(io == 0L)) cli::cli_abort("{.path {path}}: ETX / EOT before the first SOH.")
+  ne <- tabulate(ie, length(soh))
+  no <- tabulate(io, length(soh))
+  is_last <- seq_along(soh) == length(soh)
+  frag <- no == 0L & (ne == 0L | (is_last & ne == 1L))
+  complete <- ne == 1L & no == 1L
+  if (any(!frag & !complete)) {
+    k <- which(!frag & !complete)[1]
+    cli::cli_abort("{.path {path}}: SOH / ETX / EOT do not form complete messages: {sum(!frag & !complete)} message{?s} with ETX / EOT counts other than 1 / 1 (first at byte {soh[k]}: ETX {ne[k]}, EOT {no[k]}).")
+  }
+  n_trunc <- sum(frag)
+  frag_after <- cumsum(complete)[frag]
+  frag_byte <- soh[frag]
+  if (n_trunc > 0) {
+    for (j in seq_len(n_trunc)) {
+      if (frag_byte[j] == soh[length(soh)] && frag_after[j] == sum(complete)) {
+        cli::cli_alert_warning("{basename(path)}: truncated last message (byte {frag_byte[j]} of {length(b)}, no ETX / EOT) dropped, after record {frag_after[j]}.")
+      } else {
+        cli::cli_alert_warning("{basename(path)}: incomplete message (byte {frag_byte[j]}, no ETX / EOT before the next SOH) dropped, after record {frag_after[j]}.")
+      }
+    }
+    etx <- etx[complete[ie]]
+    eot <- eot[complete[io]]
+    soh <- soh[complete]
+    cli::cli_alert_info("{basename(path)}: {length(soh)} complete message{?s} kept.")
     if (length(soh) == 0) cli::cli_abort("{.path {path}}: no complete message.")
   }
-  if (length(etx) != length(soh) || length(eot) != length(soh) || any(etx <= soh) || any(eot != etx + 5L)) {
-    cli::cli_abort("{.path {path}}: SOH / ETX / EOT do not form {length(soh)} complete messages (ETX {length(etx)}, EOT {length(eot)}).")
-  }
-  if (length(soh) > 1 && any(soh[-1] < eot[-length(eot)])) cli::cli_abort("{.path {path}}: overlapping messages.")
-  n_rec <- length(soh)
-  len <- etx - soh # bytes after SOH up to and including ETX
-  ml <- max(len)
-  mat <- matrix(0L, n_rec, ml)
-  for (j in seq_len(ml)) {
-    use <- len >= j
-    mat[use, j] <- as.integer(b[soh[use] + j])
-  }
-  crc_calc <- skyvue_crc16(mat, len)
-  crc_txt <- vapply(seq_len(n_rec), function(i) rawToChar(b[(etx[i] + 1L):(etx[i] + 4L)]), "")
-  crc_ok <- !is.na(strtoi(crc_txt, 16L)) & strtoi(crc_txt, 16L) == crc_calc
-  # message text without SOH ... ETX, split into lines
-  txt <- vapply(seq_len(n_rec), function(i) rawToChar(b[(soh[i] + 1L):(etx[i] - 1L)]), "")
-  rm(b, mat)
-  lines <- strsplit(txt, "\r\n", fixed = TRUE)
-  nl <- lengths(lines)
-  # Message 006 text lines: 1 header (ends with STX), 2 status, 3 sky condition, 4 profile header, 5 MLH, 6 profile;
-  # message 004: the same without line 5 (5 text lines)
-  head1 <- sub("\002$", "", vapply(lines, `[`, "", 1))
-  mid <- ifelse(grepl("^CS.{4}006$", head1), "006", ifelse(grepl("^CS.{4}004$", head1), "004", NA_character_))
-  if (anyNA(mid)) {
-    cli::cli_abort("{.path {path}}: not message 006 or 004 ({.val {unique(head1[is.na(mid)])[1]}}).")
-  }
-  n_exp <- ifelse(mid == "006", 6L, 5L)
-  if (any(nl != n_exp)) {
-    i <- which(nl != n_exp)[1]
-    cli::cli_abort("{.path {path}}: {sum(nl != n_exp)} message{?s} without the {n_exp[i]} text lines of message {mid[i]} (first record {i}).")
-  }
-  ln <- function(k006, k004) vapply(seq_along(lines), function(i) lines[[i]][if (mid[i] == "006") k006 else k004], "")
-  L <- cbind(head1, ln(2, 2), ln(3, 3), ln(4, 4), ifelse(mid == "006", ln(5, 1), NA_character_), ln(6, 5))
-  rm(lines)
-  is6 <- mid == "006"
-  s2 <- skyvue_fields(L[, 2], 7, "status")
-  s4 <- skyvue_fields(L[, 4], 10, "profile header")
-  s5 <- matrix(NA_character_, nrow(L), 6)
-  if (any(is6)) s5[is6, ] <- skyvue_fields(L[is6, 5], 6, "mixing layer")
-  num <- function(x) skyvue_num(x)
-  ds <- substr(s2[, 1], 1, 1)
-  out <- dplyr::tibble(
-    message_id = mid,
-    detection_status = suppressWarnings(as.integer(ifelse(ds == "/", NA, ds))),
-    warning_alarm = substr(s2[, 1], 2, 2), window_tr_pct = num(s2[, 2]),
-    h1_m = num(s2[, 3]), h2_m = num(s2[, 4]), h3_m = num(s2[, 5]), h4_m = num(s2[, 6]), status_flags = s2[, 7],
-    scale_pct = num(s4[, 1]), resolution_m = num(s4[, 2]), n_gates = as.integer(num(s4[, 3])),
-    laser_energy_pct = num(s4[, 4]), laser_temp_c = num(s4[, 5]), tilt_deg = num(s4[, 6]),
-    background_mv = num(s4[, 7]), pulses_k = num(s4[, 8]), sample_rate_mhz = num(s4[, 9]), bs_sum = num(s4[, 10]),
-    mlh1_m = num(s5[, 1]), mlh1_q = as.integer(num(s5[, 2])), mlh2_m = num(s5[, 3]), mlh2_q = as.integer(num(s5[, 4])),
-    mlh3_m = num(s5[, 5]), mlh3_q = as.integer(num(s5[, 6])),
-    crc_ok = crc_ok
-  )
-  bad_len <- nchar(L[, 6]) != 5L * out$n_gates
-  if (any(bad_len)) cli::cli_abort("{.path {path}}: {sum(bad_len)} profile line{?s} not n_gates x 5 hex characters.")
-  if (keep_profile) out$profile_hex <- L[, 6] else attr(out, "profile_head_hex") <- substr(L[, 6], 1, 100)
-  attr(out, "skyvue_txt_meta") <- list(file = basename(path), n_records = n_rec, n_crc_fail = sum(!crc_ok),
-                                       message_id = sort(unique(mid)), n_004 = sum(!is6),
-                                       n_truncated_dropped = n_trunc, record_bytes = sort(unique(len)))
-  out
+  if (any(eot != etx + 5L)) cli::cli_abort("{.path {path}}: SOH / ETX / EOT do not form complete messages (EOT not 5 bytes after ETX).")
+  partial <- list(n_truncated_dropped = n_trunc,
+                  fragment_pos = if (n_trunc > 0) paste0("after record ", frag_after, " (byte ", frag_byte, ")", collapse = "; ") else NA_character_)
+  skyvue_with_partial({
+    n_rec <- length(soh)
+    len <- etx - soh # bytes after SOH up to and including ETX
+    ml <- max(len)
+    mat <- matrix(0L, n_rec, ml)
+    for (j in seq_len(ml)) {
+      use <- len >= j
+      mat[use, j] <- as.integer(b[soh[use] + j])
+    }
+    crc_calc <- skyvue_crc16(mat, len)
+    crc_txt <- vapply(seq_len(n_rec), function(i) rawToChar(b[(etx[i] + 1L):(etx[i] + 4L)]), "")
+    crc_ok <- !is.na(strtoi(crc_txt, 16L)) & strtoi(crc_txt, 16L) == crc_calc
+    # message text without SOH ... ETX, split into lines
+    txt <- vapply(seq_len(n_rec), function(i) rawToChar(b[(soh[i] + 1L):(etx[i] - 1L)]), "")
+    rm(b, mat)
+    lines <- strsplit(txt, "\r\n", fixed = TRUE)
+    nl <- lengths(lines)
+    # Message 006 text lines: 1 header (ends with STX), 2 status, 3 sky condition, 4 profile header, 5 MLH, 6 profile;
+    # message 004: the same without line 5 (5 text lines)
+    head1 <- sub("\002$", "", vapply(lines, `[`, "", 1))
+    mid <- ifelse(grepl("^CS.{4}006$", head1), "006", ifelse(grepl("^CS.{4}004$", head1), "004", NA_character_))
+    if (anyNA(mid)) {
+      cli::cli_abort("{.path {path}}: not message 006 or 004 ({.val {unique(head1[is.na(mid)])[1]}}).")
+    }
+    n_exp <- ifelse(mid == "006", 6L, 5L)
+    if (any(nl != n_exp)) {
+      i <- which(nl != n_exp)[1]
+      cli::cli_abort("{.path {path}}: {sum(nl != n_exp)} message{?s} without the {n_exp[i]} text lines of message {mid[i]} (first record {i}).")
+    }
+    ln <- function(k006, k004) vapply(seq_along(lines), function(i) lines[[i]][if (mid[i] == "006") k006 else k004], "")
+    L <- cbind(head1, ln(2, 2), ln(3, 3), ln(4, 4), ifelse(mid == "006", ln(5, 1), NA_character_), ln(6, 5))
+    rm(lines)
+    is6 <- mid == "006"
+    s2 <- skyvue_fields(L[, 2], 7, "status")
+    s4 <- skyvue_fields(L[, 4], 10, "profile header")
+    s5 <- matrix(NA_character_, nrow(L), 6)
+    if (any(is6)) s5[is6, ] <- skyvue_fields(L[is6, 5], 6, "mixing layer")
+    num <- function(x) skyvue_num(x)
+    ds <- substr(s2[, 1], 1, 1)
+    out <- dplyr::tibble(
+      message_id = mid,
+      detection_status = suppressWarnings(as.integer(ifelse(ds == "/", NA, ds))),
+      warning_alarm = substr(s2[, 1], 2, 2), window_tr_pct = num(s2[, 2]),
+      h1_m = num(s2[, 3]), h2_m = num(s2[, 4]), h3_m = num(s2[, 5]), h4_m = num(s2[, 6]), status_flags = s2[, 7],
+      scale_pct = num(s4[, 1]), resolution_m = num(s4[, 2]), n_gates = as.integer(num(s4[, 3])),
+      laser_energy_pct = num(s4[, 4]), laser_temp_c = num(s4[, 5]), tilt_deg = num(s4[, 6]),
+      background_mv = num(s4[, 7]), pulses_k = num(s4[, 8]), sample_rate_mhz = num(s4[, 9]), bs_sum = num(s4[, 10]),
+      mlh1_m = num(s5[, 1]), mlh1_q = as.integer(num(s5[, 2])), mlh2_m = num(s5[, 3]), mlh2_q = as.integer(num(s5[, 4])),
+      mlh3_m = num(s5[, 5]), mlh3_q = as.integer(num(s5[, 6])),
+      crc_ok = crc_ok
+    )
+    bad_len <- nchar(L[, 6]) != 5L * out$n_gates
+    if (any(bad_len)) cli::cli_abort("{.path {path}}: {sum(bad_len)} profile line{?s} not n_gates x 5 hex characters.")
+    if (keep_profile) out$profile_hex <- L[, 6] else attr(out, "profile_head_hex") <- substr(L[, 6], 1, 100)
+    attr(out, "skyvue_txt_meta") <- list(file = basename(path), n_records = n_rec, n_crc_fail = sum(!crc_ok),
+                                         message_id = sort(unique(mid)), n_004 = sum(!is6),
+                                         n_truncated_dropped = n_trunc, fragment_after = frag_after,
+                                         fragment_byte = frag_byte, fragment_pos = partial$fragment_pos,
+                                         record_bytes = sort(unique(len)))
+    out
+  }, partial)
+}
+
+# Evaluate `expr`; on an error, add the partial meta known so far (a list or an environment) to the condition as
+# field `skyvue_partial` (values already there, from an inner call, take precedence) and signal it again, class
+# kept. Used so that 14a can count CSV header and fragment cases on days that fail (fix-14a June 2026, item 3).
+skyvue_with_partial <- function(expr, partial) {
+  tryCatch(expr, error = function(e) {
+    p <- if (is.environment(partial)) as.list(partial) else partial
+    e$skyvue_partial <- utils::modifyList(p, if (is.null(e$skyvue_partial)) list() else e$skyvue_partial)
+    stop(e)
+  })
 }
 
 #' Read a SkyVUE PRO CSV export (one day)
@@ -227,8 +266,7 @@ read_skyvue_txt <- function(path, keep_profile = FALSE) {
 #'   `header_missing` [logical].
 read_skyvue_csv <- function(path, message_id = NULL) {
   if (!file.exists(path)) cli::cli_abort("SkyVUE file {.path {path}} not found.")
-  first <- readLines(path, n = 1, warn = FALSE)
-  no_header <- length(first) == 1 && grepl("^[0-9]{2}\\.[0-9]{2}\\.[0-9]{4} [0-9]{2}:[0-9]{2}:[0-9]{2},", first)
+  no_header <- skyvue_csv_header_missing(path)
   if (no_header) {
     if (is.null(message_id) || length(message_id) != 1 || !message_id %in% c("006", "004")) {
       cli::cli_abort("{.path {path}}: no header line, and no single message type (006 / 004) to take the layout from.")
@@ -284,6 +322,15 @@ read_skyvue_csv <- function(path, message_id = NULL) {
   out
 }
 
+#' Does a SkyVUE CSV lack its header line?
+#'
+#' @param path Path of the CSV [character].
+#' @return `TRUE` if the first line is a record (`dd.mm.yyyy HH:MM:SS,` time stamp), else `FALSE` [logical].
+skyvue_csv_header_missing <- function(path) {
+  first <- readLines(path, n = 1, warn = FALSE)
+  length(first) == 1 && grepl("^[0-9]{2}\\.[0-9]{2}\\.[0-9]{4} [0-9]{2}:[0-9]{2}:[0-9]{2},", first)
+}
+
 #' Header lines of the two SkyVUE CSV layouts (column names only)
 #'
 #' Full layout: the 26 columns of the DE-Tha export with the MLH option (sample of 2026-07-15); short layout: the 7
@@ -331,16 +378,102 @@ skyvue_csv_profile_head <- function(x, n = 20L) {
   out
 }
 
+#' Per-record pairing checks of a SkyVUE CSV / TXT pair
+#'
+#' The checks of [read_skyvue_day()] on rows already paired by order (`a[i]` with `b[i]`); records with a CRC
+#' mismatch pass every check (not compared).
+#'
+#' @param a Rows of [read_skyvue_csv()].
+#' @param b Rows of [read_skyvue_txt()], same number as `a`.
+#' @param hex Hex profile lines of `b` (at least the first `n_check` gates) [character].
+#' @param layout CSV layout, `"full"` or `"short"`.
+#' @param n_check Profile gates compared with the CSV [-].
+#' @return List: `checks` (named list of logical vectors, `TRUE` = record passes; names = check descriptions in the
+#'   order they are reported), `ok` (all checks passed) [logical], `rel` (records x gates relative difference of the
+#'   decoded profile and the CSV profile where compared, else `NA`; `NULL` in the short layout) [-].
+skyvue_pair_checks <- function(a, b, hex, layout, n_check = 20L) {
+  same <- function(x, y) (is.na(x) & is.na(y)) | (!is.na(x) & !is.na(y) & abs(x - y) < 0.5)
+  free <- !b$crc_ok
+  ck <- list()
+  cl <- b$detection_status %in% 1:4
+  ck[["cloud base 1 (detection status 1-4)"]] <- free | !cl | same(round(a$cloud_base1_m), b$h1_m)
+  rel <- NULL
+  if (layout == "full") {
+    is6 <- b$message_id == "006" # message 004 has no mixing-layer line (no MLH option): not compared
+    for (k in 1:3) {
+      ck[[paste("mixing layer", k, "heights")]] <- free | !is6 |
+        same(a[[paste0("mlh", k, "_m")]], b[[paste0("mlh", k, "_m")]])
+      qa <- dplyr::coalesce(a[[paste0("mlh", k, "_q")]], 0L)
+      qb <- dplyr::coalesce(b[[paste0("mlh", k, "_q")]], 0L)
+      ck[[paste("mixing layer", k, "confidences")]] <- free | !is6 | qa == qb
+    }
+    dec <- skyvue_decode_profile(substr(hex, 1, 5 * n_check), b$scale_pct, gates = seq_len(n_check))
+    csvp <- skyvue_csv_profile_head(a$profile_csv, n_check)
+    cmp <- !is.na(csvp) & !free
+    rel <- abs(dec - csvp) / pmax(abs(csvp), 1e-12)
+    rel[!cmp] <- NA_real_
+    bad_rec <- rowSums(rel > 0.01, na.rm = TRUE) > 0
+    ck[[paste0("decoded profile and CSV profile (first ", n_check, " gates)")]] <- !bad_rec
+  } else {
+    vv <- b$detection_status %in% 5L
+    ck[["vertical visibility (detection status 5)"]] <- free | !vv | same(round(a$vertical_visibility_m), b$h1_m)
+  }
+  list(checks = ck, ok = Reduce(`&`, ck), rel = rel)
+}
+
+#' Find the CSV rows of dropped TXT fragments
+#'
+#' fix-14a June 2026: when the CSV has one row more per dropped TXT fragment ([read_skyvue_txt()]), the CSV row of
+#' each fragment is searched among the rows within `reach` of its expected position (the row after the complete
+#' records before it): each candidate is dropped in turn and the records within `win` of the fragment are compared
+#' with [skyvue_pair_checks()] (cloud base, mixing layers and confidences, profile head; short layout: cloud base and
+#' vertical visibility). The candidate with the fewest mismatching records is taken; ties (records identical in every
+#' compared field) go to the candidate nearest the expected position, then the earlier one (the time stamp is then
+#' uncertain by the tied rows; counted in `n_tied`). Fragments are matched in file order.
+#'
+#' @param a,b,hex,layout,n_check As [skyvue_pair_checks()]; `a` has `nrow(b) + length(after)` rows.
+#' @param after Complete TXT records before each fragment (`fragment_after` of [read_skyvue_txt()]) [-].
+#' @param reach Candidate rows on each side of the expected one [-].
+#' @param win TXT records on each side of the fragment compared [-].
+#' @return List: `drop` (CSV rows to drop, one per fragment), `n_tied` (candidates with the best score) [-],
+#'   `n_mismatch` (mismatching records in the window with the chosen row dropped) [-].
+skyvue_match_fragments <- function(a, b, hex, layout, n_check, after, reach = 3L, win = 10L) {
+  nf <- length(after)
+  drop <- integer(nf)
+  n_tied <- integer(nf)
+  n_mm <- integer(nf)
+  for (f in seq_len(nf)) {
+    p <- after[f]
+    e <- p + f # expected CSV row: p complete records and f - 1 earlier fragment rows before it
+    lo <- max(1L, p - win + 1L, if (f > 1) after[f - 1] + 1L else 1L)
+    hi <- min(nrow(b), p + win, if (f < nf) after[f + 1] else nrow(b))
+    i <- if (hi >= lo) lo:hi else integer()
+    lo_c <- max(1L, e - reach, if (f > 1) drop[f - 1] + 1L else 1L)
+    hi_c <- min(nrow(a), e + reach, if (f < nf) after[f + 1] + f else nrow(a))
+    cand <- lo_c:hi_c
+    score <- vapply(cand, function(c0) {
+      keep <- setdiff(seq_len(nrow(a)), c(drop[seq_len(f - 1)], c0))
+      if (length(i) == 0) return(0)
+      sum(!skyvue_pair_checks(a[keep[i], ], b[i, ], hex[i], layout, n_check)$ok)
+    }, numeric(1))
+    best <- cand[score == min(score)]
+    drop[f] <- best[order(abs(best - e), best)][1]
+    n_tied[f] <- length(best)
+    n_mm[f] <- min(score)
+  }
+  list(drop = drop, n_tied = n_tied, n_mismatch = n_mm)
+}
+
 #' Read one SkyVUE day (CSV + TXT) and check the pairing
 #'
 #' Spec 14 A1: time stamps and the three mixing layers with their confidence from the CSV; the profile header and
-#' (optionally) the profile from the TXT, paired by record order. Checks, each aborting with the first failing record:
-#' equal record counts (a mismatch aborts with condition class `skyvue_count_mismatch`, fields `n_csv`, `n_txt`;
-#' fix-14a item 10); for every record with a valid CRC, the CSV mixing layers and confidences equal the TXT line 5
-#' (`/////` = `NA`, confidence 0 when no layer), and the CSV cloud base 1 (rounded to 1 m) equals TXT `h1` where the
-#' detection status is 1-4; the decoded profile (first `n_check` gates) equals the CSV values where the CSV parse is
-#' unambiguous (relative difference <= 1 %, CSV values carry 3-4 significant digits). Records with a CRC mismatch
-#' are kept with `crc_ok = FALSE` and their mixing layers set to `NA` (counted in the attribute).
+#' (optionally) the profile from the TXT, paired by record order. Checks ([skyvue_pair_checks()]): equal record counts
+#' (a mismatch aborts with condition class `skyvue_count_mismatch`, fields `n_csv`, `n_txt`; fix-14a item 10); for
+#' every record with a valid CRC, the CSV mixing layers and confidences equal the TXT line 5 (`/////` = `NA`,
+#' confidence 0 when no layer), and the CSV cloud base 1 (rounded to 1 m) equals TXT `h1` where the detection status
+#' is 1-4; the decoded profile (first `n_check` gates) equals the CSV values where the CSV parse is unambiguous
+#' (relative difference <= 1 %, CSV values carry 3-4 significant digits). Records with a CRC mismatch are kept with
+#' `crc_ok = FALSE` and their mixing layers set to `NA` (counted in the attribute).
 #'
 #' Short CSV layout (before the MLH option, until about 2025-06-24; fix-14c item 9): records paired by order as well;
 #' checked: equal counts, cloud base 1 (detection status 1-4) and the vertical visibility (detection status 5, where
@@ -349,103 +482,133 @@ skyvue_csv_profile_head <- function(x, n = 20L) {
 #' reported as such.
 #'
 #' Close-out 2026-11-19 (DE-Tha days that failed in 14a): message 004 days are read (no mixing-layer line: layers `NA`,
-#' `mlh_note` "no MLH option (message 004)", the MLH comparison skipped on those records); a truncated last TXT message
-#' is dropped ([read_skyvue_txt()]) and, when the CSV has exactly that many more records, the same last CSV rows too
-#' (`n_csv_dropped`; otherwise the count mismatch stands); a CSV without a header line is read with the layout of the
-#' day's message type ([read_skyvue_csv()], `csv_header`). Each case is logged with a warning.
+#' `mlh_note` "no MLH option (message 004)", the MLH comparison skipped on those records); a CSV without a header line
+#' is read with the layout of the day's message type ([read_skyvue_csv()], `csv_header`).
+#'
+#' fix-14a June 2026 (G 2026-11-20): TXT fragments (a truncated last message or an incomplete message mid-file) are
+#' dropped by [read_skyvue_txt()]. If the CSV has as many records as the TXT, the records are paired by order (the
+#' fragment has no CSV row); if it has one more per fragment, the CSV row of each fragment is found by
+#' [skyvue_match_fragments()], dropped and its time logged (`csv_dropped_utc`); any other difference stays a count
+#' mismatch. Isolated pairing mismatches are tolerated: if at most `max_mismatch` records and at most
+#' `max_mismatch_share` of the day's records fail a check, those records are dropped from both files and logged
+#' (`n_pair_mismatch_dropped`, `pair_mismatch_utc`, `pair_mismatch_check`); above that the day fails as before. Each
+#' case is logged with a warning. Any error after the CSV header test carries the partial meta (`csv_header`,
+#' `n_truncated_dropped`, `fragment_pos`) in the condition field `skyvue_partial`.
 #'
 #' @param csv,txt Paths of the day's `.csv` and `.txt` files [character].
 #' @param keep_profile Keep the hex profile lines [logical].
 #' @param n_check Profile gates compared with the CSV [-].
+#' @param max_mismatch Largest number of records failing a pairing check that are dropped instead of failing the day
+#'   [-] (G 2026-11-20: 5).
+#' @param max_mismatch_share Largest share of the day's records that may be dropped that way [0-1] (G 2026-11-20:
+#'   0.001).
 #' @return Tibble of [read_skyvue_txt()] with `time_end_utc` [POSIXct UTC] first. Attribute `skyvue_meta`: `csv`,
 #'   `txt`, `csv_layout` (`full` / `short`), `csv_header` (`present` / `missing: layout of message <id>`),
-#'   `message_id`, `n_004` [-], `mlh_note`, `n_truncated_dropped`, `n_csv_dropped` [-], `csv_dropped_utc` (time
-#'   stamps of the dropped CSV rows, `YYYY-MM-DD HH:MM:SS` UTC, space-separated; `NA` if none),
-#'   `n_records`, `n_crc_fail`, `profile_check` (`done` / `not available
-#'   (short CSV layout)`), `n_profile_records_checked`, `max_rel_diff_profile` [-], `scale_values` [%],
-#'   `interval_s_median` [s].
-read_skyvue_day <- function(csv, txt, keep_profile = FALSE, n_check = 20L) {
-  b <- read_skyvue_txt(txt, keep_profile = keep_profile)
-  tm <- attr(b, "skyvue_txt_meta")
-  a <- read_skyvue_csv(csv, message_id = if (length(tm$message_id) == 1) tm$message_id else NULL)
-  layout <- attr(a, "layout")
-  if (isTRUE(attr(a, "header_missing"))) {
-    cli::cli_alert_warning("{basename(csv)}: no header line; read with the {layout} layout of message {tm$message_id}.")
-  }
-  # truncated last TXT message: the CSV row of the same (last) record is dropped too, only when the counts differ by
-  # exactly the dropped messages (close-out 2026-11-19); any other difference stays a count mismatch
-  n_csv_drop <- 0L
-  csv_dropped_utc <- NA_character_
-  if (tm$n_truncated_dropped > 0 && nrow(a) == nrow(b) + tm$n_truncated_dropped) {
-    n_csv_drop <- tm$n_truncated_dropped
-    csv_dropped_utc <- paste(format(a$time_end_utc[(nrow(b) + 1):nrow(a)], "%Y-%m-%d %H:%M:%S"), collapse = " ")
-    a <- a[seq_len(nrow(b)), ]
-    cli::cli_alert_warning("{basename(csv)}: last {n_csv_drop} record{?s} dropped with the truncated TXT message (time stamp {csv_dropped_utc} UTC).")
-  }
-  if (nrow(a) != nrow(b)) {
-    # fix-14a item 10: a count mismatch has its own condition class (skyvue_count_mismatch, fields n_csv and n_txt)
-    # so that callers can skip the day instead of counting it as a failed check; no alignment is attempted
-    cli::cli_abort("SkyVUE pairing: {basename(csv)} has {nrow(a)} records, {basename(txt)} {nrow(b)}.",
-                   class = "skyvue_count_mismatch", n_csv = nrow(a), n_txt = nrow(b))
-  }
-  first_bad <- function(ok, what) {
-    if (!all(ok)) {
-      i <- which(!ok)[1]
-      cli::cli_abort("SkyVUE pairing ({basename(csv)} / {basename(txt)}): {what} differ on {sum(!ok)} record{?s}; first record {i} ({format(a$time_end_utc[i], '%Y-%m-%d %H:%M:%S')} UTC).")
-    }
-  }
-  same <- function(x, y) (is.na(x) & is.na(y)) | (!is.na(x) & !is.na(y) & abs(x - y) < 0.5)
-  ok_crc <- b$crc_ok
-  cl <- b$detection_status %in% 1:4
-  first_bad(!ok_crc | !cl | same(round(a$cloud_base1_m), b$h1_m), "cloud base 1 (detection status 1-4)")
-  is6 <- b$message_id == "006" # message 004 has no mixing-layer line (no MLH option): not compared
-  if (layout == "full") {
-    for (k in 1:3) {
-      first_bad(!ok_crc | !is6 | same(a[[paste0("mlh", k, "_m")]], b[[paste0("mlh", k, "_m")]]), paste("mixing layer", k, "heights"))
-      qa <- dplyr::coalesce(a[[paste0("mlh", k, "_q")]], 0L)
-      qb <- dplyr::coalesce(b[[paste0("mlh", k, "_q")]], 0L)
-      first_bad(!ok_crc | !is6 | qa == qb, paste("mixing layer", k, "confidences"))
-    }
+#'   `message_id`, `n_004` [-], `mlh_note`, `n_csv`, `n_txt` [-, records as read; TXT after dropping fragments],
+#'   `n_truncated_dropped` [-, TXT fragments], `fragment_pos` (`after record k (byte b)`, `; `-separated; `NA` if
+#'   none), `n_csv_dropped` [-], `csv_dropped_utc` (time stamps of the CSV rows dropped with fragments,
+#'   `YYYY-MM-DD HH:MM:SS` UTC, space-separated; `NA` if none), `n_fragment_tied` [-, fragments whose CSV row was
+#'   not unique], `n_pair_mismatch_dropped` [-], `pair_mismatch_utc` (as `csv_dropped_utc`), `pair_mismatch_check`
+#'   (checks failed, `; `-separated), `n_records`, `n_crc_fail`, `profile_check` (`done` / `not available (short CSV
+#'   layout)`), `n_profile_records_checked`, `max_rel_diff_profile` [-], `scale_values` [%], `interval_s_median` [s].
+read_skyvue_day <- function(csv, txt, keep_profile = FALSE, n_check = 20L, max_mismatch = 5L,
+                            max_mismatch_share = 0.001) {
+  pm <- new.env()
+  pm$csv_header <- if (file.exists(csv) && skyvue_csv_header_missing(csv)) "missing" else "present"
+  pm$n_truncated_dropped <- NA_integer_
+  pm$fragment_pos <- NA_character_
+  skyvue_with_partial({
+    b <- read_skyvue_txt(txt, keep_profile = keep_profile)
+    tm <- attr(b, "skyvue_txt_meta")
+    pm$n_truncated_dropped <- tm$n_truncated_dropped
+    pm$fragment_pos <- tm$fragment_pos
     hex <- if (keep_profile) b$profile_hex else attr(b, "profile_head_hex")
-    dec <- skyvue_decode_profile(substr(hex, 1, 5 * n_check), b$scale_pct, gates = seq_len(n_check))
-    csvp <- skyvue_csv_profile_head(a$profile_csv, n_check)
-    cmp <- !is.na(csvp) & ok_crc
-    rel <- abs(dec - csvp) / pmax(abs(csvp), 1e-12)
-    rel[!cmp] <- NA_real_
-    bad_rec <- apply(rel > 0.01, 1, function(r) any(r, na.rm = TRUE))
-    first_bad(!bad_rec, paste0("decoded profile and CSV profile (first ", n_check, " gates)"))
-    profile_check <- "done"
-    n_prof <- sum(rowSums(cmp) > 0)
-    max_rel <- if (any(!is.na(rel))) max(rel, na.rm = TRUE) else NA_real_
-  } else {
-    vv <- b$detection_status %in% 5L
-    first_bad(!ok_crc | !vv | same(round(a$vertical_visibility_m), b$h1_m), "vertical visibility (detection status 5)")
-    for (k in 1:3) { # no MLH column in the short layout (option not active)
-      b[[paste0("mlh", k, "_m")]] <- NA_real_
-      b[[paste0("mlh", k, "_q")]] <- NA_integer_
+    a <- read_skyvue_csv(csv, message_id = if (length(tm$message_id) == 1) tm$message_id else NULL)
+    layout <- attr(a, "layout")
+    if (isTRUE(attr(a, "header_missing"))) {
+      pm$csv_header <- paste("missing: layout of message", tm$message_id)
+      cli::cli_alert_warning("{basename(csv)}: no header line; read with the {layout} layout of message {tm$message_id}.")
     }
-    profile_check <- "not available (short CSV layout)"
-    n_prof <- NA_integer_
-    max_rel <- NA_real_
-  }
-  for (k in 1:3) {
-    b[[paste0("mlh", k, "_m")]][!ok_crc] <- NA_real_
-    b[[paste0("mlh", k, "_q")]][!ok_crc] <- NA_integer_
-  }
-  out <- dplyr::bind_cols(dplyr::tibble(time_end_utc = a$time_end_utc), b)
-  attr(out, "skyvue_meta") <- list(
-    csv = basename(csv), txt = basename(txt), csv_layout = layout,
-    csv_header = if (isTRUE(attr(a, "header_missing"))) paste("missing: layout of message", tm$message_id) else "present",
-    message_id = paste(tm$message_id, collapse = " "), n_004 = tm$n_004,
-    mlh_note = if (tm$n_004 == nrow(out)) "no MLH option (message 004)" else if (tm$n_004 > 0)
-      paste0("no MLH option on ", tm$n_004, " records (message 004)") else NA_character_,
-    n_truncated_dropped = tm$n_truncated_dropped, n_csv_dropped = n_csv_drop, csv_dropped_utc = csv_dropped_utc,
-    n_records = nrow(out), n_crc_fail = sum(!ok_crc),
-    profile_check = profile_check, n_profile_records_checked = n_prof, max_rel_diff_profile = max_rel,
-    scale_values = sort(unique(b$scale_pct)),
-    interval_s_median = if (nrow(out) > 1) stats::median(diff(as.numeric(out$time_end_utc))) else NA_real_
-  )
-  out
+    n_csv0 <- nrow(a)
+    n_txt0 <- nrow(b)
+    # TXT fragments: CSV rows of the fragments found by matching (fix-14a June 2026); equal counts = paired by order
+    n_csv_drop <- 0L
+    csv_dropped_utc <- NA_character_
+    n_tied <- 0L
+    if (tm$n_truncated_dropped > 0 && nrow(a) == nrow(b) + tm$n_truncated_dropped) {
+      mf <- skyvue_match_fragments(a, b, hex, layout, n_check, tm$fragment_after)
+      n_csv_drop <- length(mf$drop)
+      csv_dropped_utc <- paste(format(a$time_end_utc[mf$drop], "%Y-%m-%d %H:%M:%S"), collapse = " ")
+      n_tied <- sum(mf$n_tied > 1)
+      for (f in seq_along(mf$drop)) {
+        cli::cli_alert_warning("{basename(csv)}: record {mf$drop[f]} ({format(a$time_end_utc[mf$drop[f]], '%Y-%m-%d %H:%M:%S')} UTC) dropped with the TXT fragment after record {tm$fragment_after[f]}{if (mf$n_tied[f] > 1) paste0(' (', mf$n_tied[f], ' rows matched equally; nearest the fragment taken)') else ''}.")
+      }
+      a <- a[-mf$drop, ]
+    } else if (tm$n_truncated_dropped > 0 && nrow(a) == nrow(b)) {
+      cli::cli_alert_info("{basename(csv)}: as many records as the complete TXT messages: paired by order (no CSV row for the fragment{?s}).")
+    }
+    if (nrow(a) != nrow(b)) {
+      # fix-14a item 10: a count mismatch has its own condition class (skyvue_count_mismatch, fields n_csv and n_txt)
+      # so that callers can skip the day instead of counting it as a failed check; no alignment is attempted
+      cli::cli_abort("SkyVUE pairing: {basename(csv)} has {nrow(a)} records, {basename(txt)} {nrow(b)}.",
+                     class = "skyvue_count_mismatch", n_csv = nrow(a), n_txt = nrow(b))
+    }
+    pc <- skyvue_pair_checks(a, b, hex, layout, n_check)
+    bad <- !pc$ok
+    n_bad <- sum(bad)
+    mm_utc <- NA_character_
+    mm_check <- NA_character_
+    if (n_bad > 0) {
+      failed <- names(pc$checks)[vapply(pc$checks, function(x) !all(x), logical(1))]
+      if (n_bad > max_mismatch || n_bad > max_mismatch_share * nrow(b)) {
+        w <- failed[1]
+        i <- which(!pc$checks[[w]])[1]
+        cli::cli_abort("SkyVUE pairing ({basename(csv)} / {basename(txt)}): {w} differ on {sum(!pc$checks[[w]])} record{?s}; first record {i} ({format(a$time_end_utc[i], '%Y-%m-%d %H:%M:%S')} UTC); {n_bad} record{?s} {?fails/fail} a check (tolerated: up to {max_mismatch} and {100 * max_mismatch_share} % of {nrow(b)}).")
+      }
+      # fix-14a June 2026: isolated mismatches dropped from both files and logged
+      mm_utc <- paste(format(a$time_end_utc[bad], "%Y-%m-%d %H:%M:%S"), collapse = " ")
+      mm_check <- paste(failed, collapse = "; ")
+      cli::cli_alert_warning("{basename(csv)}: {n_bad} record{?s} failing a pairing check dropped (record{?s} {which(bad)}, {mm_utc} UTC; {mm_check}).")
+      a <- a[!bad, ]
+      b <- b[!bad, ]
+      if (!is.null(pc$rel)) pc$rel <- pc$rel[!bad, , drop = FALSE]
+    }
+    ok_crc <- b$crc_ok
+    if (layout == "full") {
+      profile_check <- "done"
+      n_prof <- sum(rowSums(!is.na(pc$rel)) > 0)
+      max_rel <- if (any(!is.na(pc$rel))) max(pc$rel, na.rm = TRUE) else NA_real_
+    } else {
+      for (k in 1:3) { # no MLH column in the short layout (option not active)
+        b[[paste0("mlh", k, "_m")]] <- NA_real_
+        b[[paste0("mlh", k, "_q")]] <- NA_integer_
+      }
+      profile_check <- "not available (short CSV layout)"
+      n_prof <- NA_integer_
+      max_rel <- NA_real_
+    }
+    for (k in 1:3) {
+      b[[paste0("mlh", k, "_m")]][!ok_crc] <- NA_real_
+      b[[paste0("mlh", k, "_q")]][!ok_crc] <- NA_integer_
+    }
+    n_004 <- sum(b$message_id == "004")
+    out <- dplyr::bind_cols(dplyr::tibble(time_end_utc = a$time_end_utc), b)
+    attr(out, "skyvue_meta") <- list(
+      csv = basename(csv), txt = basename(txt), csv_layout = layout, csv_header = pm$csv_header,
+      message_id = paste(tm$message_id, collapse = " "), n_004 = n_004,
+      mlh_note = if (n_004 == nrow(out)) "no MLH option (message 004)" else if (n_004 > 0)
+        paste0("no MLH option on ", n_004, " records (message 004)") else NA_character_,
+      n_csv = n_csv0, n_txt = n_txt0,
+      n_truncated_dropped = tm$n_truncated_dropped, fragment_pos = tm$fragment_pos,
+      n_csv_dropped = n_csv_drop, csv_dropped_utc = csv_dropped_utc, n_fragment_tied = n_tied,
+      n_pair_mismatch_dropped = n_bad, pair_mismatch_utc = mm_utc, pair_mismatch_check = mm_check,
+      n_records = nrow(out), n_crc_fail = sum(!ok_crc),
+      profile_check = profile_check, n_profile_records_checked = n_prof, max_rel_diff_profile = max_rel,
+      scale_values = sort(unique(b$scale_pct)),
+      interval_s_median = if (nrow(out) > 1) stats::median(diff(as.numeric(out$time_end_utc))) else NA_real_
+    )
+    out
+  }, pm)
 }
 
 #' Find the SkyVUE day file pairs under a folder

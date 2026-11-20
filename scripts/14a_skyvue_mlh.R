@@ -16,6 +16,12 @@
 #   matching last CSV record), the rest of the day kept; a CSV without a header line is read with the header layout
 #   of the day's message type. Each is logged and listed in the day table (mlh_note, n_truncated_dropped,
 #   n_csv_dropped with csv_dropped_utc, csv_header, message_id). The count-mismatch rule of item 10 is unchanged (skipped, not failed).
+#   fix-14a June 2026 (G 2026-11-20): an incomplete TXT message anywhere in the file (a SOH followed by the next SOH
+#   before its ETX / EOT) is dropped and its position logged (fragment_pos); equal counts are paired by order, one
+#   more CSV row per fragment is found by matching and dropped (csv_dropped_utc, n_fragment_tied); up to 5 records
+#   and 0.1 % of the day failing a pairing check are dropped and logged (n_pair_mismatch_dropped, pair_mismatch_utc,
+#   pair_mismatch_check), above that the day fails; the summary counts fragments and header-less CSVs on all days
+#   (csv_header, n_truncated_dropped, fragment_pos also on failed and skipped days).
 # Pairing: provider "TU Dresden" in config/measured_sites.csv (status secondary).
 # Output: <standard_dir>/<site>/<site>__tud_skyvue_mlh.csv.gz + .yml; <output_dir>/tables/internal/
 #   14_skyvue_days_<site>.csv (one row per day file pair: records, CRC failures, records with MLH, profile check,
@@ -71,9 +77,15 @@ for (i in seq_len(nrow(days))) {
     next
   }
   r <- tryCatch(read_skyvue_day(days$csv[i], days$txt[i]), error = function(e) e)
+  # fix-14a June 2026 item 3: what the reader knew before failing (CSV header, TXT fragments), so that the summary
+  # counts these cases on failed and skipped days too
+  pp <- if (inherits(r, "error") && !is.null(r$skyvue_partial)) r$skyvue_partial else list()
+  part <- dplyr::tibble(csv_header = if (is.null(pp$csv_header)) NA_character_ else pp$csv_header,
+                        n_truncated_dropped = if (is.null(pp$n_truncated_dropped)) NA_integer_ else as.integer(pp$n_truncated_dropped),
+                        fragment_pos = if (is.null(pp$fragment_pos)) NA_character_ else pp$fragment_pos)
   if (inherits(r, "skyvue_count_mismatch")) {
     # fix-14a item 10: different CSV / TXT record counts = skipped day (no alignment), not a failed check
-    info[[i]] <- dplyr::tibble(day = days$day[i], csv = fname, n_csv = r$n_csv, n_txt = r$n_txt,
+    info[[i]] <- dplyr::tibble(day = days$day[i], csv = fname, part, n_csv = r$n_csv, n_txt = r$n_txt,
                                skip_reason = paste0("record count mismatch: CSV ", r$n_csv, ", TXT ", r$n_txt),
                                error = NA_character_)
     next
@@ -81,14 +93,16 @@ for (i in seq_len(nrow(days))) {
   if (inherits(r, "error")) {
     msg <- gsub("\\s+", " ", conditionMessage(r))
     cli::cli_alert_danger("{format(days$day[i])}: {msg}")
-    info[[i]] <- dplyr::tibble(day = days$day[i], csv = fname, skip_reason = NA_character_, error = msg)
+    info[[i]] <- dplyr::tibble(day = days$day[i], csv = fname, part, skip_reason = NA_character_, error = msg)
     next
   }
   m <- attr(r, "skyvue_meta")
   info[[i]] <- dplyr::tibble(
     day = days$day[i], csv = m$csv, csv_layout = m$csv_layout, csv_header = m$csv_header, message_id = m$message_id,
-    mlh_note = m$mlh_note, n_truncated_dropped = m$n_truncated_dropped, n_csv_dropped = m$n_csv_dropped,
-    csv_dropped_utc = m$csv_dropped_utc, n_csv = m$n_records + m$n_csv_dropped, n_txt = m$n_records,
+    mlh_note = m$mlh_note, n_truncated_dropped = m$n_truncated_dropped, fragment_pos = m$fragment_pos,
+    n_csv_dropped = m$n_csv_dropped, csv_dropped_utc = m$csv_dropped_utc, n_fragment_tied = m$n_fragment_tied,
+    n_pair_mismatch_dropped = m$n_pair_mismatch_dropped, pair_mismatch_utc = m$pair_mismatch_utc,
+    pair_mismatch_check = m$pair_mismatch_check, n_csv = m$n_csv, n_txt = m$n_txt,
     n_records = m$n_records, n_crc_fail = m$n_crc_fail,
     n_mlh1 = sum(!is.na(r$mlh1_m)), n_mlh2 = sum(!is.na(r$mlh2_m)), n_mlh3 = sum(!is.na(r$mlh3_m)),
     profile_check = m$profile_check, n_profile_records_checked = m$n_profile_records_checked,
@@ -103,7 +117,9 @@ for (i in seq_len(nrow(days))) {
 info <- dplyr::bind_rows(info)
 # fixed column order (bind_rows follows the first day, which may be a skipped one)
 info <- dplyr::relocate(info, dplyr::any_of(c(
-  "day", "csv", "csv_layout", "csv_header", "message_id", "mlh_note", "n_truncated_dropped", "n_csv_dropped", "csv_dropped_utc", "n_csv", "n_txt", "n_records", "n_crc_fail", "n_mlh1", "n_mlh2", "n_mlh3", "profile_check",
+  "day", "csv", "csv_layout", "csv_header", "message_id", "mlh_note", "n_truncated_dropped", "fragment_pos",
+  "n_csv_dropped", "csv_dropped_utc", "n_fragment_tied", "n_pair_mismatch_dropped", "pair_mismatch_utc",
+  "pair_mismatch_check", "n_csv", "n_txt", "n_records", "n_crc_fail", "n_mlh1", "n_mlh2", "n_mlh3", "profile_check",
   "n_profile_records_checked", "max_rel_diff_profile", "scale_pct", "n_gates", "resolution_m", "tilt_deg",
   "interval_s_median", "first_utc", "last_utc", "skip_reason", "error")))
 readr::write_csv(info, file.path(tab_dir, paste0("14_skyvue_days_", site_id, ".csv")))
@@ -126,14 +142,23 @@ if (anyDuplicated(recs$time_end_utc)) {
 
 cli::cli_h2("Checks over {nrow(info)} day{?s}")
 ok <- info[is.na(info$error) & is.na(info$skip_reason), ]
+# fix-14a June 2026 item 3: fragments and header-less CSVs counted on every day (failed and skipped days marked)
+st <- ifelse(!is.na(info$error), "failed", ifelse(!is.na(info$skip_reason), "skipped", "ok"))
+frag_d <- !is.na(info$n_truncated_dropped) & info$n_truncated_dropped > 0
+hdr_d <- !is.na(info$csv_header) & info$csv_header != "present"
+day_list <- function(x) {
+  if (!any(x)) return("none")
+  paste0(format(info$day[x]), ifelse(st[x] == "ok", "", paste0(" ", st[x])), collapse = ", ")
+}
 mr <- if (any(!is.na(ok$max_rel_diff_profile))) signif(max(ok$max_rel_diff_profile, na.rm = TRUE), 2) else "not available"
 cli::cli_inform(c(
   "Records {sum(ok$n_records)}; CRC mismatches {sum(ok$n_crc_fail)}; days failing a check {n_fail}; days skipped {n_skip} (record count mismatch {n_mm}, only one file {n_skip - n_mm}).",
   "Record count mismatch days per month: {mm_month}.",
   "CSV layout: full {sum(ok$csv_layout == 'full')} days, short (7 columns, before the MLH option) {sum(ok$csv_layout == 'short')} days.",
   "Message 004 (no MLH option, layers NA): {sum(!is.na(ok$mlh_note))} day{?s}{if (any(!is.na(ok$mlh_note))) paste0(', ', format(min(ok$day[!is.na(ok$mlh_note)])), ' to ', format(max(ok$day[!is.na(ok$mlh_note)]))) else ''}.",
-  "Truncated last TXT message dropped: {sum(ok$n_truncated_dropped > 0)} day{?s} ({paste(format(ok$day[ok$n_truncated_dropped > 0]), collapse = ', ')}); CSV records dropped with it: {sum(ok$n_csv_dropped)}{if (any(!is.na(ok$csv_dropped_utc))) paste0(' (', paste(ok$csv_dropped_utc[!is.na(ok$csv_dropped_utc)], collapse = ', '), ' UTC)') else ''}.",
-  "CSV without a header line (layout of the message type): {sum(ok$csv_header != 'present')} day{?s} ({paste(format(ok$day[ok$csv_header != 'present']), collapse = ', ')}).",
+  "TXT fragments dropped (truncated last or incomplete mid-file message; all days, failed / skipped marked): {sum(frag_d)} day{?s}, {sum(info$n_truncated_dropped[frag_d])} fragment{?s} ({day_list(frag_d)}); CSV records dropped with them (days that passed): {sum(ok$n_csv_dropped)}{if (any(!is.na(ok$csv_dropped_utc))) paste0(' (', paste(ok$csv_dropped_utc[!is.na(ok$csv_dropped_utc)], collapse = ', '), ' UTC)') else ''}; CSV row not unique (nearest taken): {sum(ok$n_fragment_tied)}.",
+  "Isolated pairing mismatches dropped (up to 5 records and 0.1 % of the day): {sum(ok$n_pair_mismatch_dropped)} record{?s} on {sum(ok$n_pair_mismatch_dropped > 0)} day{?s}{if (any(!is.na(ok$pair_mismatch_utc))) paste0(' (', paste(ok$pair_mismatch_utc[!is.na(ok$pair_mismatch_utc)], collapse = ', '), ' UTC)') else ''}.",
+  "CSV without a header line (layout of the message type; all days, failed / skipped marked): {sum(hdr_d)} day{?s} ({day_list(hdr_d)}).",
   "Profile decode vs CSV (first 20 gates, unambiguous values; full layout only): {sum(ok$n_profile_records_checked, na.rm = TRUE)} records, max relative difference {mr}.",
   "Scale parameter values: {paste(unique(ok$scale_pct), collapse = ', ')} %; gates {paste(unique(ok$n_gates), collapse = ', ')} x {paste(unique(ok$resolution_m), collapse = ', ')} m; tilt {paste(unique(ok$tilt_deg), collapse = ', ')} deg.",
   "Record step: median of the daily medians {stats::median(ok$interval_s_median)} s.",
