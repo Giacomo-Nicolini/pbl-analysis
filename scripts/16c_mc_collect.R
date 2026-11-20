@@ -65,6 +65,7 @@ mc_figures <- function(tab, oat_all, lab_site, mcs = NULL, srcs = NULL) {
   } else " (none)"
   cap <- paste(sites_text(lab_site), "- stratum = zm/L class x day/night;",
                "1σ effect = half-range of the one-at-a-time runs at ±1σ; small grey points: sites (median over rows); large point and bar: network median and IQR over sites.",
+               "Lines (PBLH source): network median of the stratum of |ERA5 − PBLHmod| and |PBLHmod-clim − PBLHmod| (spec 15).",
                "hc and z0: effects from the runs with the etc roughness-sublayer test (zm ≥ m z0) switched off ('rsl test off'), all other validity",
                "conditions kept. Under the etc set a share of these runs fails that test; the share is per site in 16s_validity_flips",
                paste0(flip_txt, ":"),
