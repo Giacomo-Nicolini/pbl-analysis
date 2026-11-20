@@ -268,8 +268,8 @@ Cluster results of the 14c diagnostics (DE-Tha July 2026, CZ-Lnz all versions) s
   (message 004)"; not an error. The CSV / TXT MLH comparison is skipped on 004 records.
 - **Truncated last message** (2026-06-21, 2026-06-28): the trailing SOH without ETX / EOT is dropped and logged
   (`n_truncated_dropped`); when the CSV has exactly that many more records, its last rows are dropped too
-  (`n_csv_dropped`, the dropped row's time stamp in `csv_dropped_utc` and the log, G 2026-11-19; the truncated message is the last record of the day in both files); the rest of the day is kept.
-  Any other incomplete message still aborts.
+  (`n_csv_dropped`, the dropped row's time stamp in `csv_dropped_utc` and the log, G 2026-11-19; the truncated message is the last record of the day in both files); the rest of the day is kept. **Superseded by amendment 3** (fragments anywhere, CSV row found by matching).
+  Any other incomplete message still aborts (superseded by amendment 3).
 - **CSV without a header** (2026-06-22, 2026-06-29): detected when the first line is a `dd.mm.yyyy HH:MM:SS` record;
   read with the header of the layout of the day's message type (006 full, 004 short; `skyvue_csv_header()`, column
   names of the full export), the column count checked; logged (`csv_header`).
@@ -278,3 +278,31 @@ Cluster results of the 14c diagnostics (DE-Tha July 2026, CZ-Lnz all versions) s
 - Day table `14_skyvue_days_<site>` gains `csv_header`, `message_id`, `mlh_note`, `n_truncated_dropped`,
   `n_csv_dropped`; the 14a log counts each case. Tests on synthetic hand cases (no real data). Cluster rerun: 14a and
   14c for DE-Tha only (local runbook).
+
+## Amendment 3 (fix-14a June 2026, G 2026-11-20): the 4 DE-Tha days still failing after the close-out rerun
+
+- **Incomplete message anywhere in the TXT** (2026-06-21, -22, -28: "ETX N-1, EOT N-1", one incomplete message that
+  is not the last one, probably a logger restart): a SOH whose message has neither ETX nor EOT before the next SOH
+  (or, for the last message, before the end of the file, where a dangling ETX is allowed) is a fragment: dropped,
+  its position logged (`fragment_pos`: complete records before it and byte of its SOH), counted in
+  `n_truncated_dropped` (now every fragment, last or mid-file). Any other layout (ETX without EOT mid-file, two ETX
+  or EOT in one message, EOT not 5 bytes after ETX) still aborts.
+- **Pairing with the CSV**: equal counts → paired by order (the fragment has no CSV row). One more CSV row per
+  fragment → the row is found by matching (`skyvue_match_fragments()`): each candidate within 3 rows of the expected
+  position is dropped in turn and the records within 10 of the fragment are compared with the pairing checks (cloud
+  base 1, mixing layers and confidences, profile head; short layout: cloud base and vertical visibility); fewest
+  mismatching records wins, ties go to the row nearest the expected position (`n_fragment_tied`); the dropped row's
+  time in `csv_dropped_utc` and the log. Any other count difference stays a count mismatch (skipped, amendment 2).
+  This replaces the amendment-2 rule "drop the last CSV rows" (same result on a truncated last message unless the
+  records say otherwise). The full pairing check then runs; if it fails, the day fails as before.
+- **Isolated pairing mismatches** (2026-06-29, header-less CSV read correctly; cloud base 1 differs on record 3,
+  00:02:26 UTC): records failing a pairing check are dropped from both files and logged, up to 5 records and at most
+  0.1 % of the day's records (`read_skyvue_day(max_mismatch = 5, max_mismatch_share = 0.001)`); above that the day
+  fails as now. Day table: `n_pair_mismatch_dropped`, `pair_mismatch_utc`, `pair_mismatch_check`. No adjacency rule:
+  a shifted pairing fails through the count limit.
+- **Run summary**: fragments and header-less CSVs counted on all days, failed and skipped days marked; the reader
+  passes `csv_header`, `n_truncated_dropped`, `fragment_pos` with its error (condition field `skyvue_partial`), so the
+  day table has them on failed and skipped days too. Day table also gains `fragment_pos`, `n_fragment_tied`; `n_csv`,
+  `n_txt` are the counts as read (TXT after dropping fragments).
+- Tests on synthetic files (mid-file fragment with and without its CSV row, two fragments, a single mismatching
+  record). Rerun 14a + 14c for DE-Tha only when the analysis reopens (no hurry, G).

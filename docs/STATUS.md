@@ -1,12 +1,14 @@
 # Project status (handover note)
 
-Last update: 2026-11-19. Read this first in a new session, then `docs/project_plan.md` and `CLAUDE.md`.
+Last update: 2026-11-20. Read this first in a new session, then `docs/project_plan.md` and `CLAUDE.md`.
 
 ## Analysis on stand-by from 2026-11-19
 
 Everything up to spec 16 and the close-out fixes is merged on `main` (spec 16 figures and spec 15 exception minimum:
 `57a9460`; SkyVUE reader fixes: `e5e52b7`). Pending on the cluster (not blocking): 14a + 14c for DE-Tha with the new
-SkyVUE reader (`docs/local/cluster_commands_spec14.md`, section "Close-out"). Nothing else is running or scheduled.
+SkyVUE reader (`docs/local/cluster_commands_spec14.md`, section "Close-out"; the 2026-11-20 rerun left 4 June 2026 days
+failing, fixed by spec 14 amendment 3 on `main`: rerun 14a + 14c for DE-Tha when the analysis reopens, no hurry, G).
+Nothing else is running or scheduled.
 The analysis reopens for one of the following; steps listed, nothing run.
 
 **1. Ummendorf ceilometer for DE-HoH** (about 9 km instead of Magdeburg MAG 24.48 km), if MeteoSwiss provides it.
@@ -411,6 +413,11 @@ measured MLH) done; 4–6 not started.
    re-rendered from the cluster tables; merged (`main`, 57a9460). SkyVUE reader (spec 14 amendment 2): message 004,
    truncated last message, CSV without a header; count-mismatch rule unchanged (G); merged (`main`, e5e52b7). Cluster:
    14a + 14c for DE-Tha.
+20. fix-14a June 2026 (G 2026-11-20, spec 14 amendment 3; after the DE-Tha rerun, 4 days still failing): TXT
+   fragments anywhere in the file dropped and logged, the CSV row of each found by matching (or paired by order when
+   the counts are equal); up to 5 records and 0.1 % of a day failing a pairing check dropped and logged; the run
+   summary counts fragments and header-less CSVs on all days. Merged (`main`). Cluster: 14a + 14c for DE-Tha when the
+   analysis reopens.
 
 
 ## Data
