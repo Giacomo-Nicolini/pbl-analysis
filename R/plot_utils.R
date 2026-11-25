@@ -147,7 +147,10 @@ pblh_sources_style <- local({
     row("mc_network", "element", k["black"], "network (median of sites, IQR)", 23),
     row("mc_one_to_one", "element", "grey40", "1:1", 24, "dashed"),
     row("mc_rsl_off", "element", "grey40", "rsl test off", 25),
-    row("mc_rsl_flip", "element", "grey30", "rsl test fails", 26)
+    row("mc_rsl_flip", "element", "grey30", "rsl test fails", 26),
+    # Spec 19: ends of the continuous colour scales (EC height, zm / h)
+    row("grad_low", "element", k["blue_light"], "low", 27),
+    row("grad_high", "element", k["blue_dark"], "high", 28)
   )
 })
 

@@ -32,13 +32,14 @@ fp_pairs <- function() {
 #' @param fp_dir `<derived_dir>/footprint` [character].
 #' @param cases Footprint cases [character].
 #' @param sets,subsets Validity sets and subsets kept as flags [character].
+#' @param tab_cols Columns of the input table copied to the output as they are (spec 19; default none).
 #' @return Tibble, one row per half-hour of the year: `site_id`, `timestamp_start_utc` [POSIXct UTC], `zl_class`
 #'   (unstable / neutral / stable / `NA`), `daynight` (day / night), `season`, `regime` (PBLHmod regime), and per case
 #'   `<cs>`: `h__<cs>` [m], `ta__<cs>` [0-1, target-area fraction], `x80__<cs>` [m], `ok__<cs>` [logical, FFP result
 #'   with a finite target-area fraction]; per set x subset x case `v__<set>__<subset>__<cs>` [logical]. Attribute
 #'   `missing`: case-months without chunks.
 fp_site_rows <- function(site_id, year, fp_dir, cases = c("pblhmod", "pblhmod_clim", "era5"),
-                         sets = c("etc", "kljun_norsl", "kljun"), subsets = c("valid", "valid_qc", "valid_qc_used")) {
+                         sets = c("etc", "kljun_norsl", "kljun"), subsets = c("valid", "valid_qc", "valid_qc_used"), tab_cols = character()) {
   sd <- file.path(fp_dir, site_id)
   ip <- file.path(sd, paste0(site_id, "_footprint_inputs.rds"))
   if (!file.exists(ip)) cli::cli_abort("{site_id}: footprint input table {.path {ip}} not found (step 08a).")
@@ -51,6 +52,7 @@ fp_site_rows <- function(site_id, year, fp_dir, cases = c("pblhmod", "pblhmod_cl
   out <- dplyr::tibble(site_id = site_id, timestamp_start_utc = t, zl_class = as.character(zl_class(tab$zm_m, tab$L)),
                        daynight = ifelse(tab$day %in% TRUE, "day", ifelse(tab$day %in% FALSE, "night", NA_character_)),
                        season = as.character(season_of(t + 900)), regime = as.character(tab$regime))
+  for (k in tab_cols) out[[k]] <- if (k %in% names(tab)) tab[[k]] else rep(NA_real_, nrow(out))
   months <- sort(unique(format(t, "%Y-%m", tz = "UTC")))
   cdir <- file.path(sd, "chunks")
   missing <- character()
