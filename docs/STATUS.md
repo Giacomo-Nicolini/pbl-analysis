@@ -1,8 +1,8 @@
 # Project status (handover note)
 
-Last update: 2026-11-20. Read this first in a new session, then `docs/project_plan.md` and `CLAUDE.md`.
+Last update: 2026-11-25. Read this first in a new session, then `docs/project_plan.md` and `CLAUDE.md`.
 
-## Analysis on stand-by from 2026-11-19
+## Analysis on stand-by from 2026-11-19 (reopened 2026-11-25 for specs 19 and 17, G)
 
 Everything up to spec 16 and the close-out fixes is merged on `main` (spec 16 figures and spec 15 exception minimum:
 `57a9460`; SkyVUE reader fixes: `e5e52b7`). Pending on the cluster (not blocking): 14a + 14c for DE-Tha with the new
@@ -94,6 +94,7 @@ files). New reader for the secondary set (spec 14 conventions):
 | 14 | Secondary measured sources: DE-Tha SkyVUE PRO built-in MLH (reader with CSV/TXT pairing, CRC-16 and profile-decode checks; `tud_skyvue_mlh`, 3 layers, no layer chosen) and CZ-Lnz BL-View L3 (all versions; `vaisala_blview_mlh`); Part C diagnostics (time-convention lag test, SkyVUE layers, BL-View quality); status `secondary`; explicit column types of standard files; FI-Lom KEN inventory; `09_network_record_start.csv` (ICOS labelling dates) | 2, 3 | merged (`main`, e88dda8); cluster runs by G (`docs/local/cluster_commands_spec14.md`) |
 | 15 | Network footprint summary for the paper (target-area difference, fetch, top 10 % rows, Rebmann criteria and ICOS labelling rule, exceptions; figures and supplement) and γ supplementary tables, in `09_collect.R` | 5 | merged (`main`, 3e1625f; figure fixes fix-15, c672f8a) |
 | 16 | Footprint uncertainty from the FFP inputs (phase 5b): one-at-a-time (A) and joint Monte Carlo (B) perturbation of σv, u*, L, umean, hc, z0, WD, h at six sites, attribution (C), the PBLH-source effect of spec 15 placed in it; `16a`–`16c` | 5b | merged (`main`, 573e9e2; amendment 1 rsl_off); cluster run done (six sites, reference years; collection job 18905); close-out figure fixes merged (`main`, 57a9460) |
+| 19 | Why the PBLH source changes the footprint at CH-Dav and IT-Ren and not at other mountain sites: site descriptors on the spec-15 rows (terrain, tower, PBLH, turbulence, night-time flows, footprint, spec-15 status), night-row R2, existing night-time measured evidence, supplementary figures `19s_*`; `scripts/19a_site_descriptors.R`, `R/alpine_drivers.R`; analysis only (no PBLHmod / FFP run) | 5 | `spec-19-alpine-exception` (2026-11-25); local test on BE-Bra, FI-Hyy, FR-Gri, CH-Dav (row basis flags_only, no local chunks); cluster job pending (`docs/local/cluster_commands_spec19.md`) |
 
 Phases (see `project_plan.md`): 0 done; 1 done (model, input QC, legacy regression); 2 standard format, three
 sources (spec 04) and the first measured source (spec 07, FI-Hyy) done; 3 BE-Bra (vs ERA5) and FI-Hyy (vs ERA5 and

@@ -181,6 +181,29 @@ say "reference year per site". PC smoke-test outputs carry "test, one month" in 
 tables (`w_row` missing in tables before the close-out: weights from the eligible rows per stratum of
 `09_network_fp_target_area`, set `etc`, subset `valid`, checked against the sample).
 
+## Spec 19: why the PBLH source changes the footprint at CH-Dav and IT-Ren (`scripts/19a_site_descriptors.R`)
+
+Rows of the reference year: spec-15 `common_pe` (set `etc`; subsets `valid_qc_used`, `valid`); `row_basis`
+`flags_only` (no chunks: valid by the 08a flags, footprint values NA) only in local tests. Every table has a `#`
+header (definitions, units).
+
+| Table | Grain | Columns | Figures |
+|---|---|---|---|
+| `19_site_descriptors` | site × variable × subset × stratum (regime `all`, `unstable`, `neutral`, `stable`, `neutral_stable` × day/night/`all`); site-level variables (terrain, tower, u* threshold source, year) with subset/regime/daynight empty | `site_id, block, variable, unit, subset, regime, daynight, value, value_chr, row_basis` | `19s_alpine_drivers` |
+| `19_row_level` | site (selected) × stratum (`neutral_night`, `stable_night`, `neutral_stable_night`) × response (`ta_diff_pp`, `lnx80_era5_pblhmod`) × predictors (`ln_h_era5_pblhmod`, `zm_h_era5`, `both`) | `site_id, stratum, response, predictors, n, r2, coef_1, coef_2` | none |
+| `19_row_level_rows` | night row (neutral, stable) of the selected sites (figure data) | `site_id, zl_class, ta_diff_pp, lnx80_era5_pblhmod, ln_h_era5_pblhmod, zm_h_era5` | `19s_row_level` |
+| `19_night_flows` | site × day/night × 30° direction bin | `site_id, daynight, dir_bin, n, share` | `19s_night_flows` |
+| `19_night_closeness` | site × source (PBLHmod, ERA5) × stratum, from `07_metrics_FI-Hyy` and `10_metrics_<site>` (window_convective) | `site_id, table, source, stratum_set, stratum, n, median_log_ratio, mad_log_ratio, bias_m` | none |
+| `19_spec15_check` | site × regime × day/night (era5 − pblhmod, `etc`, `valid_qc_used`) | `site_id, regime, daynight, n, p10_pp, ta_diff_n, ta_diff_p10, n_equal, p10_diff_pp` | none |
+
+Figures (supplement): `19s_alpine_drivers`: x = night (neutral + stable) median ln(PBLHmod / ERA5), y = p10 of
+TA(ERA5) − TA(PBLHmod) on stable nights and on neutral nights (two panels), colour = EC height, size = max sub-grid
+orography SD of the 9 ERA5 cells, open symbols = fewer than 50 rows, labels for |p10| > 2 pp and CZ-BK1, IT-MBo,
+FR-Lqu, dashed line at −5 pp; `19s_row_level`: night rows of the selected sites (facets), TA difference against
+ln(h ERA5 / h PBLHmod), colour = zm / h ERA5 (log scale); `19s_night_flows`: day and night wind-direction polar
+histograms of CH-Dav, IT-Ren, DE-Tha, CZ-BK1, IT-MBo, BE-Bra. `19a --from-tables=DIR` redraws the three figures from
+the collected tables.
+
 ## Stored footprint groups (spec 08 / 09 A5, storage c5)
 
 Each chunk (site × case × month or half-month, `<derived_dir>/footprint/<site>/chunks/<site>_<case>_<part>`) stores:
