@@ -344,11 +344,13 @@ read_icos_fluxes <- function(path, utc_offset_h) {
 #'   [-, 1 = night]; `fn_SW_IN_POT` potential shortwave radiation [W m-2];
 #'   `fn_WS_F` wind speed, gap-filled [m s-1]; `fn_P_F` precipitation, gap-filled
 #'   [mm]; `fn_NEE_VUT_REF_QC`, `fn_NEE_CUT_REF_QC` [-, 0 measured, 1-3 gap-filled] (if present; spec 08;
-#'   CUT for the fallback of [nee_ref_qc()], spec 09 amendment 2); plus
+#'   CUT for the fallback of [nee_ref_qc()], spec 09 amendment 2); if present (spec 17): `fn_SW_IN_F` incoming
+#'   shortwave radiation, gap-filled [W m-2], `fn_SW_IN_F_QC`, `fn_LE_F_MDS` latent heat flux [W m-2],
+#'   `fn_LE_F_MDS_QC`, `fn_NETRAD` net radiation [W m-2], `fn_G_F_MDS` ground heat flux [W m-2], `fn_G_F_MDS_QC`; plus
 #'   the time columns and `src_fluxnet` [logical].
 read_icos_fluxnet <- function(path, utc_offset_h) {
   d <- read_icos_csv(path, icos_cols$fluxnet, utc_offset_h, label = "FLUXNET",
-                     optional_pattern = "^NEE_(VUT|CUT)_REF_QC$")
+                     optional_pattern = "^(NEE_(VUT|CUT)_REF_QC|SW_IN_F|SW_IN_F_QC|LE_F_MDS|LE_F_MDS_QC|NETRAD|G_F_MDS|G_F_MDS_QC)$")
   info <- attr(d, "read_info")
   d <- prefix_cols(d, "fn_")
   names(d)[names(d) == ".in_file"] <- "src_fluxnet"

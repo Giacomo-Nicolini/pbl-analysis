@@ -19,8 +19,12 @@ pipeline_steps <- function() {
     `01` = list(script = "scripts/01_check_inputs.R", upstream = character(), inputs = c("l2", "era5_sl"), oper = FALSE),
     `11a` = list(script = "scripts/11a_gamma_era5.R", upstream = character(), inputs = c("era5_pl", "era5_static"),
                  oper = FALSE),
-    # gamma_network: network gamma of scripts/09_collect.R (case gamma_med; spec 09 amendment 3)
-    `02` = list(script = "scripts/02_run_pblh_model.R", upstream = "11a", inputs = c("l2", "gamma_network"), oper = FALSE),
+    # gamma_network: network gamma of scripts/09_collect.R (case gamma_med; spec 09 amendment 3); gamma_ec: the site's
+    # gamma_EC tables of step 17a (cases gamma_ec, gamma_ec_daily; spec 17: two passes 02 -> 17a -> 02)
+    `02` = list(script = "scripts/02_run_pblh_model.R", upstream = "11a", inputs = c("l2", "gamma_network", "gamma_ec"), oper = FALSE),
+    # spec 17: EC-derived gamma from the default output of step 02 (no ERA5); rewrites its tables only when their
+    # content changes, so that the second pass of step 02 does not trigger a third
+    `17a` = list(script = "scripts/17a_gamma_ec.R", upstream = "02", inputs = "l2", oper = FALSE),
     `04` = list(script = "scripts/04_era5_compare.R", upstream = "02", inputs = c("l2", "era5_sl", "era5_pl", "era5_static"),
                 oper = TRUE),
     # measured sites only (config/measured_sites.csv, primary source; spec 09 amendment 2): standard files of the
@@ -86,7 +90,8 @@ reference_year_of <- function(site_id, cfg) {
 #'   `era5_static` (static files of the site), `measured_raw` (Cloudnet files and
 #'   PI / provider files of the site, `cloudnet_dir`, `measured_dir`), `measured_std` (standard files of measured sources),
 #'   `measured_config` (`measured_sites_file`, `measured_exclusions_file`; spec 13),
-#'   `gamma_network` (network gamma table, [gamma_network_path()]; spec 09 amendment 3), `chunks`
+#'   `gamma_network` (network gamma table, [gamma_network_path()]; spec 09 amendment 3), `gamma_ec` (the site's
+#'   gamma_EC tables, `<derived_dir>/gamma_ec/<site>_daily.csv`, `_monthly.csv`; spec 17), `chunks`
 #'   (footprint chunk meta files of the site).
 #' @return Tibble: `group`, `path`, `size` [bytes], `mtime` [character, UTC]; a group whose folder is not configured
 #'   or missing gives no rows (the step itself reports missing inputs).
@@ -117,6 +122,8 @@ site_input_files <- function(site_id, cfg, groups) {
            measured_config = safe(Filter(file.exists, vapply(c(cfg$measured_sites_file, cfg$measured_exclusions_file),
                                                              resolve_path, character(1), must_exist = FALSE))),
            gamma_network = safe(Filter(file.exists, gamma_network_path(cfg))),
+           gamma_ec = safe(Filter(file.exists, file.path(resolve_path(cfg$derived_dir, must_exist = FALSE), "gamma_ec",
+                                                         paste0(site_id, c("_daily.csv", "_monthly.csv"))))),
            chunks = safe(list.files(file.path(resolve_path(cfg$derived_dir, must_exist = FALSE), "footprint", site_id,
                                               "chunks"), pattern = "_meta\\.rds$", full.names = TRUE)),
            cli::cli_abort("Unknown input group {.val {g}}."))

@@ -24,6 +24,13 @@
 # constant per site: median of the site's daily ERA5 gamma) and gamma_med (one constant for all stations: median
 # of the site medians, <derived_dir>/gamma/network_gamma.csv from scripts/09_collect.R; skipped while the
 # file is missing, i.e. before all 11a runs are collected).
+# Spec 17 (spec 02 amendment 15): gamma_ec (PBLHmod-gammaEC, standard source pblhmod_gamma_ec: site x month
+# climatology of the EC-derived gamma, gamma_source ec_clim) and gamma_ec_daily (the day's EC-derived gamma, else the
+# climatology; tables only), from <derived_dir>/gamma_ec/ (scripts/17a_gamma_ec.R, which reads the default output:
+# two passes, 02 -> 17a -> 02); skipped while the site's tables are missing. Constant-gamma grid of the gamma
+# benchmark (spec 17 B): gamma_g002 ... gamma_g012 (0.002-0.012 K/m, tables only), run only when named in --cases.
+# With --cases, the rows of the other cases in 02_cases_<site>.csv and 02_regimes_<site>.csv are kept (only the run
+# cases are replaced), so that a run of new cases does not truncate the per-site tables.
 #
 # Usage: Rscript scripts/02_run_pblh_model.R [SITE ...] [--cases=label1,label2]
 #   Without sites the sites in cfg$test_sites are used; --cases runs only the listed cases.
@@ -73,16 +80,28 @@ gamma_layer <- c(gamma_era5clim_zmin1000 = "_zmin1000")
 # of the daily ERA5 gamma (<derived_dir>/gamma/network_gamma.csv, written by scripts/09_collect.R after all 11a
 # runs; not run while the file is missing), gamma_site = median of the site's daily ERA5 gamma (built per site below).
 side_cases <- c("gamma_med", "gamma_site")
+# Spec 17: EC-derived gamma cases (tables of scripts/17a_gamma_ec.R) and the constant-gamma grid of part B
+ec_cases <- c(gamma_ec = "ec_clim", gamma_ec_daily = "ec_daily")
+grid_cases <- stats::setNames(seq(2, 12) / 1000, sprintf("gamma_g%03d", 2:12))
 gnet <- read_gamma_network(gamma_network_path(cfg))
 keep <- NULL
 if (length(case_arg) == 1) {
   keep <- strsplit(sub("^--cases=", "", case_arg), ",")[[1]]
-  bad <- setdiff(keep, c(names(runs), side_cases))
+  bad <- setdiff(keep, c(names(runs), side_cases, names(ec_cases), names(grid_cases)))
   if (length(bad) > 0) cli::cli_abort("Unknown case{?s}: {.val {bad}}.")
   runs <- runs[intersect(keep, names(runs))]
 }
 want_side <- if (is.null(keep)) side_cases else intersect(keep, side_cases)
+want_ec <- if (is.null(keep)) names(ec_cases) else intersect(keep, names(ec_cases))
+want_grid <- if (is.null(keep)) character() else intersect(keep, names(grid_cases))
 g_dir <- file.path(resolve_path(cfg$derived_dir, must_exist = FALSE), "gamma")
+ec_dir <- file.path(resolve_path(cfg$derived_dir, must_exist = FALSE), "gamma_ec")
+read_gamma_ec_tables <- function(site_id) {
+  p <- file.path(ec_dir, paste0(site_id, c("_daily.csv", "_monthly.csv")))
+  if (!all(file.exists(p))) cli::cli_abort("gamma_EC tables {.path {p}} not found: run scripts/17a_gamma_ec.R first.")
+  list(daily = readr::read_csv(p[1], show_col_types = FALSE, progress = FALSE),
+       clim = readr::read_csv(p[2], show_col_types = FALSE, progress = FALSE))
+}
 read_gamma_tables <- function(site_id, sfx) {
   p <- file.path(g_dir, paste0(site_id, sfx, c("_daily.csv", "_monthly.csv")))
   if (!all(file.exists(p))) cli::cli_abort("ERA5 gamma tables {.path {p}} not found: run scripts/11a_gamma_era5.R first.")
@@ -190,13 +209,27 @@ for (site_id in site_ids) {
       cli::cli_inform("gamma_med = {signif(gnet$gamma_med, 4)} K m-1 (median of the site medians of the daily ERA5 gamma, {gnet$n_sites} sites).")
     }
   }
+  # Spec 17: EC-derived gamma (second pass, after scripts/17a_gamma_ec.R) and the constant grid of part B
+  for (lab in want_ec) {
+    if (all(file.exists(file.path(ec_dir, paste0(site_id, c("_daily.csv", "_monthly.csv")))))) {
+      runs_s[[lab]] <- pblh_options_cfg(cfg, gamma_source = ec_cases[[lab]], label = lab)
+    } else {
+      stale <- file.path(out_dir, paste0(site_id, "_pblhmod_", lab, ".csv.gz"))
+      if (file.exists(stale)) unlink(stale) # an output of earlier gamma_EC tables must not be used by step 04
+      cli::cli_alert_info("{lab} not run: gamma_EC tables of {site_id} not found in {.path {ec_dir}} (scripts/17a_gamma_ec.R, after the default case).")
+    }
+  }
+  for (lab in want_grid) runs_s[[lab]] <- pblh_options(gamma = grid_cases[[lab]], label = lab)
 
   outs <- list()
   for (lab in names(runs_s)) {
     opts <- runs_s[[lab]]
     cli::cli_h2("Run {.val {opts$label}} (gamma = {opts$gamma} K m-1, stable = {opts$stable_method}, neutral = {opts$neutral_method}, H = {opts$h_source}, combine = {opts$combine})")
     ge <- NULL
-    if (opts$gamma_source != "constant") {
+    if (startsWith(opts$gamma_source, "ec_")) {
+      ge <- read_gamma_ec_tables(site_id)
+      cli::cli_inform("EC-derived gamma ({opts$gamma_source}, scope {opts$gamma_scope}, tables gamma_ec/{site_id}_*.csv).")
+    } else if (opts$gamma_source != "constant") {
       sfx <- if (lab %in% names(gamma_layer)) gamma_layer[[lab]] else ""
       ge <- read_gamma_tables(site_id, sfx)
       cli::cli_inform("ERA5 gamma ({opts$gamma_source}, scope {opts$gamma_scope}, tables {site_id}{sfx}_*.csv).")
@@ -323,8 +356,18 @@ for (site_id in site_ids) {
   }))
   tdir <- file.path(resolve_path(cfg$output_dir, must_exist = FALSE), "tables")
   dir.create(tdir, recursive = TRUE, showWarnings = FALSE)
-  readr::write_csv(cbind(site_id = site_id, cases_tbl), file.path(tdir, paste0("02_cases_", site_id, ".csv")))
-  readr::write_csv(cbind(site_id = site_id, regimes_tbl), file.path(tdir, paste0("02_regimes_", site_id, ".csv")))
+  # With --cases: keep the rows of the cases not run in this call (spec 17: new cases must not truncate the tables)
+  merge_old <- function(new, path) {
+    new <- dplyr::as_tibble(cbind(site_id = site_id, new))
+    if (is.null(keep) || !file.exists(path)) return(new)
+    old <- readr::read_csv(path, show_col_types = FALSE, progress = FALSE)
+    dplyr::bind_rows(dplyr::mutate(old[!old$case %in% new$case, ], dplyr::across(dplyr::everything(), as.character)),
+                     dplyr::mutate(new, dplyr::across(dplyr::everything(), as.character)))
+  }
+  readr::write_csv(merge_old(cases_tbl, file.path(tdir, paste0("02_cases_", site_id, ".csv"))),
+                   file.path(tdir, paste0("02_cases_", site_id, ".csv")))
+  readr::write_csv(merge_old(regimes_tbl, file.path(tdir, paste0("02_regimes_", site_id, ".csv"))),
+                   file.path(tdir, paste0("02_regimes_", site_id, ".csv")))
   cli::cli_alert_success("Per-site summaries: {.path {file.path(tdir, paste0('02_cases_', site_id, '.csv'))}}, 02_regimes_{site_id}.csv")
 
   # Default case: where and when L is replaced, and every value > 5 km that remains.

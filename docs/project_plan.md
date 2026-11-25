@@ -95,6 +95,16 @@ them** (MeteoSwiss condition, 2026-11-06; the instrument owners are named in the
     the supplementary network figure `09_network_logratio_supp` (PBLHmod, PBLHmod-clim, `gamma_med`, `gamma_site`).
     Paper: publish a recommended constant and/or the γ tables of the ICOS stations as a side result (recommended
     constant: `gamma_med` = 0.004572 K m-1, decision 3b).
+    **γ option "EC-derived" (spec 17, G 2026-11-25; implemented, decision D1 open):** γ fitted per clear day from the
+    rise of the tower potential temperature in the B&G window of the `default` run, with the same H that drives the
+    model (no ERA5): Method A (B&G integration as `run_pblh_model()` plus the mixed-layer temperature
+    d θ / dt = (1 + A) w'θ' / h, Brent on log γ within 0.001–0.02 K m-1), Method B (closed-form encroachment,
+    sensitivity); day selection by flags (clear sky SW_IN / SW_IN_POT ≥ 0.6, θ rise ≥ 1 K, R² ≥ 0.8, no gap, γ inside
+    the bounds); site × month climatology of the used days (≥ 5). `gamma_source = "ec_clim"` = **PBLHmod-γEC**
+    (`pblhmod_gamma_ec`), `"ec_daily"` (tables only). A γ fitted with the model's H also absorbs a systematic error of
+    H (energy-balance non-closure): reported (spec 17 D), not corrected. First local result (2026-11-25): most fitted
+    days reach the upper bound (the morning θ rise is faster than a mixed layer under the free-atmosphere γ allows),
+    the used-day medians are 0.007–0.014 K m-1, i.e. not below 0.01 (see Open points, spec 17).
   - convective trigger: H > 0 vs 1/L class (must be consistent);
   - H forcing: `H_F_MDS` (gap-filled, default; values with `H_F_MDS_QC` above a threshold, default > 1, treated as
     missing because poor gap-filling can be very bad) vs `H` (FLUXES) vs `H_CORR` (energy-balance corrected,
@@ -523,6 +533,14 @@ too shallow when deep") is a **hypothesis under test**.
   network −0.13 → +0.15. (`low_n` = fewer than 10 bootstrap days: a new threshold, still to confirm); (d) γ tables
   of all sites as a deliverable (ERA5 attribution); (e) **new, for later:** does the residual site spread of the ERA5
   γ cases (crop / grass too shallow, forest fine or too deep) follow the energy-balance ratio?
+- Spec 17 (EC-derived γ, 2026-11-25; decision D1 open, G after the cluster results). Local test (BE-Bra, FI-Hyy,
+  FR-Gri, CH-Dav): on most fitted days Method A ends at the upper bound 0.02 K m-1 (the tower θ rises faster in the
+  morning than a mixed layer growing from the night-time height into the free-atmosphere γ allows; erosion of the
+  nocturnal inversion and surface-layer warming are the likely reasons); the used days are a selection and their
+  median γ_A (0.007–0.014 K m-1) is not below the default 0.01, while the measured MLH asks for a smaller γ (spec 11).
+  To discuss before the cluster run: whether to start the fit window later (e.g. after the night-time height is
+  reached or after a fixed delay from the first positive heat flux) or to accept the result as evidence against the
+  EC-derived γ. Tennekes (1973), cited for Method B, is not in the project bib (to be checked and added by G).
 - Timing of EC vs ERA5 sensible heat (evaluation; possible error driver for the evening transition). EC timestamps
   are correct (SW_IN_POT and EC H centred on solar noon within 4 min, Cowork 2026-10-23). With every value at its
   interval midpoint (EC start + 15 min, ERA5 accumulation timestamp − 30 min), ERA5 H is earlier than EC H:
