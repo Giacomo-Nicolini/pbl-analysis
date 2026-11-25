@@ -57,7 +57,8 @@ so code must be reproducible, documented and traceable to references.
   amendment 1: IT-SR2, no L2 data; `09_collect.R` lists them as "not run"), `reference_year_exceptions_file`
   (spec 09 amendment 2: stations whose reference year may follow the `coverage` rule when the standard rule finds no
   year; GL-ZaF, G 2026-11-03), `etc_z0_multiplier_file` (spec 08 amendment 2: per-site override of the ETC z0
-  multiplier; DE-Tha 4.1, G 2026-11-10).
+  multiplier; DE-Tha 4.1, G 2026-11-10). Spec 17: `gamma_ec_end_offset_h`, `gamma_ec_min_n`, `gamma_ec_clear_min`,
+  `gamma_ec_rise_min`, `gamma_ec_r2_min`, `gamma_ec_min_days` (EC-derived γ, `gamma_ec_options_cfg()`).
 
 ## Input data (facts; do not guess beyond these)
 
@@ -275,6 +276,15 @@ so code must be reproducible, documented and traceable to references.
 - **PBLHmod-clim** (`pblhmod_clim`, case `clim`): `gamma_source = "era5_clim"`, site × month ERA5 γ climatology from
   `scripts/11a_gamma_era5.R` (`<derived_dir>/gamma/`); a month without a value uses the constant (flagged in
   `gamma_source_used = "constant_fallback"`). Written by scripts 02/04 at every site.
+- **PBLHmod-γEC** (`pblhmod_gamma_ec`, case `gamma_ec`; spec 17, spec 02 amendment 15, G 2026-11-25; decision D1
+  open): `gamma_source = "ec_clim"`, site × month climatology of γ fitted from the station's own H and tower θ
+  (`scripts/17a_gamma_ec.R`, `R/gamma_ec.R`, `<derived_dir>/gamma_ec/`; Method A = B&G integration as
+  `run_pblh_model()`, Method B = closed-form encroachment; no ERA5; parameters `gamma_ec_*` in `config.yml`);
+  `gamma_ec_daily` (`ec_daily`, tables only); constant grid `gamma_g002` … `gamma_g012` (spec 17 B) only when named in
+  `--cases`. Order: step 02 → `17a` → step 02 (02 skips the γEC cases while the tables are missing; 17a rewrites its
+  tables only when their content changes). Step 04: standard file and pair `9_pblhmod_gamma_ec_vs_era5_center`.
+  Evaluation: `11_gamma_evaluation.R --prefix=17` (parts A, B), `17b_gamma_ec_collect.R` (C, D, E). The γ fitted with
+  the model's H also absorbs an H bias (no correction, G 2026-11-12).
 - **Reference γ values** (supplement only): `pblhmod_gamma001` (0.01, Batchvarova & Gryning 1991 as cited by Kljun
   et al. 2015; equal to the default, keep both names) and `pblhmod_gamma0025` (0.0025, legacy ETC code).
 - **Side-result constants** (spec 09 amendment 3, G 2026-11-04; step 02 only, **no footprints**, no standard files):
@@ -354,7 +364,8 @@ so code must be reproducible, documented and traceable to references.
   process (`R/run_status.R`); logs in `<output_dir>/logs/<site>/`, status JSON per site × step in
   `<derived_dir>/run_status/`. A step whose last status is "ok" with the same inputs hash (step script, all `R/`
   files, configuration, the site's raw inputs, arguments, upstream hashes) is skipped unless `--force`; any code
-  change in `R/` therefore reruns every step. The first failing step stops the site.
+  change in `R/` therefore reruns every step. The first failing step stops the site. Step `17a` (spec 17, upstream
+  02; not in the default list): `--steps=02,17a,02,04` runs both passes; step 02 also hashes the site's γEC tables.
 - **Measured steps (spec 09 amendment 2, spec 13)**: at the sites with a primary measured source
   (`config/measured_run_sites.txt`: FI-Hyy, FR-Gri, CH-Dav, DE-RuS, DE-HoH, FR-Fon, FR-Lus; FI-Lom removed G
   2026-11-12, no overlap; the secondary sources run with scripts 14a / 14b / 14c, not here),

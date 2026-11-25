@@ -49,11 +49,14 @@ bg_rate <- function(h, wtheta, ustar, L, T_K, gamma, const = pblh_constants()) {
 #' @param n_sub Number of sub-steps [-]; default 30 (60 s); ignored by `"euler"`.
 #' @param const Output of [pblh_constants()].
 #' @param method `"rk4"` (default) or `"euler"`.
+#' @param nodes Also return the `n_sub + 1` sub-step heights (`"rk4"` only; spec 17, mixed-layer temperature of the
+#'   gamma_EC fit) [logical]; default `FALSE` (output unchanged).
 #' @return List: `h_end` height at the end of the interval [m], `h_mean`
 #'   interval mean height (trapezoidal mean of the `n_sub + 1` nodes; `"euler"`:
-#'   `h_end`) [m], `ok` [logical, `FALSE` if the rate was undefined].
+#'   `h_end`) [m], `ok` [logical, `FALSE` if the rate was undefined]; with `nodes = TRUE` also `nodes` [m].
 bg_step <- function(h0, wtheta, ustar, L, T_K, gamma, dt = 1800, n_sub = 30,
-                    const = pblh_constants(), method = "rk4") {
+                    const = pblh_constants(), method = "rk4", nodes = FALSE) {
+  want_nodes <- nodes
   # Precompute the constant parts of Eq. B5 for speed (scalar forcing).
   A <- const$bg_A
   B <- const$bg_B
@@ -92,9 +95,11 @@ bg_step <- function(h0, wtheta, ustar, L, T_K, gamma, dt = 1800, n_sub = 30,
     }
     nodes[i + 1] <- h
   }
-  list(
+  out <- list(
     h_end = h,
     h_mean = (sum(nodes) - (nodes[1] + nodes[n_sub + 1]) / 2) / n_sub, # trapezoidal mean
     ok = ok
   )
+  if (want_nodes) out$nodes <- nodes
+  out
 }

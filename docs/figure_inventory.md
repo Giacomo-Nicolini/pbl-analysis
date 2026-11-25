@@ -23,7 +23,7 @@ Recurring column groups:
 | `02_regimes_<site>` | case × regime (all, stable, unstable_diag, convective) | `site_id, case, regime, share`, quantiles | none |
 | `03_variants_<site>`, `03_reproduction_<site>` | legacy variant × stratum × statistic | `variant, stratum, statistic, value` | `03_reproduction_`, `03_waterfall[_allrows]_`, `03_one_at_a_time[_allrows]_`, `03_diurnal_<site>` |
 | `03_cleanset_vs_l2_<site>` | variable | `variable, both, na_cleanset_only, na_l2_only, median_abs_diff` | none |
-| `04_metrics_<site>` | pair × stratum × metric (pairs 1, 2, 6 always; 3, 7, 8 when the case exists; 4, 4b, 5 ICOS operational with `--with-oper`; strata `all`, `regime=`, `season=`, `hour_utc=`) | `pair, stratum`, metrics (long) | `04_scatter_mod_era5_`, `04_logratio_by_hour_`, `04_logratio_by_cloud_<site>` (pair 1); `09_network_logratio*` (*reads tables*, via 09) |
+| `04_metrics_<site>` | pair × stratum × metric (pairs 1, 2, 6 always; 3, 7, 8, 9 (PBLHmod-γEC, spec 17) when the case exists; 4, 4b, 5 ICOS operational with `--with-oper`; strata `all`, `regime=`, `season=`, `hour_utc=`) | `pair, stratum`, metrics (long) | `04_scatter_mod_era5_`, `04_logratio_by_hour_`, `04_logratio_by_cloud_<site>` (pair 1); `09_network_logratio*` (*reads tables*, via 09) |
 | `04_diurnal_<site>` | season × UTC hour × variable | `season, hour_utc, variable, median, p25, p75, n` | `04_diurnal_by_season_<site>` |
 | `04_H_metrics_<site>` | H pair × stratum × metric | `pair, stratum, metric, value` | `04_H_ec_vs_era5_<site>` |
 | `04_gamma_850_700_<site>` | UTC hour × month | `hour_utc, month, median, p25, p75, n` | `04_gamma_850_700_<site>` |
@@ -96,6 +96,33 @@ Standard files (not tables): `<site>__tud_skyvue_mlh`, `<site>__vaisala_blview_m
 | `11_gamma_censored_null` | site × case × regime set × tail (FI-Hyy) | as `10_censored_null` without notes and pairing, plus `case` | none |
 | `11_gamma_daily_vs_clim` | site | `site_id, n_days, median_abs_rel_dev, share_outside_25pct, sd_daily, sd_clim` | `11_gamma_by_month_<sites>` |
 | `11_growth_clearday_<site>` | season × AST hour × variable | `site_id, reference, season, ast_hour, variable, n, median, q25, q75, n_clear_days` | `11_growth_clearday_<site>`, `11s_ref_growth_clearday_<site>` |
+
+## EC-derived γ: steps 17a, 11 (`--prefix=17`), 17b (spec 17)
+
+Step 02 also writes the cases `gamma_ec`, `gamma_ec_daily` (second pass, after 17a) and, on request, `gamma_g002` …
+`gamma_g012` (rows of `02_cases_<site>`, `02_regimes_<site>`; with `--cases` the rows of the other cases are kept).
+Step 04 writes the standard file `pblhmod_gamma_ec` and pair `9_pblhmod_gamma_ec_vs_era5_center` of `04_metrics_<site>`
+when the `gamma_ec` output exists.
+
+| Table | Grain | Columns | Figures |
+|---|---|---|---|
+| `<derived_dir>/gamma_ec/<site>_daily` | day with daylight | `date, window_start_utc, window_end_utc, n, n_tsonic, gamma_A, gamma_B, r2_A, r2_B, rmse_A, theta0_A, theta_rise, q_total, h0, clear_index, gamma_A_bound, flags, used, gamma` | `17_gamma_benchmark` (site median) |
+| `<derived_dir>/gamma_ec/<site>_monthly` | calendar month | `site_id, month, median, p25, p75, n_days, n_fitted, n_flagged` (layout of the ERA5 monthly table) | `17_gamma_ec_vs_era5*` |
+| `<derived_dir>/gamma_ec/<site>_ebr` | site | `site_id, period, n_rows, ebr, n_rows_no_g, ebr_no_g, g_available, months` | `17s_gamma_ec_ebr` |
+| `17a_gamma_ec_summary_<site>` | site | `site_id, label, n_days, n_fitted, n_used, gamma_A_median, gamma_A_p25, gamma_A_p75, ratio_B_A_median, r2_A_median, n_tsonic_rows, n_bound_low, n_bound_high, share_clear_unknown, months_with_value, ebr, ebr_no_g`, `n_<flag>` per excluding flag | none |
+| `17_gamma_cases_metrics`, `17_gamma_cases_season`, `17_gamma_decision`, `17_gamma_regime_heights`, `17_gamma_censored_null`, `17_gamma_daily_vs_clim`, `17_growth_clearday_<site>` | as the `11_` tables (script 11 with `--prefix=17`; cases `default, clim, gamma_med, gamma_site, gamma_ec, gamma_ec_daily` and the grid) | as the `11_` tables | `17_gamma_decision`, `17_gamma_cases_<site>`, `17_growth_clearday_<site>` (PBLHmod, PBLHmod-clim, PBLHmod-γEC, ERA5, measured), `17s_ref_*` |
+| `17_gamma_benchmark` | measured site | `site_id, stratum_set, gamma_best, gamma_best_lo, gamma_best_hi, n_days, gamma_ec_median, gamma_ec_p25, gamma_ec_p75, gamma_ec_n_days, gamma_site, gamma_med, gamma_default, ec_in_best_interval` | `17_gamma_benchmark` |
+| `17_gamma_benchmark_curve` | measured site × grid γ | `site_id, stratum_set, gamma, median_log_ratio, mlr_lo, mlr_hi, n_days` | none |
+| `17_gamma_ec_vs_era5` | site × month | `site_id, month, gamma_ec, gamma_ec_p25, gamma_ec_p75, n_days_ec, gamma_era5, n_days_era5, ratio_ec_era5` | `17_gamma_ec_vs_era5`, `17_gamma_ec_vs_era5_seasonal` |
+| `17_gamma_ec_sites` | site | `site_id, n_used_days, months_with_value, share_months, gamma_ec_site, gamma_era5_site, ratio_ec_era5, ratio_B_A, ebr, ebr_no_g, ebr_n_rows, g_available` | `17s_gamma_ec_ebr` |
+| `17_network_logratio` | site × pair (1, 6, 9) × stratum (`all`, `regime=convective`, `regime=stable`) × metric | `site_id, pair, stratum, metric, value` | none |
+| `17_gamma_ec_bracketing` | site × zm/L class × day/night (margins `all`) | `site_id, regime, daynight, n, share_outside, share_below, share_above, median_dist_ln, p90_dist_ln` | none |
+
+Figures: `17_gamma_benchmark` (per measured site γ_best with its bootstrap interval, the γEC site median with p25–p75,
+the ERA5 site median; vertical lines 0.01 K m-1 and `gamma_med`); `17_gamma_ec_vs_era5` (monthly γEC vs ERA5, all
+sites, log axes, 1:1); `17_gamma_ec_vs_era5_seasonal` (per site, γEC median with p25–p75 and the ERA5 climatology by
+month); `17s_gamma_ec_ebr` (γEC / γERA5 vs the energy-balance ratio, diagnostic). PC test outputs carry the label
+"test" (17a summary column `label`, 17b captions).
 
 ## Footprints: steps 08a, 08, 08c, 08t, 08v
 

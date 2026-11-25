@@ -152,15 +152,19 @@ gamma_climatology <- function(daily) {
 #' warning; G 2026-10-30: no network fallback in the code).
 #'
 #' @param day_id Day of each row [Date] ([run_pblh_model()]).
-#' @param source `"era5_clim"` or `"era5_daily"`.
-#' @param daily Output of [gamma_daily()] (`date`, `gamma`).
-#' @param clim Output of [gamma_climatology()] (`month`, `median`).
+#' @param source `"era5_clim"`, `"era5_daily"` (ERA5 tables, spec 11 B) or `"ec_clim"`, `"ec_daily"` (gamma_EC
+#'   tables of script 17a, same layout; spec 17, spec 02 Amendment 15).
+#' @param daily Output of [gamma_daily()] or [gamma_ec_daily()] (`date`, `gamma`).
+#' @param clim Output of [gamma_climatology()] or [gamma_ec_climatology()] (`month`, `median`).
 #' @param gamma_const Constant gamma for months without a climatology value [K m-1], scalar or one value per row
 #'   (option `gamma` of [pblh_options()]).
-#' @return List: `gamma` [K m-1 per row], `source_used` (`era5_clim`, `era5_daily`, `era5_clim_fallback`,
-#'   `constant_fallback`; `NA` where `day_id` is `NA`).
-gamma_for_rows <- function(day_id, source = c("era5_clim", "era5_daily"), daily, clim, gamma_const = 0.01) {
+#' @return List: `gamma` [K m-1 per row], `source_used` (`<p>_clim`, `<p>_daily`, `<p>_clim_fallback` with `<p>` =
+#'   `era5` or `ec`, `constant_fallback`; `NA` where `day_id` is `NA`).
+gamma_for_rows <- function(day_id, source = c("era5_clim", "era5_daily", "ec_clim", "ec_daily"), daily, clim,
+                           gamma_const = 0.01) {
   source <- match.arg(source)
+  pre <- sub("_(clim|daily)$", "", source)
+  what <- if (pre == "era5") "ERA5" else "EC-derived"
   day_id <- as.Date(day_id)
   gamma_const <- rep_len(gamma_const, length(day_id))
   m <- as.integer(format(day_id, "%m"))
@@ -169,18 +173,18 @@ gamma_for_rows <- function(day_id, source = c("era5_clim", "era5_daily"), daily,
   if (any(no_clim)) {
     mm <- sort(unique(m[no_clim]))
     # explicit quantity: a numeric vector cannot be the quantity of {?s} (spec 09 amendment 1, SE-Sto)
-    cli::cli_warn(c("ERA5 gamma climatology missing for {cli::qty(length(mm))}month{?s} {.val {mm}}.",
+    cli::cli_warn(c("{what} gamma climatology missing for {cli::qty(length(mm))}month{?s} {.val {mm}}.",
                     "i" = "Constant gamma used on {sum(no_clim)} row{?s} ({.field gamma_source_used} = {.val constant_fallback})."))
   }
   g_clim <- ifelse(no_clim, gamma_const, g_clim)
-  src_clim <- ifelse(no_clim, "constant_fallback", "era5_clim")
-  if (source == "era5_clim") {
+  src_clim <- ifelse(no_clim, "constant_fallback", paste0(pre, "_clim"))
+  if (endsWith(source, "_clim")) {
     return(list(gamma = g_clim, source_used = ifelse(is.na(day_id), NA_character_, src_clim)))
   }
   g_day <- daily$gamma[match(day_id, as.Date(daily$date))]
-  src_fb <- ifelse(no_clim, "constant_fallback", "era5_clim_fallback")
+  src_fb <- ifelse(no_clim, "constant_fallback", paste0(pre, "_clim_fallback"))
   list(gamma = ifelse(is.na(g_day), g_clim, g_day),
-       source_used = ifelse(is.na(day_id), NA_character_, ifelse(is.na(g_day), src_fb, "era5_daily")))
+       source_used = ifelse(is.na(day_id), NA_character_, ifelse(is.na(g_day), src_fb, paste0(pre, "_daily"))))
 }
 
 #' Constant gamma of one site: median of its daily ERA5 gamma

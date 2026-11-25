@@ -6,7 +6,8 @@
 #   <derived_dir>/era5/era5_cell_metadata.csv (one row per site)
 #   <standard_dir>/<site>/<site>__<source>.csv.gz + .yml (7 sources: PBLHmod default, clim, gamma001, gamma0025; ERA5 centre, bilinear; ICOS operational)
 #   <output_dir>/tables/04_metrics_<site>.csv (pairs 7, 8: side-result constants gamma_med, gamma_site of step 02,
-#     if their outputs exist; spec 09 amendment 3), 04_diurnal_<site>.csv,
+#     if their outputs exist; spec 09 amendment 3; pair 9: PBLHmod-gammaEC, spec 17, standard file
+#     pblhmod_gamma_ec, if the gamma_ec output of step 02 exists), 04_diurnal_<site>.csv,
 #     04_H_metrics_<site>.csv, 04_gamma_850_700_<site>.csv
 #   <output_dir>/figures/04_*_<site>.png / .pdf (7 figures)
 #
@@ -108,6 +109,18 @@ for (site_id in site_ids) {
     o <- readr::read_csv(p, show_col_types = FALSE, progress = FALSE, guess_max = 1e5)
     side[[lab]] <- standardize_pblhmod(o, lab, pblh_options(gamma = stats::median(o$gamma_used, na.rm = TRUE), label = lab))
   }
+  # Spec 17: PBLHmod-gammaEC (gamma_source ec_clim; second pass of step 02 after scripts/17a_gamma_ec.R): standard
+  # file pblhmod_gamma_ec and pair 9 when the output exists; a stale standard file is removed when it does not
+  p_ec <- file.path(derived_dir, "pblhmod", paste0(site_id, "_pblhmod_gamma_ec.csv.gz"))
+  std_ec <- NULL
+  if (file.exists(p_ec)) {
+    std_ec <- standardize_pblhmod(readr::read_csv(p_ec, show_col_types = FALSE, progress = FALSE, guess_max = 1e5),
+                                  "gamma_ec", pblh_options_cfg(cfg, gamma_source = "ec_clim", label = "gamma_ec"))
+  } else {
+    stale <- file.path(standard_dir, site_id, paste0(site_id, "__pblhmod_gamma_ec", c(".csv.gz", ".yml")))
+    if (any(file.exists(stale))) unlink(stale[file.exists(stale)])
+    cli::cli_alert_info("gamma_ec: {.path {p_ec}} not found (step 02 after scripts/17a_gamma_ec.R), pair 9 not computed.")
+  }
 
   # --- 4. Standard files ----------------------------------------------------------
   cli::cli_h2("Standard files")
@@ -124,6 +137,7 @@ for (site_id in site_ids) {
     era5_blh_bilinear = standardize_era5_blh(center, bilin, spread, "bilinear", exclusions, meta$utc_offset_h, hdr),
     icos_oper = standardize_icos_oper(d)
   )
+  if (!is.null(std_ec)) std$pblhmod_gamma_ec <- std_ec
   site_std_dir <- file.path(standard_dir, site_id)
   for (s in names(std)) {
     paths <- write_standard_pblh(std[[s]]$data, std[[s]]$meta, site_std_dir)
@@ -155,7 +169,9 @@ for (site_id in site_ids) {
     if (!is.null(side$gamma_med)) pair_table(match_halfhours_to_hours(side$gamma_med$data, hours), era_c,
                                              "7_pblhmod_gamma_med_vs_era5_center"),
     if (!is.null(side$gamma_site)) pair_table(match_halfhours_to_hours(side$gamma_site$data, hours), era_c,
-                                              "8_pblhmod_gamma_site_vs_era5_center")
+                                              "8_pblhmod_gamma_site_vs_era5_center"),
+    if (!is.null(std_ec)) pair_table(match_halfhours_to_hours(std_ec$data, hours), era_c,
+                                     "9_pblhmod_gamma_ec_vs_era5_center")
   )
   # PBLHmod regime as stratum for pairs 4a/4b (operational has no regime)
   reg_h <- stats::setNames(h_def$x_regime, as.character(as.numeric(h_def$timestamp_utc)))

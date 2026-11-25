@@ -302,3 +302,21 @@ Added output columns: `L_l2`, `L_forcing` [m], `L_source`, `L_check`, `flag_L_re
 
 Added output columns: `gamma_used` [K m-1, in B&G], `gamma_n_used` [K m-1, in N of the neutral Eq. B3 and the B2/B3 switch], `gamma_source_used`
 (`constant`, `era5_clim`, `era5_daily`, `era5_clim_fallback`, `constant_fallback`).
+
+15. **gamma from the station's own data** (spec 17, G 2026-11-25). `gamma_source` gains `"ec_clim"` (site ×
+    calendar-month median of the EC-derived gamma, gamma_EC, of `scripts/17a_gamma_ec.R`) and `"ec_daily"` (the day's
+    gamma_EC where the day is `used`, else the climatology, `gamma_source_used = "ec_clim_fallback"`). No ERA5: gamma_EC
+    is fitted per clear day from the rise of the tower potential temperature in the B&G window of the `default` run
+    (Method A: `bg_step()` integration as in `run_pblh_model()` plus the mixed-layer temperature
+    d theta / dt = (1 + A) wtheta / h, Brent on log gamma within [0.001, 0.02] K m-1; Method B, closed-form encroachment,
+    as sensitivity; `R/gamma_ec.R`). The tables (`gamma_ec_daily()`, `gamma_ec_climatology()`: same layout as the ERA5
+    tables) are passed as `run_pblh_model(..., gamma_era5 = list(daily, clim))`; `gamma_scope` as for ERA5. A month
+    without a value uses the constant (`constant_fallback`, warning; no network fallback, as spec 11 decision 2).
+    Cases in script 02: `gamma_ec` (`ec_clim`; standard source `pblhmod_gamma_ec`, label "PBLHmod-γEC") and
+    `gamma_ec_daily` (tables only); both skipped while the site's gamma_EC tables are missing (two passes:
+    02 → 17a → 02). Constant grid `gamma_g002` … `gamma_g012` (0.002–0.012 K m-1, spec 17 B, tables only) only when
+    named in `--cases`. **With `gamma_source = "constant"` the output is unchanged** (< 1e-9 m at BE-Bra, FI-Hyy,
+    FR-Gri, CH-Dav, 2026-11-25). Decision D1 (whether gamma_EC becomes the recommended EC-only setting or the default)
+    is open (spec 17 section 4).
+
+Added values of `gamma_source_used`: `ec_clim`, `ec_daily`, `ec_clim_fallback`.

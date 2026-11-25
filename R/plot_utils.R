@@ -47,6 +47,9 @@ pblh_sources_style <- local({
     # side-result constants of step 02 (spec 09 amendment 3; supplementary network figure only)
     row("pblhmod_gamma_med", "source", k["purple"], "PBLHmod (γ network median)", 11),
     row("pblhmod_gamma_site", "source", k["grey_dark"], "PBLHmod (γ site median)", 12),
+    # EC-derived gamma (spec 17): PBLHmod-gammaEC (monthly climatology) and the daily variant (tables, spec-17 figures)
+    row("pblhmod_gamma_ec", "source", k["blue_dark"], "PBLHmod-γEC", 2, "dotdash"),
+    row("pblhmod_gamma_ec_daily", "source", k["blue_light"], "PBLHmod-γEC (daily)", 13, "dotted"),
     # secondary measured sources (spec 14; internal figures only)
     row("tud_skyvue_mlh", "source", k["black"], "SkyVUE PRO MLH (secondary)", 5),
     row("vaisala_blview_mlh", "source", k["black"], "BL-View MLH (secondary)", 5),
@@ -150,7 +153,9 @@ pblh_sources_style <- local({
     row("mc_rsl_flip", "element", "grey30", "rsl test fails", 26),
     # Spec 19: ends of the continuous colour scales (EC height, zm / h)
     row("grad_low", "element", k["blue_light"], "low", 27),
-    row("grad_high", "element", k["blue_dark"], "high", 28)
+    row("grad_high", "element", k["blue_dark"], "high", 28),
+    # Spec 17 B: gamma where the median ln(PBLHmod / measured) crosses 0
+    row("gamma_best", "element", k["black"], "γ_best (median ln(PBLHmod / measured) = 0; bootstrap 95 %)", 29)
   )
 })
 

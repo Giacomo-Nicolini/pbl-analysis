@@ -16,7 +16,10 @@
 #'   - `gamma_source` [`"constant"` (default, uses `gamma`), `"era5_clim"`
 #'     (site x month climatology of the ERA5 morning gamma), `"era5_daily"`
 #'     (the day's ERA5 morning gamma, else the climatology)] (spec 11 B, spec 02
-#'     Amendment 14); the ERA5 tables are passed to [run_pblh_model()]; a month
+#'     Amendment 14), `"ec_clim"` (site x month climatology of the EC-derived gamma of
+#'     script 17a) and `"ec_daily"` (the day's EC-derived gamma where the day is used,
+#'     else the climatology, `ec_clim_fallback`) (spec 17, spec 02 Amendment 15; no
+#'     ERA5); the tables are passed to [run_pblh_model()]; a month
 #'     without a climatology value uses the constant `gamma` (flagged in
 #'     `gamma_source_used`). The default stays `"constant"`: PBLHmod is computable
 #'     from EC data alone (G 2026-10-30); `"era5_clim"` is the variant PBLHmod-clim;
@@ -119,7 +122,7 @@ validate_pblh_options <- function(opts) {
   one_of("h_source", c("H_F_MDS", "H", "H_CORR"))
   one_of("combine", c("max", "bg_only"))
   one_of("neutral_method", c("auto", "B2", "B3"))
-  one_of("gamma_source", c("constant", "era5_clim", "era5_daily"))
+  one_of("gamma_source", c("constant", "era5_clim", "era5_daily", "ec_clim", "ec_daily"))
   one_of("gamma_scope", c("all", "bg_only"))
   pos_num("c_s")
   g <- opts$gamma
@@ -208,7 +211,8 @@ pblh_options_cfg <- function(cfg, ...) {
 #'   `utc_offset_h`; `altitude_m` for the barometric fallback).
 #' @param opts Output of [pblh_options()].
 #' @param gamma_era5 `NULL`, or, for `opts$gamma_source` other than `"constant"`, a list with `daily`
-#'   ([gamma_daily()]) and `clim` ([gamma_climatology()]) of the site (spec 11 B).
+#'   ([gamma_daily()]) and `clim` ([gamma_climatology()]) of the site (spec 11 B); for `"ec_clim"` / `"ec_daily"`
+#'   the gamma_EC tables of script 17a ([gamma_ec_daily()], [gamma_ec_climatology()]; spec 17).
 #' @return Tibble, one row per input row: `site_id`, `timestamp_start_utc`,
 #'   `timestamp_end_utc` [POSIXct UTC], `pblh_m` [m], `regime` (`"stable"`,
 #'   `"unstable_diag"`, `"convective"`, `"excluded"`, `NA`), `method` (`"B1"`,
@@ -224,7 +228,7 @@ pblh_options_cfg <- function(cfg, ...) {
 #'   `flag_bg_stopped_gap`, `flag_sign_inconsistent`, `flag_no_positive_h`,
 #'   `flag_polar_day`, `flag_below_zm` (`pblh_m < zm_m`), `excl_flag`; `gamma_used` [K m-1, in B&G],
 #'   `gamma_n_used` [K m-1, in N of the neutral Eq. B3 and the B2/B3 switch], `gamma_source_used` (`constant`, `era5_clim`, `era5_daily`,
-#'   `era5_clim_fallback`, `constant_fallback`; spec 11 B).
+#'   `era5_clim_fallback`, `constant_fallback`; spec 11 B; `ec_clim`, `ec_daily`, `ec_clim_fallback`; spec 17).
 #'   Attribute `pblh_options`: the options used.
 run_pblh_model <- function(data, site_meta, opts = pblh_options(), gamma_era5 = NULL) {
   validate_pblh_options(opts)

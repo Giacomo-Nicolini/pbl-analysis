@@ -29,6 +29,16 @@ default:
   # PBLHmod (EC data only): constant gamma [K m-1] of the default case and the PBLHmod-clim fallback; revised after
   # the network gamma climatology (spec 09 Part B, decision point 3b). Reference sources keep 0.01 and 0.0025.
   pblh_gamma_default: 0.01
+  # EC-derived gamma (spec 17, scripts/17a_gamma_ec.R, gamma_ec_options()): fit window ends at local solar noon +
+  # end_offset_h [h]; min_n valid half-hours [-]; clear sky: mean SW_IN / SW_IN_POT over the window >= clear_min [-];
+  # theta rise >= rise_min [K]; R2 of Method A >= r2_min [-]; monthly climatology from >= min_days used days [-].
+  # Bounds of gamma: the spec-11 bounds (gamma_options(): 0.001-0.02 K m-1).
+  gamma_ec_end_offset_h: 3
+  gamma_ec_min_n: 6
+  gamma_ec_clear_min: 0.6
+  gamma_ec_rise_min: 1
+  gamma_ec_r2_min: 0.8
+  gamma_ec_min_days: 5
   # Footprint chunks on the cluster (spec 09 A5): target duration [min] and FFP cost [s per half-hour, one core,
   # spec-08 timing 1.7-2.1 s]
   chunk_target_min: 120

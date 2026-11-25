@@ -45,7 +45,10 @@ for (f in list.files(here::here("R"), pattern = "\\.R$", full.names = TRUE)) sou
 args <- commandArgs(trailingOnly = TRUE)
 nb_arg <- grep("^--n-boot=", args, value = TRUE)
 case_arg <- grep("^--cases=", args, value = TRUE)
-site_ids <- setdiff(args, c(nb_arg, case_arg))
+pfx_arg <- grep("^--prefix=", args, value = TRUE)
+# output prefix (spec 17: --prefix=17 writes 17_* tables and figures; default 11 = the spec-11 outputs)
+pfx <- if (length(pfx_arg) == 1) sub("^--prefix=", "", pfx_arg) else "11"
+site_ids <- setdiff(args, c(nb_arg, case_arg, pfx_arg))
 bad_arg <- grep("^--", site_ids, value = TRUE)
 if (length(bad_arg) > 0) cli::cli_abort("Unknown option{?s} {.val {bad_arg}}.")
 opts <- measured_compare_options()
@@ -71,7 +74,8 @@ print_tbl <- function(x) print(as.data.frame(dplyr::mutate(x, dplyr::across(dply
 t0 <- Sys.time()
 
 all_cases <- c("default", "clim", "gamma001", "gamma0025", "gamma_era5daily", "gamma_era5clim_zmin1000",
-               "gamma_era5clim_bgonly", "gamma_med", "gamma_site")
+               "gamma_era5clim_bgonly", "gamma_med", "gamma_site", "gamma_ec", "gamma_ec_daily",
+               sprintf("gamma_g%03d", 2:12))
 cases <- if (length(case_arg) == 1) strsplit(sub("^--cases=", "", case_arg), ",")[[1]] else
   c("default", "clim", "gamma_med", "gamma_site", "gamma0025")
 bad <- setdiff(cases, all_cases)
@@ -80,12 +84,12 @@ if (!"default" %in% cases) cli::cli_abort("Case {.val default} is required (regi
 # Figures (G 2026-10-30, 2026-11-11): main = PBLHmod (default) and PBLHmod-clim (clim) with ERA5 and the measurement;
 # supplementary = gamma_med, gamma_site and the reference gamma values (gamma001, gamma0025), same layout; the other
 # cases in tables only.
-styled <- c("default", "clim", "gamma_med", "gamma_site", "gamma001", "gamma0025")
+styled <- c("default", "clim", "gamma_ec", "gamma_ec_daily", "gamma_med", "gamma_site", "gamma001", "gamma0025")
 case_pal <- stats::setNames(style_of(paste0("pblhmod_", styled)), styled)
 case_lab <- stats::setNames(style_of(paste0("pblhmod_", styled), "label"), styled)
 ref_cases <- intersect(c("gamma_med", "gamma_site", "gamma001", "gamma0025"), cases)
-fig_sets <- list(main = list(cases = intersect(c("default", "clim"), cases), prefix = "11_", title = NULL),
-                 ref = list(cases = ref_cases, prefix = "11s_ref_",
+fig_sets <- list(main = list(cases = intersect(c("default", "clim", "gamma_ec"), cases), prefix = paste0(pfx, "_"), title = NULL),
+                 ref = list(cases = ref_cases, prefix = paste0(pfx, "s_ref_"),
                             title = if (any(c("gamma_med", "gamma_site") %in% ref_cases)) {
                               "γ network and site medians, reference γ values"
                             } else {
@@ -144,7 +148,7 @@ eval_site <- function(site_id, o) {
   era <- list(era5_blh_center = rd("era5_blh_center"), era5_blh_bilinear = rd("era5_blh_bilinear"))
 
   # --- regime shares and stable / neutral heights (bgonly vs clim vs default; gamma_med, gamma_site) ---
-  for (k in intersect(c("default", "clim", "gamma0025", "gamma_era5clim_bgonly", "gamma_med", "gamma_site"), cases)) {
+  for (k in intersect(c("default", "clim", "gamma0025", "gamma_era5clim_bgonly", "gamma_med", "gamma_site", "gamma_ec", "gamma_ec_daily"), cases)) {
     d <- raw[[k]]
     push("reg_h", dplyr::bind_rows(lapply(c("stable", "unstable_diag", "convective"), function(r) {
       i <- d$regime %in% r & !is.na(d$pblh_m)
@@ -274,7 +278,7 @@ eval_site <- function(site_id, o) {
   }
   gc <- growth_curves(g_clear, vars, meta$lon, mid_s = tb$mid_s)
   readr::write_csv(dplyr::mutate(gc$summary, site_id = site_id, reference = rf$src, .before = 1),
-                   file.path(tables_dir, paste0("11_growth_clearday_", site_id, ".csv")))
+                   file.path(tables_dir, paste0(pfx, "_growth_clearday_", site_id, ".csv")))
   cli::cli_inform("Clear days (kt >= {kt_clear}): {length(clear)}; hours with all values: {nrow(gc$rows)}.")
   gp <- gc$summary[gc$summary$n >= 10, ]
   if (nrow(gp) == 0) {
@@ -358,7 +362,7 @@ long <- dplyr::bind_rows(lapply(long_cols, function(m) {
 }))
 long$note <- paste("fb > 0: reference deeper (Sinclair2022); mlr_lo/hi, slope_sym_lo/hi, ba_slope_lo/hi: day-block",
                    "bootstrap 95 %; measured references: exact values (FI-Hyy) or quality-filtered aerosol MLH")
-readr::write_csv(long, file.path(tables_dir, "11_gamma_cases_metrics.csv"))
+readr::write_csv(long, file.path(tables_dir, paste0(pfx, "_gamma_cases_metrics.csv")))
 wide_em <- dplyr::bind_rows(wide_em)
 wide_all <- dplyr::bind_rows(wide, wide_em)
 # Season table (amendment 1): every case and ERA5 against the measurement, and every case against ERA5
@@ -370,7 +374,7 @@ season_tab$distance_class <- unname(pairing(season_tab$site_id, "distance_class"
 season_tab$borderline <- as.logical(unname(pairing(season_tab$site_id, "borderline")))
 season_tab$note <- paste("ln(source / reference); case era5_blh_center = ERA5 tower cell vs the measurement;",
                          "low_n: fewer than", min_days, "days in the day-block bootstrap")
-readr::write_csv(season_tab, file.path(tables_dir, "11_gamma_cases_season.csv"))
+readr::write_csv(season_tab, file.path(tables_dir, paste0(pfx, "_gamma_cases_season.csv")))
 # Decision table (amendment 1): one row per site
 dec_cases <- c(cases, "era5_blh_center")
 decision <- gamma_decision_table(wide_all, site_ids, refs, dec_cases, min_days)
@@ -387,12 +391,12 @@ decision$note <- paste("mlr = median ln(PBLHmod case / measured) on the primary 
                        "days; era5_mlr = median ln(PBLHmod case / ERA5 tower cell), convective; low_n: fewer than",
                        min_days, "days; status: ok, era5_only, no_overlap (n = 0, reason in no_data_reason), error",
                        "(no metric rows), error_growth (metrics kept)")
-readr::write_csv(decision, file.path(tables_dir, "11_gamma_decision.csv"))
+readr::write_csv(decision, file.path(tables_dir, paste0(pfx, "_gamma_decision.csv")))
 reg_h <- dplyr::bind_rows(reg_h)
-readr::write_csv(reg_h, file.path(tables_dir, "11_gamma_regime_heights.csv"))
+readr::write_csv(reg_h, file.path(tables_dir, paste0(pfx, "_gamma_regime_heights.csv")))
 if (length(nulls) > 0) {
   nulls <- dplyr::bind_rows(nulls)
-  readr::write_csv(nulls, file.path(tables_dir, "11_gamma_censored_null.csv"))
+  readr::write_csv(nulls, file.path(tables_dir, paste0(pfx, "_gamma_censored_null.csv")))
 }
 
 # --- gamma diagnostics: daily vs climatology, by month ---
@@ -412,7 +416,7 @@ dvc <- dplyr::summarise(dplyr::group_by(gd[!is.na(gd$gamma), ], site_id), n_days
                         median_abs_rel_dev = stats::median(abs(gamma / clim - 1)),
                         share_outside_25pct = mean(abs(gamma / clim - 1) > 0.25),
                         sd_daily = stats::sd(gamma), sd_clim = stats::sd(clim), .groups = "drop")
-readr::write_csv(dvc, file.path(tables_dir, "11_gamma_daily_vs_clim.csv"))
+readr::write_csv(dvc, file.path(tables_dir, paste0(pfx, "_gamma_daily_vs_clim.csv")))
 gm <- gd[!is.na(gd$gamma), ]
 gm$site_id <- factor(gm$site_id, levels = site_ids)
 fig_g <- ggplot2::ggplot(gm, ggplot2::aes(factor(month), gamma)) +
@@ -423,7 +427,7 @@ fig_g <- ggplot2::ggplot(gm, ggplot2::aes(factor(month), gamma)) +
   ggplot2::labs(x = "Month", y = "Daily morning gamma [K m-1] (ERA5, 500-3500 m above the site)",
                 subtitle = "Lines: 0.01 (PBLHmod default, solid) and 0.0025 K m-1 (dashed)") +
   theme_pblh()
-pth <- save_figure(fig_g, paste0("11_gamma_by_month_", paste(site_ids, collapse = "_")), 19, 13)
+pth <- save_figure(fig_g, paste0(pfx, "_gamma_by_month_", paste(site_ids, collapse = "_")), 19, 13)
 cli::cli_alert_success("{.path {pth[['png']]}}")
 
 # --- case figures: median log ratio with bootstrap interval ---
@@ -488,8 +492,47 @@ if (nrow(dm) > 0) {
                                      opts$aerosol_window[2])) +
     theme_pblh() +
     ggplot2::guides(colour = ggplot2::guide_legend(ncol = 2))
-  pth <- save_figure(fig_d, "11_gamma_decision", 19, 4 + 1.6 * length(ms_sites))
+  pth <- save_figure(fig_d, paste0(pfx, "_gamma_decision"), 19, 4 + 1.6 * length(ms_sites))
   cli::cli_alert_success("{.path {pth[['png']]}}")
+}
+
+# --- spec 17 B: gamma benchmark from the constant-gamma grid (gamma_g002 ... gamma_g012 of step 02) ---
+grid_g <- stats::setNames(seq(2, 12) / 1000, sprintf("gamma_g%03d", 2:12))
+grid_g <- grid_g[names(grid_g) %in% cases]
+bench <- NULL
+if (length(grid_g) >= 2) {
+  ps <- unlist(lapply(site_ids, function(s) if (is.null(refs[[s]])) NULL else stats::setNames(refs[[s]]$primary_set, s)))
+  bm <- gamma_benchmark_table(wide, ps, grid_g)
+  ec_dir <- file.path(resolve_path(cfg$derived_dir), "gamma_ec")
+  ecs <- dplyr::bind_rows(lapply(unique(bm$best$site_id), function(s) {
+    p <- file.path(ec_dir, paste0(s, "_daily.csv"))
+    g <- if (file.exists(p)) {
+      d <- readr::read_csv(p, show_col_types = FALSE, progress = FALSE)
+      d$gamma_A[d$used %in% TRUE]
+    } else numeric()
+    gs <- tryCatch(gamma_site_constant(readr::read_csv(file.path(g_dir, paste0(s, "_daily.csv")), show_col_types = FALSE,
+                                                       progress = FALSE))$gamma, error = function(e) NA_real_)
+    dplyr::tibble(site_id = s, gamma_ec_median = med_fin(g), gamma_ec_p25 = q_fin(g, 0.25), gamma_ec_p75 = q_fin(g, 0.75),
+                  gamma_ec_n_days = length(g), gamma_site = gs)
+  }))
+  bench <- dplyr::left_join(bm$best, ecs, by = "site_id")
+  gnet <- read_gamma_network(gamma_network_path(cfg))
+  bench$gamma_med <- if (is.null(gnet)) NA_real_ else gnet$gamma_med
+  bench$gamma_default <- cfg$pblh_gamma_default
+  bench$ec_in_best_interval <- bench$gamma_ec_median >= bench$gamma_best_lo & bench$gamma_ec_median <= bench$gamma_best_hi
+  bh <- c("Spec 17 B: gamma benchmark. gamma_best = constant gamma where the median ln(PBLHmod / measured) on the primary set crosses 0 (linear interpolation over the grid 0.002-0.012 K m-1); gamma_best_lo / _hi = crossings of the day-block bootstrap 95 % bounds (NA if a bound does not cross within the grid).",
+          "gamma_ec_* = median, p25, p75 of the used daily gamma_EC (Method A, scripts/17a_gamma_ec.R); gamma_site = median of the daily ERA5 gamma (11a); gamma_med = network constant (09_collect); gamma_default = config pblh_gamma_default [K m-1].")
+  write_csv_header(bench, file.path(tables_dir, paste0(pfx, "_gamma_benchmark.csv")), bh)
+  write_csv_header(bm$curve, file.path(tables_dir, paste0(pfx, "_gamma_benchmark_curve.csv")), bh[1])
+  if (nrow(bench)) {
+    fig_b <- plot_gamma_benchmark(bench, bench$gamma_med[1], cfg$pblh_gamma_default,
+                                  fp_wrap(paste("γ_best: constant γ at which the median ln(PBLHmod / measured MLH) on the site's primary set is 0",
+                                                "(aerosol: daytime window, PBLHmod convective; Cloudnet: convective, exact values), with the",
+                                                "crossings of the day-block bootstrap 95 % bounds. Vertical lines: 0.01 K m-1 (PBLHmod) and the",
+                                                "network γ (gamma_med).")))
+    pth <- save_figure(fig_b, paste0(pfx, "_gamma_benchmark"), 17, 4 + 1.3 * nrow(bench))
+    cli::cli_alert_success("{.path {pth[['png']]}}")
+  }
 }
 
 # --- report ---
@@ -518,7 +561,11 @@ if (is.data.frame(nulls)) {
 }
 cli::cli_h2("gamma: daily vs climatology")
 print_tbl(dvc)
-cli::cli_h2("Site status (also in 11_gamma_decision.csv)")
+if (!is.null(bench)) {
+  cli::cli_h2("Spec 17 B: gamma benchmark [K m-1]")
+  print_tbl(bench)
+}
+cli::cli_h2("Site status (also in11_gamma_decision.csv)")
 print(as.data.frame(site_status), row.names = FALSE)
 n_err <- sum(startsWith(site_status$status, "error"))
 if (n_err > 0) cli::cli_alert_danger("{n_err} site{?s} with an error: see the status table above and the log.")
