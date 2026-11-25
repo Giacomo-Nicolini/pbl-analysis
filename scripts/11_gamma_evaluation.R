@@ -565,7 +565,7 @@ if (!is.null(bench)) {
   cli::cli_h2("Spec 17 B: gamma benchmark [K m-1]")
   print_tbl(bench)
 }
-cli::cli_h2("Site status (also in11_gamma_decision.csv)")
+cli::cli_h2("Site status (also in {pfx}_gamma_decision.csv)")
 print(as.data.frame(site_status), row.names = FALSE)
 n_err <- sum(startsWith(site_status$status, "error"))
 if (n_err > 0) cli::cli_alert_danger("{n_err} site{?s} with an error: see the status table above and the log.")
