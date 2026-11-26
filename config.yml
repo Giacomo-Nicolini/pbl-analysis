@@ -34,6 +34,7 @@ default:
   # theta rise >= rise_min [K]; R2 of Method A >= r2_min [-]; monthly climatology from >= min_days used days [-].
   # Bounds of gamma: the spec-11 bounds (gamma_options(): 0.001-0.02 K m-1).
   gamma_ec_end_offset_h: 3
+  gamma_ec_start_offset_h: 0   # fit starts this long after the first positive heat flux [h] (D1 pre-test)
   gamma_ec_min_n: 6
   gamma_ec_clear_min: 0.6
   gamma_ec_rise_min: 1

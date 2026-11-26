@@ -61,7 +61,7 @@ non-closure: with H too small, the observed θ rise needs a shallower layer, i.e
 (γ_EC / γ_ERA5 against the daytime energy-balance ratio, spec 17 D) and not corrected (no H post-correction,
 G 2026-11-12).
 
-## Limitation seen in the first local runs (2026-11-25, four sites, test)
+## Limitation seen in the first local runs (2026-11-25, four sites, test; D1 pre-test 2026-11-26 in `docs/STATUS.md`)
 
 On most fitted days the optimum lies at the upper bound (0.02 K m⁻¹): the morning θ rise at the tower is faster
 than a mixed layer that grows from the night-time height into the free-atmosphere γ allows. Erosion of the nocturnal
