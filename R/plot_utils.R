@@ -429,9 +429,8 @@ plot_growth_clearday <- function(dd, pal, labs, meas_var, window = NULL, day_lab
       ggplot2::geom_hline(data = frame, ggplot2::aes(yintercept = yend), linewidth = 0.2, linetype = "dotted",
                           colour = ref_col) +
       ggplot2::scale_fill_manual(values = stats::setNames(style_of(c("1", "3"), "colour", "qc"), c("1", "3")),
-                                 labels = paste0("band: share of usable half-hours, qc ",
-                                                 style_of(c("1", "3"), "label", "qc")),
-                                 name = NULL, drop = FALSE)
+                                 labels = paste0("qc ", style_of(c("1", "3"), "label", "qc")),
+                                 name = "Band: share of usable\nhalf-hours per hour", drop = FALSE)
   }
   if (!is.null(day_labels)) {
     p <- p + ggplot2::geom_text(data = day_labels, ggplot2::aes(x = 5.2, y = Inf, label = label), hjust = 0,
