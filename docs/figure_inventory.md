@@ -219,7 +219,7 @@ header (definitions, units).
 | `19_site_descriptors` | site × variable × subset × stratum (regime `all`, `unstable`, `neutral`, `stable`, `neutral_stable` × day/night/`all`); site-level variables (terrain, tower, u* threshold source, year) with subset/regime/daynight empty | `site_id, block, variable, unit, subset, regime, daynight, value, value_chr, row_basis` | `19s_alpine_drivers` |
 | `19_row_level` | site (selected) × stratum (`neutral_night`, `stable_night`, `neutral_stable_night`) × response (`ta_diff_pp`, `lnx80_era5_pblhmod`) × predictors (`ln_h_era5_pblhmod`, `zm_h_era5`, `both`) | `site_id, stratum, response, predictors, n, r2, coef_1, coef_2` | none |
 | `19_row_level_rows` | night row (neutral, stable) of the selected sites (figure data) | `site_id, zl_class, ta_diff_pp, lnx80_era5_pblhmod, ln_h_era5_pblhmod, zm_h_era5` | `19s_row_level` |
-| `19_night_flows` | site × day/night × 30° direction bin | `site_id, daynight, dir_bin, n, share` | `19s_night_flows` |
+| `19_night_flows` | site × day/night × 30° direction bin (half-open, bin 0 = 345–15°) | `site_id, daynight, dir_bin, dir_from, dir_to, n, share` | `19s_night_flows` |
 | `19_night_closeness` | site × source (PBLHmod, ERA5) × stratum, from `07_metrics_FI-Hyy` and `10_metrics_<site>` (window_convective) | `site_id, table, source, stratum_set, stratum, n, median_log_ratio, mad_log_ratio, bias_m` | none |
 | `19_spec15_check` | site × regime × day/night (era5 − pblhmod, `etc`, `valid_qc_used`) | `site_id, regime, daynight, n, p10_pp, ta_diff_n, ta_diff_p10, n_equal, p10_diff_pp` | none |
 

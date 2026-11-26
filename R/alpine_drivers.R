@@ -255,7 +255,7 @@ alpine_table_headers <- function(threshold_pp = 5, min_n = 50) {
       "Night rows of the selected sites, regime neutral, stable and neutral_stable; simple linear models (lm) of the response on the predictors; r2 = R squared, coef_1 / coef_2 = slopes in the order of the predictors.",
       "Responses: ta_diff_pp = TA ERA5 - TA PBLHmod [pp]; lnx80_era5_pblhmod = ln(x_80 ERA5 / x_80 PBLHmod) [-]. Predictors: ln_h_era5_pblhmod = ln(h ERA5 / h PBLHmod) [-]; zm_h_era5 = zm / h ERA5 [-]."),
     rows = c(common, "Night rows (neutral, stable) of the selected sites for figure 19s_row_level; columns as in 19_row_level.csv."),
-    flows = c(common, "Wind-direction histogram per site x daynight (main subset, all regimes): 30-degree bins centred on 0, 30, ..., 330 deg from N; n and share [0-1] of the site x daynight rows."),
+    flows = c(common, "Wind-direction histogram per site x daynight (main subset, all regimes): 30-degree bins centred on 0, 30, ..., 330 deg from N (dir_bin), half-open [dir_from, dir_to): bin 0 = 345-15 deg, WD 0 and 360 both in it; n and share [0-1] of the site x daynight rows. A bin can be empty because the ETC removed the fluxes of a wind sector (BE-Bra: about 343-15 deg, no H or NEE in L2; WD, u* and L kept), not only because no wind blows from it."),
     closeness = c("Spec 19 section 3: night-time and daytime evidence from the existing measured comparisons (no rerun).",
       "FI-Hyy: 07_metrics_FI-Hyy.csv (Cloudnet epsilon MLH, valid at night), strata all and PBLHmod regime; CH-Dav and the other aerosol sites: 10_metrics_<site>.csv, stratum set window_convective (daytime window, PBLHmod convective), stratum all.",
       "median_log_ratio = median ln(source / measured) [-]; bias = mean(source - measured) [m]; mad_log_ratio = median |ln ratio| [-] where available. No measured night-time PBLH exists at the alpine sites (CH-Dav: STRATfinder night values on a floor, spec 11 C; IT-Ren: no measurement)."))
@@ -310,16 +310,21 @@ alpine_row_level <- function(nr) {
 #' Wind-direction histogram per site and day / night
 #'
 #' @param r Rows of one site; @param basis Logical row basis; @param width Bin width [deg].
-#' @return Tibble: `site_id`, `daynight`, `dir_bin` [deg, bin centre], `n`, `share` [0-1].
+#' Bins are half-open, [centre - width / 2, centre + width / 2): the bin centred on 0 covers 345 to 15 deg (from N);
+#' 360 and 0 both fall in it.
+#'
+#' @return Tibble: `site_id`, `daynight`, `dir_bin` [deg, bin centre], `dir_from`, `dir_to` [deg, bin edges, `dir_from`
+#'   included], `n`, `share` [0-1].
 alpine_wd_hist <- function(r, basis, width = 30) {
   centres <- seq(0, 360 - width, by = width)
   out <- list()
   for (t in c("day", "night")) {
     wd <- r$wind_dir[basis & r$daynight %in% t]
     wd <- wd[is.finite(wd)]
-    k <- if (length(wd)) ((round(wd / width) %% length(centres)) + 1) else integer()
+    k <- if (length(wd)) ((floor((wd %% 360 + width / 2) / width) %% length(centres)) + 1) else integer()
     n <- tabulate(k, length(centres))
-    out[[t]] <- dplyr::tibble(site_id = r$site_id[1], daynight = t, dir_bin = centres, n = n,
+    out[[t]] <- dplyr::tibble(site_id = r$site_id[1], daynight = t, dir_bin = centres,
+                              dir_from = (centres - width / 2) %% 360, dir_to = (centres + width / 2) %% 360, n = n,
                               share = if (sum(n) > 0) n / sum(n) else NA_real_)
   }
   dplyr::bind_rows(out)
