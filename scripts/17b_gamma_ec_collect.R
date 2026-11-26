@@ -13,9 +13,13 @@
 # Outputs (<output_dir>/tables, `#` header; <output_dir>/figures): 17_gamma_ec_vs_era5.csv (site x month),
 #   17_gamma_ec_sites.csv (one row per site: C and D), 17_network_logratio.csv (pairs 1, 6, 9), 17_gamma_ec_bracketing.csv
 #   (E); figures 17_gamma_ec_vs_era5, 17_gamma_ec_vs_era5_seasonal, 17s_gamma_ec_ebr.
+# Supplement (G 2026-11-26, D1 rejected): --offset-h=H reads the 17a tables of fit-start offset H (gamma_ec_off<H>h/)
+#   and writes the C/D tables and figures with the suffix _off<H>h (no 17_network_logratio). With offset 0 and part D,
+#   also 17_gamma_ratio_vs_height.csv (site x offset: site gamma_EC / gamma_ERA5 with zm = EC height - 2/3 hc, EC
+#   height, canopy height on the used days, IGBP; every offset folder found) and figure 17s_gamma_ratio_vs_height.
 #
 # Usage: Rscript scripts/17b_gamma_ec_collect.R [--sites-file=config/run_sites.txt | --sites=A,B] [--parts=C,D,E]
-#          [--label=test]
+#          [--label=test] [--offset-h=H]
 
 for (f in list.files(here::here("R"), pattern = "\\.R$", full.names = TRUE)) source(f)
 
@@ -24,11 +28,15 @@ opt <- function(k, def = NULL) {
   v <- sub(paste0("^--", k, "="), "", grep(paste0("^--", k, "="), args, value = TRUE))
   if (length(v)) v else def
 }
-bad <- setdiff(sub("=.*$", "", grep("^--", args, value = TRUE)), c("--sites-file", "--sites", "--parts", "--label"))
+bad <- setdiff(sub("=.*$", "", grep("^--", args, value = TRUE)), c("--sites-file", "--sites", "--parts", "--label", "--offset-h"))
 if (length(bad)) cli::cli_abort("Unknown argument{?s}: {.val {bad}}.")
 split <- function(x) trimws(strsplit(x, ",")[[1]])
 parts <- split(opt("parts", "C,D,E"))
 label <- opt("label", "")
+off_h <- as.numeric(opt("offset-h", "0"))
+ec_name <- gamma_ec_dir_name(off_h)
+sfx <- if (ec_name == "gamma_ec") "" else paste0("_", sub("^gamma_ec_", "", ec_name))
+if (nzchar(sfx)) label <- paste0(c(if (nzchar(label)) label, paste0("fit start +", format(off_h), " h")), collapse = ", ")
 cfg <- get_cfg()
 ids <- if (!is.null(opt("sites"))) split(opt("sites")) else {
   x <- trimws(readLines(opt("sites-file", here::here("config", "run_sites.txt")), warn = FALSE))
@@ -48,8 +56,8 @@ if (any(c("C", "D") %in% parts)) {
   cli::cli_h1("Parts C, D: gamma_EC vs ERA5, energy-balance ratio{tag}")
   mon <- list(); summ <- list(); lr <- list(); miss <- character()
   for (s in ids) {
-    ecd <- rd(file.path(derived_dir, "gamma_ec", paste0(s, "_daily.csv")))
-    ecm <- rd(file.path(derived_dir, "gamma_ec", paste0(s, "_monthly.csv")))
+    ecd <- rd(file.path(derived_dir, ec_name, paste0(s, "_daily.csv")))
+    ecm <- rd(file.path(derived_dir, ec_name, paste0(s, "_monthly.csv")))
     if (is.null(ecd) || is.null(ecm)) {
       miss <- c(miss, s)
       next
@@ -57,7 +65,7 @@ if (any(c("C", "D") %in% parts)) {
     m <- gamma_ec_vs_era5_table(ecm, rd(file.path(derived_dir, "gamma", paste0(s, "_monthly.csv"))), s)
     mon[[s]] <- m
     summ[[s]] <- gamma_ec_site_summary(m, ecd, rd(file.path(derived_dir, "gamma", paste0(s, "_daily.csv"))),
-                                       rd(file.path(derived_dir, "gamma_ec", paste0(s, "_ebr.csv"))))
+                                       rd(file.path(derived_dir, ec_name, paste0(s, "_ebr.csv"))))
     met <- rd(file.path(tables_dir, paste0("04_metrics_", s, ".csv")))
     if (!is.null(met)) {
       x <- met[met$pair %in% c("1_pblhmod_default_vs_era5_center", "6_pblhmod_clim_vs_era5_center",
@@ -73,17 +81,17 @@ if (any(c("C", "D") %in% parts)) {
   lr <- dplyr::bind_rows(lr)
   hd <- c(paste0("Spec 17 C/D (scripts/17b_gamma_ec_collect.R)", tag, ": gamma_EC = Method A of scripts/17a_gamma_ec.R on the used days; monthly median, p25, p75 from >= gamma_ec_min_days used days [K m-1]; ERA5 = monthly median of the daily morning gamma of 11a (500-3500 m above the site) [K m-1]."),
           "ratio_ec_era5 = gamma_EC / gamma_ERA5 [-]; ebr = daytime (SW_IN_POT > 0) JJA sum(H + LE) / sum(NETRAD - G) of the reference year with H, LE measured (QC 0); ebr_no_g = (H + LE) / NETRAD (diagnostic only, no correction).")
-  write_csv_header(mon, file.path(tables_dir, "17_gamma_ec_vs_era5.csv"), hd)
-  write_csv_header(summ, file.path(tables_dir, "17_gamma_ec_sites.csv"), hd)
-  if (nrow(lr)) write_csv_header(lr, file.path(tables_dir, "17_network_logratio.csv"),
+  write_csv_header(mon, file.path(tables_dir, paste0("17_gamma_ec_vs_era5", sfx, ".csv")), hd)
+  write_csv_header(summ, file.path(tables_dir, paste0("17_gamma_ec_sites", sfx, ".csv")), hd)
+  if (nrow(lr) && !nzchar(sfx)) write_csv_header(lr, file.path(tables_dir, "17_network_logratio.csv"),
                                  c(paste0("Spec 17 C", tag, ": pairs 1 (PBLHmod), 6 (PBLHmod-clim), 9 (PBLHmod-gammaEC) vs ERA5 tower cell from 04_metrics_<site>.csv; median_log_ratio = median ln(source / ERA5) [-]."),
                                    "Pair 9 is absent at a site where step 04 ran before the gamma_ec case of step 02."))
   cap <- fp_wrap(paste0("Monthly medians of the used days (γEC, Method A) and of the daily ERA5 morning γ; months with fewer than ",
                         gamma_ec_options_cfg(cfg)$min_days, " used γEC days are not shown. Dashed line: 0.01 K m-1 (PBLHmod).", tag))
   if (nrow(mon) && any(is.finite(mon$gamma_ec))) {
-    save_figure(plot_gamma_ec_vs_era5(mon, cap), "17_gamma_ec_vs_era5", 12, 11, dir = fig_dir)
+    save_figure(plot_gamma_ec_vs_era5(mon, cap), paste0("17_gamma_ec_vs_era5", sfx), 12, 11, dir = fig_dir)
     nsite <- length(unique(mon$site_id))
-    save_figure(plot_gamma_ec_seasonal(mon, cap), "17_gamma_ec_vs_era5_seasonal", 19, 6 + 3.2 * ceiling(nsite / 6), dir = fig_dir)
+    save_figure(plot_gamma_ec_seasonal(mon, cap), paste0("17_gamma_ec_vs_era5_seasonal", sfx), 19, 6 + 3.2 * ceiling(nsite / 6), dir = fig_dir)
   }
   if ("D" %in% parts && nrow(summ) && any(is.finite(summ$ebr) | is.finite(summ$ebr_no_g))) {
     d <- summ[is.finite(summ$ratio_ec_era5), ]
@@ -99,7 +107,7 @@ if (any(c("C", "D") %in% parts)) {
                     y = "γEC / γERA5 (median of the monthly ratios) [-]",
                     caption = fp_wrap(paste0("Diagnostic only (no H correction, G 2026-11-12): a γ fitted with the H that drives the model absorbs a systematic error of H.", tag))) +
       theme_pblh()
-    save_figure(fig, "17s_gamma_ec_ebr", 14, 12, dir = fig_dir)
+    save_figure(fig, paste0("17s_gamma_ec_ebr", sfx), 14, 12, dir = fig_dir)
     ct <- suppressWarnings(stats::cor.test(d$ebr_used, log(d$ratio_ec_era5), method = "spearman"))
     cli::cli_inform("Part D: Spearman rho(EBR, ln ratio) = {signif(ct$estimate, 3)} (p = {signif(ct$p.value, 3)}, {nrow(d)} sites).")
   }
@@ -109,6 +117,50 @@ if (any(c("C", "D") %in% parts)) {
     cli::cli_h2("Median ln(source / ERA5): pairs 1, 6, 9")
     w <- lr[lr$metric == "median_log_ratio", ]
     print_tbl(dplyr::arrange(w, site_id, stratum, pair))
+  }
+}
+
+if ("D" %in% parts && !nzchar(sfx)) {
+  # Supplement (G 2026-11-26): site gamma_EC / gamma_ERA5 against the measurement height, every offset found
+  cli::cli_h1("Supplement: gamma_EC / gamma_ERA5 vs measurement height{tag}")
+  sites_md <- read_sites(resolve_path(cfg$sites_file))
+  sites_tv <- read_sites_timevarying(resolve_path(cfg$sites_timevarying_file))
+  dirs <- list.files(derived_dir, pattern = "^gamma_ec(_off[0-9.]+h)?$")
+  offs <- ifelse(dirs == "gamma_ec", 0, as.numeric(sub("^gamma_ec_off([0-9.]+)h$", "\\1", dirs)))
+  hv <- list()
+  for (k in seq_along(dirs)) for (s in ids) {
+    ecd <- rd(file.path(derived_dir, dirs[k], paste0(s, "_daily.csv")))
+    ecm <- rd(file.path(derived_dir, dirs[k], paste0(s, "_monthly.csv")))
+    if (is.null(ecd) || is.null(ecm)) next
+    m <- gamma_ec_vs_era5_table(ecm, rd(file.path(derived_dir, "gamma", paste0(s, "_monthly.csv"))), s)
+    sm <- gamma_ec_site_summary(m, ecd, rd(file.path(derived_dir, "gamma", paste0(s, "_daily.csv"))),
+                                rd(file.path(derived_dir, dirs[k], paste0(s, "_ebr.csv"))))
+    hv[[paste(s, k)]] <- dplyr::bind_cols(
+      dplyr::tibble(site_id = s, offset_h = offs[k]),
+      sm[c("n_used_days", "months_with_value", "gamma_ec_site", "gamma_era5_site", "ratio_ec_era5", "ebr", "ebr_no_g")],
+      gamma_ec_heights(ecd, s, sites_md, sites_tv))
+  }
+  hv <- dplyr::arrange(dplyr::bind_rows(hv), offset_h, site_id)
+  if (nrow(hv)) {
+    write_csv_header(hv, file.path(tables_dir, "17_gamma_ratio_vs_height.csv"),
+                     c(paste0("Spec 17 supplement (G 2026-11-26; D1 rejected)", tag, ": one row per site x fit-start offset_h [h] (0 = standard fit; other offsets from gamma_ec_off<H>h/)."),
+                       "ratio_ec_era5 = median of the monthly gamma_EC / gamma_ERA5 [-]; gamma_ec_site = median gamma_A of the used days, gamma_era5_site = median daily ERA5 gamma [K m-1]; ebr, ebr_no_g as 17_gamma_ec_sites.",
+                       "ec_height_m, canopy_height_m = medians on the used days (get_site_heights(), config/sites_timevarying.csv); zm_m = EC height - 2/3 canopy height [m]; igbp = land cover (config/sites.csv)."))
+    for (o in sort(unique(hv$offset_h))) {
+      x <- hv[hv$offset_h == o & is.finite(hv$ratio_ec_era5), ]
+      rho <- function(v) {
+        ok <- is.finite(v) & v > 0
+        if (sum(ok) < 4) return(NA_real_)
+        unname(suppressWarnings(stats::cor(v[ok], x$ratio_ec_era5[ok], method = "spearman")))
+      }
+      cli::cli_inform("Offset +{o} h: {nrow(x)} sites; Spearman rho(ratio, zm) = {signif(rho(x$zm_m), 2)}, rho(ratio, EC height) = {signif(rho(x$ec_height_m), 2)}.")
+      if (nrow(x)) print_tbl(dplyr::summarise(dplyr::group_by(x, igbp), n_sites = dplyr::n(),
+                                              median_ratio = stats::median(ratio_ec_era5), .groups = "drop"))
+    }
+    if (any(is.finite(hv$ratio_ec_era5))) {
+      cap <- fp_wrap(paste0("Site median of the monthly γEC / γERA5 (spec 17 supplement; decision D1 rejected). zm = EC height - 2/3 canopy height on the used days; labels: site (IGBP land cover). Filled: standard fit; open: fit start later after the first positive heat flux.", tag), 110)
+      save_figure(plot_gamma_ratio_vs_height(hv, cap), "17s_gamma_ratio_vs_height", 19, 11, dir = fig_dir)
+    }
   }
 }
 

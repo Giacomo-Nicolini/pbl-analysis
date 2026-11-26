@@ -537,3 +537,65 @@ plot_gamma_ec_seasonal <- function(mon, caption = NULL) {
     ggplot2::labs(x = "Month", y = "γ [K m-1]", caption = caption) +
     theme_pblh()
 }
+
+#' Folder name of the gamma_EC tables for a fit-start offset
+#'
+#' Offset 0 = the standard tables read by [run_pblh_model()] (`gamma_ec`); other offsets (spec 17 supplement, G
+#' 2026-11-26) in their own folder, never read by step 02 (`gamma_ec_off2h` for 2 h).
+#'
+#' @param offset_h Fit-start offset [h] ([gamma_ec_options()] `start_offset_h`).
+#' @return Folder name [character].
+gamma_ec_dir_name <- function(offset_h = 0) {
+  if (isTRUE(all.equal(offset_h, 0))) "gamma_ec" else paste0("gamma_ec_off", format(offset_h), "h")
+}
+
+#' Heights of a site on the used gamma_EC days (spec 17 supplement)
+#'
+#' EC height and canopy height from [get_site_heights()] at the start of the fit window of every used day; zm =
+#' EC height - 2/3 canopy height (footprint convention, d = 2/3 hc).
+#'
+#' @param daily Daily table of [gamma_ec_daily()]; @param site_id Station code.
+#' @param sites,sites_tv Outputs of [read_sites()] and [read_sites_timevarying()].
+#' @return One-row tibble: `ec_height_m`, `canopy_height_m`, `zm_m` [m, medians over the used days; `NA` without used
+#'   days], `igbp` [-].
+gamma_ec_heights <- function(daily, site_id, sites, sites_tv) {
+  igbp <- if ("igbp" %in% names(sites)) sites$igbp[sites$site_id == site_id][1] else NA_character_
+  t <- as_utc_time(daily$window_start_utc[daily$used %in% TRUE])
+  t <- t[!is.na(t)]
+  if (!length(t)) {
+    return(dplyr::tibble(ec_height_m = NA_real_, canopy_height_m = NA_real_, zm_m = NA_real_, igbp = igbp))
+  }
+  h <- get_site_heights(site_id, t, sites, sites_tv)
+  dplyr::tibble(ec_height_m = med_fin(h$zm_m), canopy_height_m = med_fin(h$canopy_height_m),
+                zm_m = med_fin(h$zm_m - 2 / 3 * h$canopy_height_m), igbp = igbp)
+}
+
+#' Site gamma_EC / gamma_ERA5 against the measurement height (spec 17 supplement figure)
+#'
+#' @param x Table `17_gamma_ratio_vs_height` (`site_id`, `offset_h`, `ratio_ec_era5`, `zm_m`, `ec_height_m`, `igbp`).
+#' @param caption Caption.
+#' @return ggplot: two panels (x = zm, x = EC height, log axes), one point per site and offset, labels site (IGBP).
+plot_gamma_ratio_vs_height <- function(x, caption = NULL) {
+  x <- x[is.finite(x$ratio_ec_era5), ]
+  lab_z <- "zm = EC height - 2/3 hc [m]"
+  lab_e <- "EC height [m]"
+  long <- dplyr::bind_rows(
+    dplyr::mutate(x, height = zm_m, panel = lab_z),
+    dplyr::mutate(x, height = ec_height_m, panel = lab_e))
+  long <- long[is.finite(long$height) & long$height > 0, ]
+  long$panel <- factor(long$panel, levels = c(lab_z, lab_e))
+  long$offset <- factor(paste0("fit start +", format(long$offset_h), " h"))
+  long$label <- ifelse(long$offset_h == min(long$offset_h), paste0(long$site_id, " (", long$igbp, ")"), NA_character_)
+  ggplot2::ggplot(long, ggplot2::aes(height, ratio_ec_era5, shape = offset)) +
+    ggplot2::geom_hline(yintercept = 1, colour = style_of("reference_line", "colour", "element")) +
+    ggplot2::geom_point(colour = style_of("pblhmod_gamma_ec"), size = 1.8) +
+    ggplot2::geom_text(ggplot2::aes(label = label), size = 2, vjust = -0.9, na.rm = TRUE, show.legend = FALSE) +
+    ggplot2::scale_shape_manual(values = c(16, 1)[seq_along(levels(long$offset))], name = NULL) +
+    ggplot2::scale_x_log10(expand = ggplot2::expansion(mult = 0.25)) +
+    ggplot2::scale_y_log10() +
+    ggplot2::facet_wrap(~panel, scales = "free_x", strip.position = "bottom") +
+    ggplot2::labs(x = NULL, y = "γEC / γERA5 [-]", caption = caption) +
+    theme_pblh() +
+    ggplot2::theme(strip.placement = "outside") +
+    ggplot2::coord_cartesian(clip = "off")
+}

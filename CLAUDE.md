@@ -284,7 +284,10 @@ so code must be reproducible, documented and traceable to references.
   `--cases`. Order: step 02 → `17a` → step 02 (02 skips the γEC cases while the tables are missing; 17a rewrites its
   tables only when their content changes). Step 04: standard file and pair `9_pblhmod_gamma_ec_vs_era5_center`.
   Evaluation: `11_gamma_evaluation.R --prefix=17` (parts A, B), `17b_gamma_ec_collect.R` (C, D, E). The γ fitted with
-  the model's H also absorbs an H bias (no correction, G 2026-11-12).
+  the model's H also absorbs an H bias (no correction, G 2026-11-12). Since D1 (G 2026-11-26): step 02 runs
+  `gamma_ec`, `gamma_ec_daily` only when named in `--cases`; supplement network run = 17a (offsets 0 and +2 h, the
+  latter in `<derived_dir>/gamma_ec_off2h/`, `gamma_ec_dir_name()`) + `17b --parts=C,D [--offset-h=2]`, scripts
+  called directly (no `run_site.R`), height table `17_gamma_ratio_vs_height`.
 - **Reference γ values** (supplement only): `pblhmod_gamma001` (0.01, Batchvarova & Gryning 1991 as cited by Kljun
   et al. 2015; equal to the default, keep both names) and `pblhmod_gamma0025` (0.0025, legacy ETC code).
 - **Side-result constants** (spec 09 amendment 3, G 2026-11-04; step 02 only, **no footprints**, no standard files):

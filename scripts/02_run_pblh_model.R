@@ -27,7 +27,8 @@
 # Spec 17 (spec 02 amendment 15): gamma_ec (PBLHmod-gammaEC, standard source pblhmod_gamma_ec: site x month
 # climatology of the EC-derived gamma, gamma_source ec_clim) and gamma_ec_daily (the day's EC-derived gamma, else the
 # climatology; tables only), from <derived_dir>/gamma_ec/ (scripts/17a_gamma_ec.R, which reads the default output:
-# two passes, 02 -> 17a -> 02); skipped while the site's tables are missing. Constant-gamma grid of the gamma
+# two passes, 02 -> 17a -> 02); run only when named in --cases (D1 rejected, G 2026-11-26), skipped while the
+# site's tables are missing. Constant-gamma grid of the gamma
 # benchmark (spec 17 B): gamma_g002 ... gamma_g012 (0.002-0.012 K/m, tables only), run only when named in --cases.
 # With --cases, the rows of the other cases in 02_cases_<site>.csv and 02_regimes_<site>.csv are kept (only the run
 # cases are replaced), so that a run of new cases does not truncate the per-site tables.
@@ -92,7 +93,9 @@ if (length(case_arg) == 1) {
   runs <- runs[intersect(keep, names(runs))]
 }
 want_side <- if (is.null(keep)) side_cases else intersect(keep, side_cases)
-want_ec <- if (is.null(keep)) names(ec_cases) else intersect(keep, names(ec_cases))
+# gamma_ec cases only when named in --cases (decision D1 rejected, G 2026-11-26: the gamma_EC tables of the spec-17
+# supplement must not add PBLHmod cases to a default run)
+want_ec <- if (is.null(keep)) character() else intersect(keep, names(ec_cases))
 want_grid <- if (is.null(keep)) character() else intersect(keep, names(grid_cases))
 g_dir <- file.path(resolve_path(cfg$derived_dir, must_exist = FALSE), "gamma")
 ec_dir <- file.path(resolve_path(cfg$derived_dir, must_exist = FALSE), "gamma_ec")
