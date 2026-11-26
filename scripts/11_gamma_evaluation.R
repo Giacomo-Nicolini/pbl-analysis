@@ -294,14 +294,15 @@ eval_site <- function(site_id, o) {
                                                                          day_id = g_clear$day_id), season),
                                          n_clear_days = dplyr::n_distinct(day_id), .groups = "drop"))
   nd$label <- paste0(nd$n_clear_days, " clear days")
-  cap <- paste0("Model and ERA5 curves: all clear days; measured: exact values only (biased low where many values are",
-                " censored). Measured median line only for hours with n >= 10 values; hours with 1-9 values drawn as",
-                " their individual values (open points). Lines break at hours without a median.",
+  # caption wording G 2026-11-26; the censoring sentences only where the source has censoring codes (Cloudnet)
+  cap <- paste0("Model and ERA5 curves: all clear days. ",
                 if (rf$type == "turbulence") {
-                  paste0(" Band under the curves: share of the usable measured half-hours per hour censored below",
-                         " z_min (qc 1, no value) and signal-limited lower bounds (qc 3, true MLH >= value); band",
-                         " height = share 1 (dotted line).")
-                } else "")
+                  paste0("Measured: exact values only. Where many half-hours are signal-limited (qc 3, true MLH >=",
+                         " value) the median is biased low; where many are censored below z_min (qc 1, no value) it",
+                         " is biased high. The band shows both shares per hour (band height = share 1, dotted line). ")
+                } else "Measured: valid values only (the source has no censoring codes). ",
+                "Measured median line only for hours with n >= 10 values; hours with 1-9 values drawn as their",
+                " individual values (open points). Lines break at hours without a median.")
   for (fs in fig_sets) {
     pal <- c(measured = unname(style_of(rf$src)), era5_blh_center = unname(style_of("era5_blh_center")), case_pal[fs$cases])
     labs_v <- c(measured = unname(style_of(rf$src, "label")), era5_blh_center = unname(style_of("era5_blh_center", "label")),
