@@ -167,6 +167,18 @@ test_that("wind-direction histogram bins wrap at 0/360", {
   expect_equal(hn$n[hn$dir_bin == 180], 1)
   expect_equal(sum(hn$share), 1)
   expect_true(all(is.na(h$share[h$daynight == "day"])))
+
+test_that("wind-direction bins are half-open and put 0 and 360 in the north bin", {
+  r <- dplyr::tibble(site_id = "AA-One", wind_dir = c(0, 360, 15, 345, 344.9, 45, 14.99), daynight = "day")
+  h <- alpine_wd_hist(r, rep(TRUE, 7))
+  h <- h[h$daynight == "day", ]
+  expect_equal(h$n[h$dir_bin == 0], 4)   # 0, 360, 345, 14.99
+  expect_equal(h$n[h$dir_bin == 30], 1)  # 15 (lower edge included)
+  expect_equal(h$n[h$dir_bin == 330], 1) # 344.9
+  expect_equal(h$n[h$dir_bin == 60], 1)  # 45 (round() would also give 60; 15 went to 0 with round())
+  expect_equal(h$dir_from[h$dir_bin == 0], 345)
+  expect_equal(h$dir_to[h$dir_bin == 0], 15)
+})
 })
 
 test_that("plot helpers draw on a synthetic descriptor table", {
