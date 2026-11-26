@@ -95,7 +95,7 @@ Standard files (not tables): `<site>__tud_skyvue_mlh`, `<site>__vaisala_blview_m
 | `11_gamma_regime_heights` | site × case × regime | `site_id, case, regime, share, n, share_B2, share_B3, p25_m, median_m, p75_m, median_gamma_bg, median_gamma_n` | none |
 | `11_gamma_censored_null` | site × case × regime set × tail (FI-Hyy) | as `10_censored_null` without notes and pairing, plus `case` | none |
 | `11_gamma_daily_vs_clim` | site | `site_id, n_days, median_abs_rel_dev, share_outside_25pct, sd_daily, sd_clim` | `11_gamma_by_month_<sites>` |
-| `11_growth_clearday_<site>` | season × AST hour × variable | `site_id, reference, season, ast_hour, variable, n, median, q25, q75, n_clear_days` | `11_growth_clearday_<site>`, `11s_ref_growth_clearday_<site>` |
+| `11_growth_clearday_<site>` | season × AST hour × variable | `site_id, reference, season, ast_hour, variable, n, median, q25, q75, n_clear_days` (paired: hours with every value valid) | `11_growth_clearday_<site>`, `11s_ref_growth_clearday_<site>` (G 2026-11-26: unpaired display, not drawn from the table: model and ERA5 from all clear-day hours, measured from its own exact values; measured median only for hours with n ≥ 10, 1–9 values as open points; lines break at missing hours; Cloudnet: band with the share of usable half-hours with qc 1 (below z_min) and qc 3 (lower bound) per hour; `growth_display_data()`, `plot_growth_clearday()`; same for the `17_` figures) |
 
 ## EC-derived γ: steps 17a, 11 (`--prefix=17`), 17b (spec 17)
 

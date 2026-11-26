@@ -280,36 +280,38 @@ eval_site <- function(site_id, o) {
   readr::write_csv(dplyr::mutate(gc$summary, site_id = site_id, reference = rf$src, .before = 1),
                    file.path(tables_dir, paste0(pfx, "_growth_clearday_", site_id, ".csv")))
   cli::cli_inform("Clear days (kt >= {kt_clear}): {length(clear)}; hours with all values: {nrow(gc$rows)}.")
-  gp <- gc$summary[gc$summary$n >= 10, ]
-  if (nrow(gp) == 0) {
+  # Figures (G 2026-11-26): unpaired display, every variable from its own valid values on the clear days (the table
+  # above stays paired); measured median only for hours with n >= 10, fewer values drawn as points; lines break at
+  # missing hours; censored source: band with the share of usable half-hours censored (qc 1) or lower bounds (qc 3)
+  dd <- growth_display_data(g_clear, vars, "measured", meta$lon, mid_s = tb$mid_s, n_min = 10,
+                            kind = if (rf$type == "turbulence") tb$meas$kind[match(as.numeric(g_clear$timestamp_utc),
+                                                                                   as.numeric(tb$meas$timestamp_utc))] else NULL)
+  if (all(is.na(dd$lines$median))) {
     cli::cli_alert_warning("{site_id}: no apparent solar hour with n >= 10: growth figures skipped.")
     return(o)
   }
-  gp$x <- gp$ast_hour + 0.5
-  gp$comparable <- if (rf$type == "aerosol") gp$x >= opts$aerosol_window[1] & gp$x < opts$aerosol_window[2] else TRUE
-  nd <- dplyr::distinct(gc$summary[c("season", "n_clear_days")])
+  nd <- dplyr::distinct(dplyr::summarise(dplyr::group_by(dplyr::tibble(season = season_of(g_clear$timestamp_utc),
+                                                                         day_id = g_clear$day_id), season),
+                                         n_clear_days = dplyr::n_distinct(day_id), .groups = "drop"))
   nd$label <- paste0(nd$n_clear_days, " clear days")
+  cap <- paste0("Model and ERA5 curves: all clear days; measured: exact values only (biased low where many values are",
+                " censored). Measured median line only for hours with n >= 10 values; hours with 1-9 values drawn as",
+                " their individual values (open points). Lines break at hours without a median.",
+                if (rf$type == "turbulence") {
+                  paste0(" Band under the curves: share of the usable measured half-hours per hour censored below",
+                         " z_min (qc 1, no value) and signal-limited lower bounds (qc 3, true MLH >= value); band",
+                         " height = share 1 (dotted line).")
+                } else "")
   for (fs in fig_sets) {
     pal <- c(measured = unname(style_of(rf$src)), era5_blh_center = unname(style_of("era5_blh_center")), case_pal[fs$cases])
     labs_v <- c(measured = unname(style_of(rf$src, "label")), era5_blh_center = unname(style_of("era5_blh_center", "label")),
                 case_lab[fs$cases])
-    gs <- gp[gp$variable %in% names(pal), ]
-    gs$variable <- factor(gs$variable, levels = names(pal))
-    fig <- ggplot2::ggplot(gs) +
-      geom_line_comparable(gs, ggplot2::aes(x, median, colour = variable), c("season", "variable"), "x") +
-      ggplot2::geom_text(data = nd, ggplot2::aes(x = 5.2, y = Inf, label = label), hjust = 0, vjust = 1.3, size = 2.6) +
-      ggplot2::facet_wrap(~season, nrow = 2) +
-      ggplot2::scale_colour_manual(values = pal, labels = labs_v, name = NULL) +
-      ggplot2::scale_x_continuous(breaks = seq(4, 22, 2), limits = c(5, 21)) +
-      ggplot2::labs(x = "Apparent solar time [h, interval midpoint]", y = "Median PBLH / MLH [m]",
-                    title = fs$title,
-                    subtitle = paste0(site_id, ": clear days (kt >= ", kt_clear, "); hours with every value valid",
-                                      " (all cases)",
-                                      if (rf$type == "turbulence") "; measured: exact values only (biased low by day)" else "",
-                                      "; PBLHmod any regime; n >= 10")) +
-      theme_pblh() +
-      ggplot2::guides(colour = ggplot2::guide_legend(nrow = 2))
-    pth <- save_figure(fig, paste0(fs$prefix, "growth_clearday_", site_id), 19, 15)
+    fig <- plot_growth_clearday(dd, pal, labs_v, "measured",
+                                window = if (rf$type == "aerosol") opts$aerosol_window else NULL, day_labels = nd,
+                                title = fs$title,
+                                subtitle = paste0(site_id, ": clear days (kt >= ", kt_clear, "); PBLHmod any regime"),
+                                caption = fp_wrap(cap, 150))
+    pth <- save_figure(fig, paste0(fs$prefix, "growth_clearday_", site_id), 19, 16)
     cli::cli_alert_success("{.path {pth[['png']]}}")
   }
   o

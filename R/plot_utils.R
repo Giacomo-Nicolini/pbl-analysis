@@ -331,3 +331,123 @@ geom_line_comparable <- function(data, mapping, group_cols, x, linewidth = 0.6) 
     scale_alpha_comparable()
   )
 }
+
+#' Display data of the clear-day growth figures (unpaired; G 2026-11-26)
+#'
+#' Unlike [growth_curves()] (the tables: hours with every variable valid), each variable is summarised on its own
+#' valid values of the rows passed (the clear days): model and ERA5 curves from all clear-day hours, the measured
+#' curve from its own exact values. Medians per season x apparent solar hour on the complete hour grid (0-23), `NA`
+#' where a variable has fewer than `n_min` values, so the lines break there. For `meas_var`, the values of the bins
+#' with 1 to `n_min - 1` values are returned as points. With `kind` (censored source, [measured_interval()]), the
+#' share of the usable measured rows per bin that are censored below z_min (`below`, qc 1) or signal-limited lower
+#' bounds (`lower_bound`, qc 3).
+#'
+#' @param g Tibble with `timestamp_utc` [POSIXct UTC, interval start] and the columns `vars` [m].
+#' @param vars Variables [character]; @param meas_var The measured variable (one of `vars`) [character].
+#' @param lon Site longitude [decimal degrees E]; @param mid_s Offset from the time stamp to the interval midpoint [s].
+#' @param n_min Smallest number of values for a median [-] (default 10).
+#' @param kind Measured kind per row of `g` (`exact`, `below`, `lower_bound`, `NA` = not usable), or `NULL`.
+#' @return List: `lines` (`season`, `ast_hour` [h], `x` [h, bin centre], `variable`, `n`, `median` [m, `NA` if
+#'   n < n_min]), `points` (`season`, `ast_hour`, `x`, `variable`, `pblh_m` [m]), `strip` (`NULL`, or `season`,
+#'   `ast_hour`, `x`, `n_usable`, `share_below`, `share_lower_bound` [0-1]).
+growth_display_data <- function(g, vars, meas_var, lon, mid_s, n_min = 10, kind = NULL) {
+  season <- season_of(g$timestamp_utc)
+  ast <- floor(apparent_solar_hour(g$timestamp_utc + mid_s, lon))
+  long <- dplyr::bind_rows(lapply(vars, function(v) {
+    ok <- !is.na(g[[v]])
+    dplyr::tibble(season = season[ok], ast_hour = ast[ok], variable = v, pblh_m = g[[v]][ok])
+  }))
+  s <- dplyr::summarise(dplyr::group_by(long, season, ast_hour, variable), n = dplyr::n(),
+                        median = stats::median(pblh_m), .groups = "drop")
+  grid <- expand.grid(season = levels(season), ast_hour = 0:23, variable = vars, stringsAsFactors = FALSE)
+  grid$season <- factor(grid$season, levels = levels(season))
+  lines <- dplyr::left_join(dplyr::as_tibble(grid), s, by = c("season", "ast_hour", "variable"))
+  lines$n[is.na(lines$n)] <- 0L
+  lines$median[lines$n < n_min] <- NA_real_
+  lines$x <- lines$ast_hour + 0.5
+  lines <- lines[order(lines$variable, lines$season, lines$ast_hour),
+                 c("season", "ast_hour", "x", "variable", "n", "median")]
+  few <- s[s$variable == meas_var & s$n < n_min, c("season", "ast_hour")]
+  pts <- dplyr::semi_join(long[long$variable == meas_var, ], few, by = c("season", "ast_hour"))
+  pts$x <- pts$ast_hour + 0.5
+  strip <- NULL
+  if (!is.null(kind)) {
+    u <- !is.na(kind)
+    st <- dplyr::summarise(dplyr::group_by(dplyr::tibble(season = season[u], ast_hour = ast[u], kind = kind[u]),
+                                           season, ast_hour),
+                           n_usable = dplyr::n(), share_below = mean(kind == "below"),
+                           share_lower_bound = mean(kind == "lower_bound"), .groups = "drop")
+    st$x <- st$ast_hour + 0.5
+    strip <- st[c("season", "ast_hour", "x", "n_usable", "share_below", "share_lower_bound")]
+  }
+  list(lines = lines, points = pts[c("season", "ast_hour", "x", "variable", "pblh_m")], strip = strip)
+}
+
+#' Clear-day growth figure (spec 11 D, spec 17; G 2026-11-26)
+#'
+#' Lines of [growth_display_data()] (broken at missing bins), the measured values of the bins with too few values as
+#' small open points, and for a censored source a band under the curves with the share of the usable measured rows
+#' censored below z_min (qc 1) and signal-limited (qc 3) per hour (band height = share 1, dotted line at the top).
+#'
+#' @param dd Output of [growth_display_data()].
+#' @param pal,labs Named colours and labels per variable (names = variables, legend order).
+#' @param meas_var The measured variable [character].
+#' @param window Comparable window of an aerosol source [h, apparent solar time, length 2], or `NULL` (all hours).
+#' @param day_labels Tibble `season`, `label` (e.g. number of clear days) written in each panel, or `NULL`.
+#' @param title,subtitle,caption Texts.
+#' @return ggplot.
+plot_growth_clearday <- function(dd, pal, labs, meas_var, window = NULL, day_labels = NULL, title = NULL,
+                                 subtitle = NULL, caption = NULL) {
+  ln <- dd$lines[dd$lines$variable %in% names(pal), ]
+  ln$variable <- factor(ln$variable, levels = names(pal))
+  ln$comparable <- if (is.null(window)) TRUE else ln$x >= window[1] & ln$x < window[2]
+  pt <- dd$points[dd$points$variable %in% names(pal), ]
+  pt$variable <- factor(pt$variable, levels = names(pal))
+  y_top <- max(c(ln$median, pt$pblh_m, 1), na.rm = TRUE)
+  p <- ggplot2::ggplot(ln) +
+    geom_line_comparable(ln, ggplot2::aes(x, median, colour = variable), c("season", "variable"), "x")
+  if (nrow(pt) > 0) {
+    p <- p + ggplot2::geom_point(data = pt, ggplot2::aes(x, pblh_m, colour = variable), shape = 1, size = 0.9,
+                                 stroke = 0.4, show.legend = FALSE)
+  }
+  if (!is.null(dd$strip) && nrow(dd$strip) > 0) {
+    b0 <- -0.2 * y_top
+    bh <- 0.14 * y_top
+    st <- dd$strip
+    r1 <- dplyr::tibble(season = st$season, xmin = st$x - 0.45, xmax = st$x + 0.45, ymin = b0,
+                        ymax = b0 + bh * st$share_below, kind = "1")
+    r3 <- dplyr::tibble(season = st$season, xmin = st$x - 0.45, xmax = st$x + 0.45, ymin = r1$ymax,
+                        ymax = r1$ymax + bh * st$share_lower_bound, kind = "3")
+    rr <- dplyr::bind_rows(r1, r3)
+    rr$kind <- factor(rr$kind, levels = c("1", "3"))
+    frame <- dplyr::tibble(season = factor(levels(ln$season), levels = levels(ln$season)), y = b0, yend = b0 + bh)
+    ref_col <- style_of("reference_line", "colour", "element")
+    p <- p +
+      ggplot2::geom_rect(data = rr, ggplot2::aes(xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax, fill = kind),
+                         inherit.aes = FALSE) +
+      ggplot2::geom_hline(data = frame, ggplot2::aes(yintercept = y), linewidth = 0.2, colour = ref_col) +
+      ggplot2::geom_hline(data = frame, ggplot2::aes(yintercept = yend), linewidth = 0.2, linetype = "dotted",
+                          colour = ref_col) +
+      ggplot2::scale_fill_manual(values = stats::setNames(style_of(c("1", "3"), "colour", "qc"), c("1", "3")),
+                                 labels = paste0("band: share of usable half-hours, qc ",
+                                                 style_of(c("1", "3"), "label", "qc")),
+                                 name = NULL, drop = FALSE)
+  }
+  if (!is.null(day_labels)) {
+    p <- p + ggplot2::geom_text(data = day_labels, ggplot2::aes(x = 5.2, y = Inf, label = label), hjust = 0,
+                                vjust = 1.3, size = 2.6)
+  }
+  p +
+    ggplot2::facet_wrap(~season, nrow = 2, drop = FALSE) +
+    ggplot2::scale_colour_manual(values = pal, labels = labs, name = NULL, drop = FALSE) +
+    ggplot2::scale_x_continuous(breaks = seq(4, 22, 2), limits = c(5, 21)) +
+    ggplot2::scale_y_continuous(breaks = function(l) {
+      b <- pretty(c(0, l[2]))
+      b[b >= 0]
+    }) +
+    ggplot2::labs(x = "Apparent solar time [h, interval midpoint]", y = "Median PBLH / MLH [m]", title = title,
+                  subtitle = subtitle, caption = caption) +
+    theme_pblh() +
+    ggplot2::guides(colour = ggplot2::guide_legend(nrow = 2, order = 1),
+                    fill = ggplot2::guide_legend(ncol = 1, order = 2))
+}
