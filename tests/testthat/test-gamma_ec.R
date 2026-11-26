@@ -289,3 +289,26 @@ test_that("monthly gamma_EC vs ERA5 table and the site summary", {
   expect_s3_class(ggplot2::ggplot_build(plot_gamma_ec_vs_era5(m)), "ggplot_built")
   expect_s3_class(ggplot2::ggplot_build(plot_gamma_ec_seasonal(m)), "ggplot_built")
 })
+
+test_that("offset folders and heights of the spec-17 supplement", {
+  expect_equal(gamma_ec_dir_name(0), "gamma_ec")
+  expect_equal(gamma_ec_dir_name(2), "gamma_ec_off2h")
+  expect_equal(gamma_ec_dir_name(2.5), "gamma_ec_off2.5h")
+  sites <- dplyr::tibble(site_id = "XX-Tst", utc_offset_h = 1, zm_m = 30, canopy_height_m = 15, igbp = "ENF")
+  tv <- dplyr::tibble(site_id = "XX-Tst", variable = c("zm_m", "zm_m"), value = c(30, 36),
+                      date_start = as.Date(c("2022-01-01", "2023-01-01")), date_end = as.Date(c("2023-01-01", NA)),
+                      notes = "")
+  daily <- dplyr::tibble(window_start_utc = as.POSIXct(c("2022-06-01 08:00", "2023-06-01 08:00", "2023-06-02 08:00",
+                                                         "2023-06-03 08:00"), tz = "UTC"),
+                         used = c(TRUE, TRUE, TRUE, FALSE))
+  h <- gamma_ec_heights(daily, "XX-Tst", sites, tv)
+  expect_equal(h$ec_height_m, 36)  # median of 30, 36, 36 (unused day ignored)
+  expect_equal(h$canopy_height_m, 15)
+  expect_equal(h$zm_m, 26)         # 36 - 2/3 * 15
+  expect_equal(h$igbp, "ENF")
+  expect_true(is.na(gamma_ec_heights(daily[0, ], "XX-Tst", sites, tv)$zm_m))
+  x <- dplyr::tibble(site_id = rep(c("AA-One", "BB-Two"), 2), offset_h = rep(c(0, 2), each = 2),
+                     ratio_ec_era5 = c(2, 3, 1.2, 1.5), zm_m = c(5, 20, 5, 20), ec_height_m = c(6, 35, 6, 35),
+                     igbp = c("CRO", "ENF", "CRO", "ENF"))
+  expect_s3_class(ggplot2::ggplot_build(plot_gamma_ratio_vs_height(x)), "ggplot_built")
+})

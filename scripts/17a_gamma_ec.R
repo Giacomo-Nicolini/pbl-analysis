@@ -10,11 +10,13 @@
 # Outputs: <derived_dir>/gamma_ec/<site>_daily.csv, <site>_monthly.csv, <site>_ebr.csv (part D: daytime JJA energy-
 #          balance ratio of the reference year; all years where the site has no reference year);
 #          <output_dir>/tables/17a_gamma_ec_summary_<site>.csv (flag counts, used days, gamma_A vs gamma_B).
+#          With a fit-start offset H != 0: <derived_dir>/gamma_ec_off<H>h/ and 17a_gamma_ec_summary_off<H>h_<site>.csv
+#          (never read by step 02; spec 17 supplement).
 #
 # Usage: Rscript scripts/17a_gamma_ec.R SITE [--label=test] [--start-offset-h=H]
 #   --label: written into the summary table (e.g. "test" for the PC runs).
 #   --start-offset-h: fit start H hours after the first positive heat flux (overrides config gamma_ec_start_offset_h;
-#     D1 pre-test, G 2026-11-26).
+#     D1 pre-test and spec 17 supplement, G 2026-11-26; H != 0 writes to gamma_ec_off<H>h/).
 
 for (f in list.files(here::here("R"), pattern = "\\.R$", full.names = TRUE)) source(f)
 
@@ -34,14 +36,18 @@ sites <- read_sites(resolve_path(cfg$sites_file))
 meta <- sites[sites$site_id == site_id, ]
 if (nrow(meta) != 1) cli::cli_abort("{.val {site_id}} not in the site table.")
 derived_dir <- resolve_path(cfg$derived_dir, must_exist = FALSE)
-out_dir <- file.path(derived_dir, "gamma_ec")
-tables_dir <- file.path(resolve_path(cfg$output_dir, must_exist = FALSE), "tables")
-for (d0 in c(out_dir, tables_dir)) dir.create(d0, recursive = TRUE, showWarnings = FALSE)
 opts <- gamma_ec_options_cfg(cfg)
 if (!is.null(opt("start-offset-h"))) { # D1 pre-test (G 2026-11-26): override of gamma_ec_start_offset_h
   opts <- do.call(gamma_ec_options, utils::modifyList(opts[setdiff(names(opts), c("gamma_min", "gamma_max"))],
                                                       list(start_offset_h = as.numeric(opt("start-offset-h")))))
 }
+# offset 0: the standard tables (read by step 02 for the gamma_ec cases); other offsets in gamma_ec_off<H>h/ with the
+# summary 17a_gamma_ec_summary_off<H>h_<site>.csv (spec 17 supplement, G 2026-11-26)
+ec_name <- gamma_ec_dir_name(opts$start_offset_h)
+out_dir <- file.path(derived_dir, ec_name)
+sum_name <- paste0("17a_gamma_ec_summary_", if (ec_name == "gamma_ec") "" else paste0(sub("^gamma_ec_", "", ec_name), "_"), site_id, ".csv")
+tables_dir <- file.path(resolve_path(cfg$output_dir, must_exist = FALSE), "tables")
+for (d0 in c(out_dir, tables_dir)) dir.create(d0, recursive = TRUE, showWarnings = FALSE)
 print_tbl <- function(x) print(as.data.frame(x), row.names = FALSE, digits = 4)
 
 cli::cli_h1("EC-derived gamma: {site_id}")
@@ -87,7 +93,7 @@ summ <- dplyr::tibble(site_id = site_id, label = label, n_days = nrow(daily), n_
                       share_clear_unknown = mean(grepl("clear_unknown", daily$flags)), months_with_value = sum(!is.na(clim$median)),
                       ebr = eb$ebr, ebr_no_g = eb$ebr_no_g)
 summ <- dplyr::bind_cols(summ, as.data.frame(stats::setNames(as.list(fc$n_days), paste0("n_", fc$flag)))[, -(1:2)])
-readr::write_csv(summ, file.path(tables_dir, paste0("17a_gamma_ec_summary_", site_id, ".csv")))
+readr::write_csv(summ, file.path(tables_dir, sum_name))
 
 cli::cli_h2("Days and flags (a day can carry several flags)")
 print_tbl(fc)
@@ -97,4 +103,4 @@ cli::cli_h2("Monthly climatology [K m-1] (NA: fewer than {opts$min_days} used da
 print_tbl(clim)
 cli::cli_h2("Energy-balance ratio (part D)")
 print_tbl(eb)
-cli::cli_alert_success("Written {.path {out_dir}}/{site_id}_{{daily,monthly,ebr}}.csv and 17a_gamma_ec_summary_{site_id}.csv")
+cli::cli_alert_success("Written {.path {out_dir}}/{site_id}_{{daily,monthly,ebr}}.csv and {sum_name}")

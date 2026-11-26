@@ -46,6 +46,11 @@ run).** Methods / supplement note:
   (ERA5) and the constant `gamma_med` stay the options. Tables of the pre-test: `output/tables/17d1s2_*`,
   `17d1s3_*` (script 11 `--prefix=17d1s2` / `17d1s3`, local, not collected); 17a summaries and daily tables of the
   variants in the session scratchpad only (the baseline gamma_EC tables and outputs were restored).
+- *Supplement network run* (G 2026-11-26; branch `spec-17-supp-network`): 17a at the 39 sites with offsets 0 and
+  +2 h (`<derived_dir>/gamma_ec_off2h/`) and 17b parts C, D, with the new height table `17_gamma_ratio_vs_height`
+  and figure `17s_gamma_ratio_vs_height`; no PBLHmod-γEC case (step 02 runs the γEC cases only when named), no
+  script 11, no pair 9. Scripts called directly (run_site would rerun 01/11a/02): ≈ 4.5 CPU-hours.
+  Runbook: `docs/local/cluster_commands_spec17.md` section 0. Pending: the cluster run.
 
 The analysis reopens for one of the following; steps listed, nothing run.
 
