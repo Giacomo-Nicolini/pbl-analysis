@@ -19,6 +19,9 @@
 #' Options of the gamma_EC fit (spec 17)
 #'
 #' @param end_offset_h Fit window ends at local solar noon + this [h] (default 3).
+#' @param start_offset_h The fit starts this long after the first positive heat flux [h, multiple of 0.5; default 0]
+#'   (D1 pre-test, G 2026-11-26). h is still integrated from the first positive heat flux (model-consistent h at the
+#'   fit start for each candidate gamma); only the theta residuals of the earlier rows are left out.
 #' @param min_n Smallest number of valid half-hours in the fit window [-] (default 6).
 #' @param clear_min Smallest mean SW_IN / SW_IN_POT over the window (clear sky) [-] (default 0.6).
 #' @param rise_min Smallest theta rise over the window [K] (default 1).
@@ -28,12 +31,14 @@
 #' @return Named list.
 gamma_ec_options <- function(end_offset_h = 3, min_n = 6L, clear_min = 0.6, rise_min = 1, r2_min = 0.8,
                              gamma_min = gamma_options()$gamma_min, gamma_max = gamma_options()$gamma_max,
-                             min_days = 5L) {
-  o <- list(end_offset_h = end_offset_h, min_n = as.integer(min_n), clear_min = clear_min, rise_min = rise_min,
+                             min_days = 5L, start_offset_h = 0) {
+  o <- list(end_offset_h = end_offset_h, start_offset_h = start_offset_h, min_n = as.integer(min_n), clear_min = clear_min, rise_min = rise_min,
             r2_min = r2_min, gamma_min = gamma_min, gamma_max = gamma_max, min_days = as.integer(min_days))
   num_ok <- vapply(o, function(v) is.numeric(v) && length(v) == 1 && is.finite(v), logical(1))
   if (!all(num_ok)) cli::cli_abort("gamma_EC options must be single finite numbers: {.val {names(o)[!num_ok]}}.")
   if (!(o$gamma_min > 0 && o$gamma_max > o$gamma_min)) cli::cli_abort("Need 0 < gamma_min < gamma_max.")
+  if (o$start_offset_h < 0 || abs(o$start_offset_h * 2 - round(o$start_offset_h * 2)) > 1e-9)
+    cli::cli_abort("{.field start_offset_h} must be >= 0 and a multiple of 0.5 h.")
   if (o$min_n < 3 || o$min_days < 1) cli::cli_abort("{.field min_n} must be >= 3 and {.field min_days} >= 1.")
   o
 }
@@ -43,7 +48,7 @@ gamma_ec_options <- function(end_offset_h = 3, min_n = 6L, clear_min = 0.6, rise
 #' @param cfg Configuration list ([get_cfg()]); missing keys take the defaults of [gamma_ec_options()].
 #' @return Named list ([gamma_ec_options()]).
 gamma_ec_options_cfg <- function(cfg) {
-  map <- c(end_offset_h = "gamma_ec_end_offset_h", min_n = "gamma_ec_min_n", clear_min = "gamma_ec_clear_min",
+  map <- c(end_offset_h = "gamma_ec_end_offset_h", start_offset_h = "gamma_ec_start_offset_h", min_n = "gamma_ec_min_n", clear_min = "gamma_ec_clear_min",
            rise_min = "gamma_ec_rise_min", r2_min = "gamma_ec_r2_min", min_days = "gamma_ec_min_days")
   args <- Filter(Negate(is.null), lapply(map, function(k) cfg[[k]]))
   do.call(gamma_ec_options, args)
@@ -168,7 +173,8 @@ gamma_ec_excluding_flags <- function() {
 #' @param site_meta One row of [read_sites()] (`lat`, `lon`).
 #' @param opts Output of [gamma_ec_options()]; @param n_sub RK4 sub-steps (as the `default` run).
 #' @return Tibble per day with daylight: `date` [Date, `day_id`], `window_start_utc`, `window_end_utc` [POSIXct UTC,
-#'   start of the first / last fit half-hour], `n` [-, valid theta rows], `n_tsonic` [-, rows with T from T_SONIC, not
+#'   start of the first / last fit half-hour; h is integrated from the first positive heat flux, `start_offset_h`
+#'   before the fit start], `n` [-, valid theta rows], `n_tsonic` [-, rows with T from T_SONIC, not
 #'   used], `gamma_A`, `gamma_B` [K m-1], `r2_A`, `r2_B` [-], `rmse_A` [K], `theta0_A` [K], `theta_rise` [K], `q_total`
 #'   [K m], `h0` [m], `clear_index` [-, sum SW_IN / sum SW_IN_POT over the window], `gamma_A_bound` (`low` / `high`:
 #'   Method A optimum at that bound, `gamma_A` NA), `flags` (`;`-separated), `used`
@@ -219,15 +225,24 @@ gamma_ec_daily <- function(pm, sw_in, sw_in_pot, site_meta, opts = gamma_ec_opti
       out[[j]] <- c(r, flags = paste(unique(c(f, "few_rows")), collapse = ";"))
       next
     }
+    # fit start pf: start_offset_h after the first positive heat flux; h is integrated from p, rows before pf not fitted
+    pf <- p + as.integer(round(opts$start_offset_h * 2))
+    if (q < pf) {
+      out[[j]] <- c(r, flags = paste(unique(c(f, "few_rows")), collapse = ";"))
+      next
+    }
     w <- p:q
-    r$window_start_utc <- t[p]
+    wf <- pf:q
+    th_fit <- theta[w]
+    th_fit[w < pf] <- NA_real_
+    r$window_start_utc <- t[pf]
     r$window_end_utc <- t[q]
-    r$n_tsonic <- sum(tsonic[w])
-    r$n <- sum(is.finite(theta[w]))
+    r$n_tsonic <- sum(tsonic[wf])
+    r$n <- sum(is.finite(theta[wf]))
     r$q_total <- sum(pm$wtheta[w]) * 1800
-    ok_sw <- is.finite(sw_in[w]) & is.finite(sw_in_pot[w]) & sw_in_pot[w] > 0
-    if (any(ok_sw)) r$clear_index <- sum(sw_in[w][ok_sw]) / sum(sw_in_pot[w][ok_sw])
-    vt <- w[is.finite(theta[w])]
+    ok_sw <- is.finite(sw_in[wf]) & is.finite(sw_in_pot[wf]) & sw_in_pot[wf] > 0
+    if (any(ok_sw)) r$clear_index <- sum(sw_in[wf][ok_sw]) / sum(sw_in_pot[wf][ok_sw])
+    vt <- wf[is.finite(theta[wf])]
     if (length(vt) >= 2) r$theta_rise <- theta[vt[length(vt)]] - theta[vt[1]]
     gap <- anyNA(c(pm$wtheta[w], pm$ustar[w], pm$L[w], pm$T_K[w]))
     if (gap) f <- c(f, "gap")
@@ -235,8 +250,8 @@ gamma_ec_daily <- function(pm, sw_in, sw_in_pot, site_meta, opts = gamma_ec_opti
     if (!any(ok_sw)) f <- c(f, "clear_unknown") else if (r$clear_index < opts$clear_min) f <- c(f, "cloudy")
     if (is.na(r$theta_rise) || r$theta_rise < opts$rise_min) f <- c(f, "rise_lt_min")
     if (!gap && r$n >= opts$min_n && !is.na(r$h0)) {
-      fa <- gamma_ec_fit_a(theta[w], r$h0, pm$wtheta[w], pm$ustar[w], pm$L[w], pm$T_K[w], opts, n_sub, const)
-      fb <- gamma_ec_fit_b(theta[w], pm$wtheta[w], const)
+      fa <- gamma_ec_fit_a(th_fit, r$h0, pm$wtheta[w], pm$ustar[w], pm$L[w], pm$T_K[w], opts, n_sub, const)
+      fb <- gamma_ec_fit_b(th_fit, pm$wtheta[w], const)
       r$gamma_A <- fa$gamma
       r$r2_A <- fa$r2
       r$rmse_A <- fa$rmse

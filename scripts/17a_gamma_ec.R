@@ -11,8 +11,10 @@
 #          balance ratio of the reference year; all years where the site has no reference year);
 #          <output_dir>/tables/17a_gamma_ec_summary_<site>.csv (flag counts, used days, gamma_A vs gamma_B).
 #
-# Usage: Rscript scripts/17a_gamma_ec.R SITE [--label=test]
+# Usage: Rscript scripts/17a_gamma_ec.R SITE [--label=test] [--start-offset-h=H]
 #   --label: written into the summary table (e.g. "test" for the PC runs).
+#   --start-offset-h: fit start H hours after the first positive heat flux (overrides config gamma_ec_start_offset_h;
+#     D1 pre-test, G 2026-11-26).
 
 for (f in list.files(here::here("R"), pattern = "\\.R$", full.names = TRUE)) source(f)
 
@@ -21,7 +23,7 @@ opt <- function(k, def = NULL) {
   v <- sub(paste0("^--", k, "="), "", grep(paste0("^--", k, "="), args, value = TRUE))
   if (length(v)) v else def
 }
-bad <- setdiff(sub("=.*$", "", grep("^--", args, value = TRUE)), "--label")
+bad <- setdiff(sub("=.*$", "", grep("^--", args, value = TRUE)), c("--label", "--start-offset-h"))
 if (length(bad)) cli::cli_abort("Unknown argument{?s}: {.val {bad}}.")
 site_id <- grep("^--", args, value = TRUE, invert = TRUE)
 if (length(site_id) != 1) cli::cli_abort("Pass exactly one station code.")
@@ -36,6 +38,10 @@ out_dir <- file.path(derived_dir, "gamma_ec")
 tables_dir <- file.path(resolve_path(cfg$output_dir, must_exist = FALSE), "tables")
 for (d0 in c(out_dir, tables_dir)) dir.create(d0, recursive = TRUE, showWarnings = FALSE)
 opts <- gamma_ec_options_cfg(cfg)
+if (!is.null(opt("start-offset-h"))) { # D1 pre-test (G 2026-11-26): override of gamma_ec_start_offset_h
+  opts <- do.call(gamma_ec_options, utils::modifyList(opts[setdiff(names(opts), c("gamma_min", "gamma_max"))],
+                                                      list(start_offset_h = as.numeric(opt("start-offset-h")))))
+}
 print_tbl <- function(x) print(as.data.frame(x), row.names = FALSE, digits = 4)
 
 cli::cli_h1("EC-derived gamma: {site_id}")

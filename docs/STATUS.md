@@ -1,6 +1,6 @@
 # Project status (handover note)
 
-Last update: 2026-11-25. Read this first in a new session, then `docs/project_plan.md` and `CLAUDE.md`.
+Last update: 2026-11-26. Read this first in a new session, then `docs/project_plan.md` and `CLAUDE.md`.
 
 ## Analysis on stand-by from 2026-11-19 (reopened 2026-11-25 for specs 19 and 17, G)
 
@@ -9,6 +9,44 @@ Everything up to spec 16 and the close-out fixes is merged on `main` (spec 16 fi
 SkyVUE reader (`docs/local/cluster_commands_spec14.md`, section "Close-out"; the 2026-11-20 rerun left 4 June 2026 days
 failing, fixed by spec 14 amendment 3 on `main`: rerun 14a + 14c for DE-Tha when the analysis reopens, no hurry, G).
 Nothing else is running or scheduled.
+
+**Spec 17, decision D1: rejected (pre-test 2026-11-26, local, BE-Bra, FI-Hyy, FR-Gri, CH-Dav; no spec-17 cluster
+run).** Methods / supplement note:
+- *Question.* The first local run gave γ_EC 2–3 × the ERA5 site γ and above the measured benchmark γ_best
+  (constant γ where the median ln(PBLHmod / measured) on the primary set crosses 0; spec 17 B): FR-Gri 0.0030,
+  CH-Dav 0.0037 K m⁻¹ (FI-Hyy: no crossing on the grid 0.002–0.012; BE-Bra: no measured reference). Suspected cause:
+  the early-morning θ rise at the tower (erosion of the nocturnal inversion while the model grows from the night-time
+  h0; superadiabatic surface layer).
+- *Test.* Option `gamma_ec_start_offset_h` (config, default 0; `17a --start-offset-h=`): the fit starts 2 or 3 h after
+  the first positive heat flux, the end unchanged; h is still integrated from the first positive flux (h at the fit
+  start model-consistent for each candidate γ), only the earlier θ residuals are left out. Offset 0 reproduces the
+  existing tables (checked). Criterion fixed beforehand (G): at FR-Gri and CH-Dav the site median γ_A within a factor
+  1.5 of γ_best.
+- *Results* (used days; share of the fitted days with the optimum at the upper bound 0.02; median γ_A [K m⁻¹];
+  median γ_B / γ_A; part A median ln(PBLHmod-γEC / measured), default −0.53 FR-Gri, −0.43 CH-Dav, +0.44 FI-Hyy):
+
+  | site | offset 0 | +2 h | +3 h |
+  |---|---|---|---|
+  | FR-Gri | 112; 0.78; 0.0141; 0.92; −0.64 | 212; 0.63; 0.0120; 0.94; −0.63 | 256; 0.53; 0.0115; 0.94; −0.60 |
+  | CH-Dav | 518; 0.44; 0.0074; 0.87; −0.32 | 586; 0.21; 0.0047; 0.90; −0.14 | 466; 0.16; 0.0052; 0.90; −0.14 |
+  | FI-Hyy | 423; 0.50; 0.0094; 0.74; +0.43 | 516; 0.35; 0.0067; 0.80; +0.49 | 532; 0.27; 0.0063; 0.81; +0.53 |
+  | BE-Bra | 346; 0.45; 0.0102; 0.78; – | 452; 0.24; 0.0066; 0.83; – | 422; 0.18; 0.0060; 0.86; – |
+
+  Median γ_A / γ_best: FR-Gri 4.7 → 4.0 (+2 h) → 3.9 (+3 h); CH-Dav 2.0 → 1.26 → 1.38. CH-Dav passes with either
+  offset, FR-Gri fails both: **D1 = reject** (G's rule: stop, no cluster run).
+- *What we learned.* (1) The early-morning rise explains part of the excess: a later start halves the share of
+  upper-bound optima and lowers γ_A by 15–35 %, bringing CH-Dav close to γ_best and to the ERA5 γ (0.0044). (2) It
+  does not explain FR-Gri, where γ_A stays ≈ 4 × γ_best with a later start: the θ rise is still too fast for the
+  heat put in by the measured H. Consistent with H too small for the θ budget (the fitted γ absorbs any H bias, see
+  `docs/methods_gamma_ec.md`), and with advection and radiative warming that the slab model attributes to the surface
+  flux; FR-Gri's daytime EBR is 0.97, so non-closure alone does not account for it. (3) Even where γ_A approaches
+  γ_best, PBLHmod-γEC gains little over PBLHmod-clim (CH-Dav −0.14 vs −0.08), and at FR-Gri it is worse than the
+  default (−0.60 vs −0.53). (4) γ_B / γ_A ≈ 0.8–0.94: the closed form agrees within 20 %, so the excess is in the θ
+  rise itself, not in the integration. A tower θ-rise γ is therefore not recommended as an operational γ; PBLHmod-clim
+  (ERA5) and the constant `gamma_med` stay the options. Tables of the pre-test: `output/tables/17d1s2_*`,
+  `17d1s3_*` (script 11 `--prefix=17d1s2` / `17d1s3`, local, not collected); 17a summaries and daily tables of the
+  variants in the session scratchpad only (the baseline gamma_EC tables and outputs were restored).
+
 The analysis reopens for one of the following; steps listed, nothing run.
 
 **1. Ummendorf ceilometer for DE-HoH** (about 9 km instead of Magdeburg MAG 24.48 km), if MeteoSwiss provides it.
@@ -95,7 +133,7 @@ files). New reader for the secondary set (spec 14 conventions):
 | 15 | Network footprint summary for the paper (target-area difference, fetch, top 10 % rows, Rebmann criteria and ICOS labelling rule, exceptions; figures and supplement) and γ supplementary tables, in `09_collect.R` | 5 | merged (`main`, 3e1625f; figure fixes fix-15, c672f8a) |
 | 16 | Footprint uncertainty from the FFP inputs (phase 5b): one-at-a-time (A) and joint Monte Carlo (B) perturbation of σv, u*, L, umean, hc, z0, WD, h at six sites, attribution (C), the PBLH-source effect of spec 15 placed in it; `16a`–`16c` | 5b | merged (`main`, 573e9e2; amendment 1 rsl_off); cluster run done (six sites, reference years; collection job 18905); close-out figure fixes merged (`main`, 57a9460) |
 | 19 | Why the PBLH source changes the footprint at CH-Dav and IT-Ren and not at other mountain sites: site descriptors on the spec-15 rows (terrain, tower, PBLH, turbulence, night-time flows, footprint, spec-15 status), night-row R2, existing night-time measured evidence, supplementary figures `19s_*`; `scripts/19a_site_descriptors.R`, `R/alpine_drivers.R`; analysis only (no PBLHmod / FFP run) | 5 | `spec-19-alpine-exception` (2026-11-25); local test on BE-Bra, FI-Hyy, FR-Gri, CH-Dav (row basis flags_only, no local chunks); cluster job pending (`docs/local/cluster_commands_spec19.md`) |
-| 17 | γ from the station's own data (EC-derived γ, PBLHmod-γEC): daily γ from the tower θ rise in the B&G window (Method A, model-consistent; Method B, closed-form encroachment), day selection by flags, site × month climatology; `gamma_source` `ec_clim` / `ec_daily` (spec 02 amendment 15); cases `gamma_ec` (standard source `pblhmod_gamma_ec`), `gamma_ec_daily`, constant grid `gamma_g002`–`gamma_g012`; step 04 pair 9; evaluation `11 --prefix=17` (A, B), `17b` (C, D, E); `R/gamma_ec.R`, `scripts/17a_gamma_ec.R`, `scripts/17b_gamma_ec_collect.R` | 1, 3 | `spec-17-gamma-ec` (2026-11-25); local test on BE-Bra, FI-Hyy, FR-Gri, CH-Dav; cluster run pending G's approval of the cost estimate (`docs/local/cluster_commands_spec17.md`); decision D1 open |
+| 17 | γ from the station's own data (EC-derived γ, PBLHmod-γEC): daily γ from the tower θ rise in the B&G window (Method A, model-consistent; Method B, closed-form encroachment), day selection by flags, site × month climatology; `gamma_source` `ec_clim` / `ec_daily` (spec 02 amendment 15); cases `gamma_ec` (standard source `pblhmod_gamma_ec`), `gamma_ec_daily`, constant grid `gamma_g002`–`gamma_g012`; step 04 pair 9; evaluation `11 --prefix=17` (A, B), `17b` (C, D, E); `R/gamma_ec.R`, `scripts/17a_gamma_ec.R`, `scripts/17b_gamma_ec_collect.R` | 1, 3 | `spec-17-gamma-ec` (2026-11-25); local test on BE-Bra, FI-Hyy, FR-Gri, CH-Dav; D1 pre-test (2026-11-26, `spec-17-d1-pretest`, option `gamma_ec_start_offset_h`): **D1 rejected**, no cluster run (note at the top) |
 
 Phases (see `project_plan.md`): 0 done; 1 done (model, input QC, legacy regression); 2 standard format, three
 sources (spec 04) and the first measured source (spec 07, FI-Hyy) done; 3 BE-Bra (vs ERA5) and FI-Hyy (vs ERA5 and

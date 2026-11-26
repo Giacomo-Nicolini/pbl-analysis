@@ -58,7 +58,7 @@ so code must be reproducible, documented and traceable to references.
   (spec 09 amendment 2: stations whose reference year may follow the `coverage` rule when the standard rule finds no
   year; GL-ZaF, G 2026-11-03), `etc_z0_multiplier_file` (spec 08 amendment 2: per-site override of the ETC z0
   multiplier; DE-Tha 4.1, G 2026-11-10). Spec 17: `gamma_ec_end_offset_h`, `gamma_ec_min_n`, `gamma_ec_clear_min`,
-  `gamma_ec_rise_min`, `gamma_ec_r2_min`, `gamma_ec_min_days` (EC-derived γ, `gamma_ec_options_cfg()`).
+  `gamma_ec_rise_min`, `gamma_ec_r2_min`, `gamma_ec_min_days`, `gamma_ec_start_offset_h` (D1 pre-test, default 0) (EC-derived γ, `gamma_ec_options_cfg()`).
 
 ## Input data (facts; do not guess beyond these)
 
@@ -277,7 +277,7 @@ so code must be reproducible, documented and traceable to references.
   `scripts/11a_gamma_era5.R` (`<derived_dir>/gamma/`); a month without a value uses the constant (flagged in
   `gamma_source_used = "constant_fallback"`). Written by scripts 02/04 at every site.
 - **PBLHmod-γEC** (`pblhmod_gamma_ec`, case `gamma_ec`; spec 17, spec 02 amendment 15, G 2026-11-25; decision D1
-  open): `gamma_source = "ec_clim"`, site × month climatology of γ fitted from the station's own H and tower θ
+  rejected 2026-11-26 after the start-offset pre-test, no cluster run, `docs/STATUS.md`): `gamma_source = "ec_clim"`, site × month climatology of γ fitted from the station's own H and tower θ
   (`scripts/17a_gamma_ec.R`, `R/gamma_ec.R`, `<derived_dir>/gamma_ec/`; Method A = B&G integration as
   `run_pblh_model()`, Method B = closed-form encroachment; no ERA5; parameters `gamma_ec_*` in `config.yml`);
   `gamma_ec_daily` (`ec_daily`, tables only); constant grid `gamma_g002` … `gamma_g012` (spec 17 B) only when named in
