@@ -234,6 +234,34 @@ ln(h ERA5 / h PBLHmod), colour = zm / h ERA5 (log scale); `19s_night_flows`: day
 histograms of CH-Dav, IT-Ren, DE-Tha, CZ-BK1, IT-MBo, BE-Bra. `19a --from-tables=DIR` redraws the three figures from
 the collected tables.
 
+## Spec 18: PBLH source and EC fluxes (`scripts/18a_pblh_ec_site.R` per site, `scripts/18b_pblh_ec_collect.R`)
+
+Per-site tables `18_<part>_<site>.csv` (18a) are bound by 18b into the tables below (`site_id = network`: median over
+sites, with `n_sites`). Sources: `era5_blh_center`, `pblhmod_default`, `pblhmod_clim`, the measured primary source.
+
+| Table | Grain | Columns | Figure |
+|---|---|---|---|
+| `18_variables` | site | `n_<VAR>` (FLUXES), `n_fn_<VAR>` (FLUXNET HH; NA = column absent), `n_profile_levels, has_sc, n_sc_profile, n_sc_flag1, n_sc_flag_other, sc_check_n, sc_check_share, storage, n_excluded, n_before_labelling, ustar_agree_night_{n, n_both, n_thr_only, n_qc_only, n_neither, agreement}, ustar_thr_source, n_rows, first_utc, last_utc, labelling_date, reference_year, zm_median_m, ec_height_median_m, canopy_height_median_m, igbp, measured_source, measured_type, n_h_era5, n_h_pblhmod, n_h_clim, n_h_meas_exact, part_1..6, sec_part_1..6, sec_total, stable_night_gt25_sources, stable_night_max_share` | none |
+| `18_sl_share` | site × source × row_basis (`common`, `own`) × daynight × zl × season (each with `all`) | `share_gt_0.05, share_gt_0.1, share_gt_0.2, zm_h_median, zm_h_p90, n, n_censored_below, n_lower_bound` (measured: Cloudnet only) | `18_sl_share` |
+| `18_sl_share_flags` | site | `sources, max_share` (stable-night share zm/h > 0.1 above 25 %) | none |
+| `18_ustar_cross` | site × source × filter_def (`threshold`, `qc`) | `n, n_filt_above, n_filt_below, n_pass_above, n_pass_below, share_above, share_filtered, share_above_removed, share_pass_above` | none |
+| `18_nee_residual` | site × source (ERA5, PBLHmod) × flux (`NEE`, `FC`) × measure (`abs`, `rel`) × stratum (`cell` = u* bin × TA tercile, `ustar_bin`, `all`) | `ustar_bin, ta_tercile, n_above, n_below, n_nights, median_above, median_below, diff, lo90, hi90, valid` | `18_nee_residual` |
+| `18_storage_h` | site × part (`accumulation`, `release`, `accumulation_bin`, `sc_share`) × source × stratum | `n, statistic (spearman_rho, median), value` | `18_storage_h` |
+| `18_storage_nights` | site × night | `night_id, date, ref_year, n_rows, cov, accum, zm_m, h_night_<source>, release, dh_<source>` | `18_storage_h` |
+| `18_panofsky` | site × source × row_basis (`own`, `common_models`, `common_with_measured`) | `n, median_log_ratio, median_abs_log_ratio, median_abs_dev, slope, rank` | none |
+| `18_panofsky_rank` | row_basis × source | `n_sites, n_first, share_first` | none |
+| `18_panofsky_bins` | site × source × −h/L bin | `x_mid, n, sv_ustar_median` | `18_panofsky` |
+| `18_scf_h` | site (and network) × source × x_var (`zm_h`, `neg_h_L`) × bin × scf_var | `n, median, x_mid` | `18s_scf_h` |
+
+Figures: `18_sl_share` (stable-night share zm/h > 0.1 per site, three model sources side by side, sites ordered by
+zm, line at 25 %); `18_nee_residual` (per site, median residual difference above − within the surface layer by u*
+bin and overall, ERA5 and PBLHmod, 90 % interval; sites ordered by the ERA5 stable-night share; sites without a valid
+cell named in the caption); `18_storage_h` (night accumulation against night median h, log x, ERA5 and PBLHmod,
+binned medians, facets by site); `18_panofsky` (binned σv/u* against −h/L per source, six sites, Panofsky curve);
+`18s_scf_h` (supplement; SCF against zm/h and −h/L, sites grey, median over sites, h = ERA5). Captions name the h
+source and the circularity note where PBLHmod is shown; `18b --label=` appends a run label (local test: "test: 4
+local sites").
+
 ## Stored footprint groups (spec 08 / 09 A5, storage c5)
 
 Each chunk (site × case × month or half-month, `<derived_dir>/footprint/<site>/chunks/<site>_<case>_<part>`) stores:

@@ -1,14 +1,29 @@
 # Project status (handover note)
 
-Last update: 2026-11-26. Read this first in a new session, then `docs/project_plan.md` and `CLAUDE.md`.
+Last update: 2026-11-27. Read this first in a new session, then `docs/project_plan.md` and `CLAUDE.md`.
 
-## Analysis on stand-by from 2026-11-19 (reopened 2026-11-25 for specs 19 and 17, G)
+## Analysis on stand-by from 2026-11-19 (reopened 2026-11-25 for specs 19 and 17, 2026-11-27 for spec 18, G)
 
 Everything up to spec 16 and the close-out fixes is merged on `main` (spec 16 figures and spec 15 exception minimum:
 `57a9460`; SkyVUE reader fixes: `e5e52b7`). Pending on the cluster (not blocking): 14a + 14c for DE-Tha with the new
 SkyVUE reader (`docs/local/cluster_commands_spec14.md`, section "Close-out"; the 2026-11-20 rerun left 4 June 2026 days
 failing, fixed by spec 14 amendment 3 on `main`: rerun 14a + 14c for DE-Tha when the analysis reopens, no hurry, G).
 Nothing else is running or scheduled.
+
+**Spec 18 (PBLH source and EC fluxes; branch `spec-18-pblh-ec-fluxes`, 2026-11-27): local test done, cluster run
+pending G's go** (runbook `docs/local/cluster_commands_spec18.md`, starts with a `renv::restore()` job for ggrepel;
+≈ 1 CPU-hour for 39 sites). Local results (BE-Bra, FI-Hyy, FR-Gri, CH-Dav; whole record from the labelling date):
+- §1 stable-night share with zm/h > 0.1 (ERA5 / PBLHmod): BE-Bra 0.58 / 0.83, FI-Hyy 0.33 / 0.68 (Cloudnet exact
+  values 0.17, most night values censored), CH-Dav 0.95 / 0.86, FR-Gri 0.02 / 0.32.
+- §2 the u* filter removes 65 % (BE-Bra), 96 % (FI-Hyy), 69 % (CH-Dav), ~100 % (FR-Gri) of the above-SL night
+  half-hours (ERA5); accepted night half-hours above the SL: BE-Bra 22 %, CH-Dav 82 %, FI-Hyy 1 %, FR-Gri 0.
+- §3 accepted NEE residual above − within the SL (ERA5, all cells): BE-Bra +0.09 [0.02, 0.17], CH-Dav +0.13
+  [−0.01, 0.23] µmol m⁻² s⁻¹; PBLHmod (circular) CH-Dav +0.85; FI-Hyy and FR-Gri: no valid cell (too few
+  u*-passed rows above the SL).
+- §4 night storage accumulation vs night h (Spearman ρ, ERA5 / PBLHmod): BE-Bra −0.77 / −0.80, FI-Hyy −0.43 / −0.58,
+  CH-Dav −0.08 / −0.16; FR-Gri has no CO2 profile.
+- §5 Panofsky: ERA5 ranks first at all four sites (offset-removed scatter; differences small); σv/u* well below the
+  curve at the forest and alpine sites (median ln ratio −0.3 to −0.5), on it at FR-Gri.
 
 **Spec 17, decision D1: rejected (pre-test 2026-11-26, local, BE-Bra, FI-Hyy, FR-Gri, CH-Dav; no spec-17 cluster
 run).** Methods / supplement note:
@@ -147,6 +162,7 @@ files). New reader for the secondary set (spec 14 conventions):
 | 16 | Footprint uncertainty from the FFP inputs (phase 5b): one-at-a-time (A) and joint Monte Carlo (B) perturbation of σv, u*, L, umean, hc, z0, WD, h at six sites, attribution (C), the PBLH-source effect of spec 15 placed in it; `16a`–`16c` | 5b | merged (`main`, 573e9e2; amendment 1 rsl_off); cluster run done (six sites, reference years; collection job 18905); close-out figure fixes merged (`main`, 57a9460) |
 | 19 | Why the PBLH source changes the footprint at CH-Dav and IT-Ren and not at other mountain sites: site descriptors on the spec-15 rows (terrain, tower, PBLH, turbulence, night-time flows, footprint, spec-15 status), night-row R2, existing night-time measured evidence, supplementary figures `19s_*`; `scripts/19a_site_descriptors.R`, `R/alpine_drivers.R`; analysis only (no PBLHmod / FFP run) | 5 | `spec-19-alpine-exception` (2026-11-25); local test on BE-Bra, FI-Hyy, FR-Gri, CH-Dav (row basis flags_only, no local chunks); cluster job pending (`docs/local/cluster_commands_spec19.md`) |
 | 17 | γ from the station's own data (EC-derived γ, PBLHmod-γEC): daily γ from the tower θ rise in the B&G window (Method A, model-consistent; Method B, closed-form encroachment), day selection by flags, site × month climatology; `gamma_source` `ec_clim` / `ec_daily` (spec 02 amendment 15); cases `gamma_ec` (standard source `pblhmod_gamma_ec`), `gamma_ec_daily`, constant grid `gamma_g002`–`gamma_g012`; step 04 pair 9; evaluation `11 --prefix=17` (A, B), `17b` (C, D, E); `R/gamma_ec.R`, `scripts/17a_gamma_ec.R`, `scripts/17b_gamma_ec_collect.R` | 1, 3 | `spec-17-gamma-ec` (2026-11-25); local test on BE-Bra, FI-Hyy, FR-Gri, CH-Dav; D1 pre-test (2026-11-26, `spec-17-d1-pretest`, option `gamma_ec_start_offset_h`): **D1 rejected**, no cluster run (note at the top) |
+| 18 | Where the PBLH source matters for EC fluxes: surface-layer share (zm/h > 0.1) by source, overlap with the u* filter, accepted night NEE residual above the surface layer, storage vs h, Panofsky σv test, SCF (descriptive); `scripts/18a_pblh_ec_site.R`, `18b_pblh_ec_collect.R`, `R/pblh_ec_fluxes.R`, `R/pblh_ec_collect.R`; analysis only | 5 | `spec-18-pblh-ec-fluxes` (2026-11-27); local test on BE-Bra, FI-Hyy, FR-Gri, CH-Dav; cluster run pending G's go (`docs/local/cluster_commands_spec18.md`) |
 
 Phases (see `project_plan.md`): 0 done; 1 done (model, input QC, legacy regression); 2 standard format, three
 sources (spec 04) and the first measured source (spec 07, FI-Hyy) done; 3 BE-Bra (vs ERA5) and FI-Hyy (vs ERA5 and

@@ -286,6 +286,16 @@ too shallow when deep") is a **hypothesis under test**.
   `era5_bilinear`, the ±20 % anchors, the reference γ values and `oper` (supplement). Storage `c5`.
 - Show explicitly that a bias in h does not average out in climatologies.
 
+## Where the PBLH source matters for EC fluxes (spec 18; Results 3.5)
+
+The footprint barely depends on h (specs 15–16), but h decides whether the tower is in the surface layer. Spec 18
+(analysis only; `scripts/18a_pblh_ec_site.R`, `18b_pblh_ec_collect.R`; methods `docs/methods_pblh_ec_fluxes.md`):
+share of half-hours with zm/h > 0.1 by source (ERA5 main, PBLHmod circular at night); overlap with the u* filter
+(ONEFlux VUT thresholds); bias of accepted night-time NEE above the surface layer (residual to RECO_NT within u* bins
+and TA terciles, night-block bootstrap; diluted, not created, by the RECO_NT fit); storage against h (sites with a CO2
+profile); the Panofsky (1977) σv test of each h; spectral correction factors (descriptive). Local test 2026-11-27 on
+BE-Bra, FI-Hyy, FR-Gri, CH-Dav; cluster run pending G's go (`docs/local/cluster_commands_spec18.md`).
+
 ## Inputs
 
 - ICOS L2 FLUXES: `H`, `USTAR`, `MO_LENGTH`, `ZL`, `T_SONIC`, `WS`, `WD`, `V_SIGMA`, `PBLH` (legacy operational output), `FETCH_*`, `FOOTPRINT_*`, QC flags.

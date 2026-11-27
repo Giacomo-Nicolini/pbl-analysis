@@ -361,6 +361,19 @@ so code must be reproducible, documented and traceable to references.
 - With umean (z0 = NaN), x_r depends on zm, h, umean and u* only; L acts on the 2D field only through the sign of zm/L
   (σy scale constant), so σv, L and WD change x80 only through validity.
 
+## PBLH source and EC fluxes (spec 18; G 2026-11-27)
+
+- `scripts/18a_pblh_ec_site.R` (per site, restartable; `--site-index=N` for the SLURM array) writes
+  `18_<part>_<site>.csv`; `scripts/18b_pblh_ec_collect.R` (`--from-tables=DIR`, `--label=`) binds them into `18_*`
+  network tables and figures. Called directly, never through `run_site.R`. Code `R/pblh_ec_fluxes.R`,
+  `R/pblh_ec_collect.R`; methods `docs/methods_pblh_ec_fluxes.md`; runbook `docs/local/cluster_commands_spec18.md`.
+- Rows: whole L2 record from the labelling date, exclusions removed; ERA5 is the main h (PBLHmod's night h is computed
+  from u* and L: circular, stated in every caption); surface layer = zm/h > 0.1; u*-filtered = FLUXNET USTAR below
+  the ONEFlux VUT threshold of the local year (`NEE_VUT_REF_QC > 0` reported alongside); storage only from profile SC
+  (`SC_FLAG` 0; flag 1 = `SC_1P` single point; checked 2026-11-27); measured h at night only from Cloudnet (aerosol
+  MLH sits on a night floor), all primary sources in the daytime Panofsky test. Panofsky et al. (1977) is not in the
+  bib yet (G to check).
+
 ## Cluster runs (spec 09)
 
 - **Per site**: `scripts/run_site.R SITE --steps=01,11a,02,04,08a [--force] [--with-oper]` runs each step in a fresh R
