@@ -330,6 +330,9 @@ test_that("land-cover groups, ratio-height statistics and caption (17s_gamma_rat
   cap <- gamma_ratio_height_caption(x)
   expect_match(cap, "-1.00", fixed = TRUE)
   expect_match(cap, "crop / grass 3.25 (2)", fixed = TRUE)
+  expect_no_match(cap, "closed shrubland")
+  expect_match(gamma_ratio_height_caption(dplyr::mutate(x, igbp = ifelse(site_id == "BB-Two", "CSH", igbp))),
+               "BB-Two (closed shrubland) counted as crop / grass.", fixed = TRUE)
   p <- plot_gamma_ratio_vs_height(x, cap)
   b <- ggplot2::ggplot_build(p)
   expect_equal(nrow(b$data[[2]]), 4L)                                # one segment per site with both fits
