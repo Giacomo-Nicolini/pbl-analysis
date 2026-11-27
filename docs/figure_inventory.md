@@ -227,7 +227,8 @@ header (definitions, units).
 
 Figures (supplement): `19s_alpine_drivers`: x = night (neutral + stable) median ln(PBLHmod / ERA5), y = p10 of
 TA(ERA5) − TA(PBLHmod) on stable nights and on neutral nights (two panels), colour = EC height, size = max sub-grid
-orography SD of the 9 ERA5 cells, open symbols = fewer than 50 rows, labels for |p10| > 2 pp and CZ-BK1, IT-MBo,
+orography SD of the 9 ERA5 cells; second row (G 2026-11-27): x = night (neutral + stable) p90 of zm / h ERA5 (log),
+colour = orography SD, size = EC height; open symbols = fewer than 50 rows, repelled labels for |p10| > 2 pp and CZ-BK1, IT-MBo,
 FR-Lqu, dashed line at −5 pp; `19s_row_level`: night rows of the selected sites (facets), TA difference against
 ln(h ERA5 / h PBLHmod), colour = zm / h ERA5 (log scale); `19s_night_flows`: day and night wind-direction polar
 histograms of CH-Dav, IT-Ren, DE-Tha, CZ-BK1, IT-MBo, BE-Bra. `19a --from-tables=DIR` redraws the three figures from

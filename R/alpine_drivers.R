@@ -392,8 +392,8 @@ alpine_night_closeness <- function(tables_dir) {
 #' @param subset Subset [character]; @param label_sites Sites always labelled [character].
 #' @param label_pp Label sites with |p10| above this [pp]; @param min_n Open symbol below this n [-].
 #' @return Tibble per site x panel (`stable` night, `neutral` night): `site_id`, `panel`, `x` [-, night
-#'   neutral_stable median ln(PBLHmod / ERA5)], `y` [pp, p10 of the TA difference], `n`, `ec_height_m`, `sdor_max_m`,
-#'   `below_min_n`, `label` (site id or empty).
+#'   neutral_stable median ln(PBLHmod / ERA5)], `x_zmh` [-, night neutral_stable p90 of zm / h ERA5], `y` [pp, p10 of
+#'   the TA difference], `n`, `ec_height_m`, `sdor_max_m`, `below_min_n`, `label` (site id or empty).
 alpine_drivers_table <- function(desc, subset = "valid_qc_used", label_sites = c("CZ-BK1", "IT-MBo", "FR-Lqu"),
                                  label_pp = 2, min_n = 50) {
   g <- function(var, reg, dn = "night", sub = subset) {
@@ -406,13 +406,14 @@ alpine_drivers_table <- function(desc, subset = "valid_qc_used", label_sites = c
   }
   sites <- unique(desc$site_id)
   xv <- g("ln_h_pblhmod_era5_median", "neutral_stable")
+  xz <- g("zm_h_era5_p90", "neutral_stable")
   eh <- s1("ec_height_m")
   sd <- s1("sdor_max_m")
   out <- dplyr::bind_rows(lapply(c("stable", "neutral"), function(p) {
     y <- g("ta_diff_p10", p)
     n <- g("ta_diff_n", p)
-    dplyr::tibble(site_id = sites, panel = paste(p, "night"), x = unname(xv[sites]), y = unname(y[sites]),
-                  n = unname(n[sites]), ec_height_m = unname(eh[sites]), sdor_max_m = unname(sd[sites]))
+    dplyr::tibble(site_id = sites, panel = paste(p, "night"), x = unname(xv[sites]), x_zmh = unname(xz[sites]),
+                  y = unname(y[sites]), n = unname(n[sites]), ec_height_m = unname(eh[sites]), sdor_max_m = unname(sd[sites]))
   }))
   out$below_min_n <- !is.na(out$n) & out$n < min_n
   out$label <- ifelse(out$site_id %in% label_sites | (is.finite(out$y) & abs(out$y) > label_pp), out$site_id, "")
@@ -421,25 +422,49 @@ alpine_drivers_table <- function(desc, subset = "valid_qc_used", label_sites = c
 
 #' Figure 19s_alpine_drivers
 #'
+#' Two rows (G 2026-11-27), panels neutral / stable night in each: (top) x = night median ln(PBLHmod / ERA5), colour =
+#' EC height, size = sub-grid orography SD; (bottom) x = night p90 of zm / h ERA5 (log), colour = sub-grid orography
+#' SD, size = EC height. Labels repelled (ggrepel), rule of [alpine_drivers_table()].
+#'
 #' @param ft Output of [alpine_drivers_table()]; @param threshold_pp Exception threshold [pp] (line at minus it).
-#' @param caption Caption [character].
-#' @return ggplot.
+#' @param caption Caption [character] (bottom row).
+#' @return List of two ggplots (top, bottom row), for [save_figure()] with `nrow = 2`.
 plot_alpine_drivers <- function(ft, threshold_pp = 5, caption = NULL) {
-  ft <- ft[is.finite(ft$x) & is.finite(ft$y), ]
+  ft <- ft[is.finite(ft$y), ]
   ft$symbol <- ifelse(ft$below_min_n, "n < min", "n >= min")
-  ggplot2::ggplot(ft, ggplot2::aes(x = x, y = y)) +
-    ggplot2::geom_hline(yintercept = -threshold_pp, linetype = style_of("reference_line", "linetype", "element"),
-                        colour = style_of("reference_line", "colour", "element")) +
-    ggplot2::geom_point(ggplot2::aes(colour = ec_height_m, size = sdor_max_m, shape = symbol)) +
-    ggplot2::geom_text(ggplot2::aes(label = label), size = 2.6, vjust = -1.1) +
-    ggplot2::scale_shape_manual(values = c(`n >= min` = 16, `n < min` = 1), name = "rows in the stratum") +
+  ft$label[is.na(ft$label) | !nzchar(ft$label)] <- NA_character_
+  grad <- function(name) {
     ggplot2::scale_colour_gradient(low = style_of("grad_low", "colour", "element"),
-                                   high = style_of("grad_high", "colour", "element"), name = "EC height [m]") +
-    ggplot2::scale_size_continuous(range = c(1.2, 5), name = "sub-grid orography SD [m]") +
-    ggplot2::facet_wrap(~panel) +
-    ggplot2::labs(x = "night (neutral + stable) median ln(PBLHmod / ERA5) [-]",
-                  y = "p10 of TA(ERA5) - TA(PBLHmod) [pp]", caption = caption) +
-    theme_pblh() + ggplot2::theme(legend.box = "vertical")
+                                   high = style_of("grad_high", "colour", "element"), name = name)
+  }
+  one <- function(d, xvar, colvar, sizevar, col_name, size_name, xlab, cap) {
+    d <- d[is.finite(d[[xvar]]), ]
+    ggplot2::ggplot(d, ggplot2::aes(x = .data[[xvar]], y = y)) +
+      ggplot2::geom_hline(yintercept = -threshold_pp, linetype = style_of("reference_line", "linetype", "element"),
+                          colour = style_of("reference_line", "colour", "element")) +
+      ggplot2::geom_point(ggplot2::aes(colour = .data[[colvar]], size = .data[[sizevar]], shape = symbol)) +
+      ggrepel::geom_text_repel(ggplot2::aes(label = label), size = 2.4, seed = 20261127, min.segment.length = 0,
+                               segment.size = 0.2, box.padding = 0.35, max.overlaps = Inf, na.rm = TRUE) +
+      ggplot2::scale_shape_manual(values = c(`n >= min` = 16, `n < min` = 1), name = "rows in the\nstratum") +
+      grad(col_name) +
+      ggplot2::scale_size_continuous(range = c(1.2, 5), name = size_name) +
+      ggplot2::facet_wrap(~panel) +
+      ggplot2::labs(x = xlab, y = "p10 of TA(ERA5) - TA(PBLHmod)\n[pp]", caption = cap) +
+      ggplot2::guides(colour = ggplot2::guide_colourbar(barheight = grid::unit(2.2, "cm"),
+                                                        barwidth = grid::unit(0.3, "cm"))) +
+      theme_pblh() +
+      ggplot2::theme(legend.position = "right", legend.box = "vertical",
+                     legend.title = ggplot2::element_text(size = 8), legend.text = ggplot2::element_text(size = 7),
+                     legend.key.height = grid::unit(0.35, "cm"), legend.spacing.y = grid::unit(0.1, "cm"),
+                     legend.margin = ggplot2::margin(0, 0, 0, 0))
+  }
+  list(
+    one(ft, "x", "ec_height_m", "sdor_max_m", "EC height [m]", "sub-grid\norography SD [m]",
+        "night (neutral + stable) median ln(PBLHmod / ERA5) [-]", NULL),
+    one(ft, "x_zmh", "sdor_max_m", "ec_height_m", "sub-grid\norography SD [m]", "EC height [m]",
+        "night (neutral + stable) p90 of zm / h ERA5 [-]", caption) + ggplot2::scale_x_log10() +
+      ggplot2::guides(shape = "none")  # same symbols as the top row
+  )
 }
 
 #' Figure 19s_row_level
