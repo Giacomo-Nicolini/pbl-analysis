@@ -621,9 +621,12 @@ gamma_ratio_height_caption <- function(x, label_lo = 1.5, label_hi = 3.2, tag = 
                                                       formatC(d$median_ratio, format = "f", digits = 2), " (",
                                                       d$n_sites, ")", collapse = ", "))
   }, character(1))
+  csh <- sort(unique(x$site_id[toupper(x$igbp) %in% "CSH" & is.finite(x$ratio_ec_era5)]))
+  csh_txt <- if (length(csh)) paste0(" ", paste(csh, collapse = ", "), " (closed shrubland) counted as crop / grass.") else ""
   fp_wrap(paste0("Site median of the monthly γEC / γERA5 (spec 17 supplement; decision D1 rejected). Filled: ",
                  "standard fit (start at the first positive heat flux); open: fit start +2 h; segments join the two ",
-                 "fits of a site. zm = EC height - 2/3 canopy height on the used days. Labels: sites whose standard-fit ",
+                 "fits of a site. zm = EC height - 2/3 canopy height on the used days.", csh_txt,
+                 " Labels: sites whose standard-fit ",
                  "ratio is < ", label_lo, " or > ", label_hi, ". Spearman rho(ratio, zm): ", rho_txt,
                  ". Land-cover medians (n sites): ", paste(g_txt, collapse = "; "), ".", tag), 120)
 }

@@ -54,7 +54,11 @@ run).** Methods / supplement note:
   results in `data/cluster_spec17/`): 38 sites with a ratio (FI-Lom none); Spearman rho(ratio, zm) −0.28 (+0 h,
   p 0.09) and −0.30 (+2 h, p 0.07); land-cover medians +0 h / +2 h: crop / grass 3.11 / 2.69, DBF 2.91 / 2.22,
   ENF / MF / EBF 2.26 / 1.40, wetland 1.89 / 1.60. Figure redrawn as one panel (G 2026-11-27,
-  `scripts/17r_gamma_ratio_height_figure.R`, ggrepel added to renv).
+  `scripts/17r_gamma_ratio_height_figure.R`, ggrepel added to renv). IT-BCi (+2 h ratio 1.00 vs 2.36 at +0 h;
+  checked 2026-11-27): no fit fault (r² 0.93, no bound hits, flags as elsewhere), but the window ends at the day's
+  θ maximum at ≈ 12 UTC (other crop sites ≈ 14 UTC; 46 % of the used days end before 12 UTC), so the +2 h fit has
+  9 rows and a θ rise of 2.5 K (6.5 K over the full window): θ levels off around midday, probably the sea breeze
+  (coast ≈ 10 km; not checked with the wind direction). Per-day γ_A(+2 h) / γ_A(+0 h) median 0.35 (FR-Gri 0.69).
 
 The analysis reopens for one of the following; steps listed, nothing run.
 
