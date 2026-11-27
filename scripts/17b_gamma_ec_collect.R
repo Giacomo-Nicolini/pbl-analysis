@@ -158,8 +158,9 @@ if ("D" %in% parts && !nzchar(sfx)) {
                                               median_ratio = stats::median(ratio_ec_era5), .groups = "drop"))
     }
     if (any(is.finite(hv$ratio_ec_era5))) {
-      cap <- fp_wrap(paste0("Site median of the monthly γEC / γERA5 (spec 17 supplement; decision D1 rejected). zm = EC height - 2/3 canopy height on the used days; labels: site (IGBP land cover). Filled: standard fit; open: fit start later after the first positive heat flux.", tag), 110)
-      save_figure(plot_gamma_ratio_vs_height(hv, cap), "17s_gamma_ratio_vs_height", 19, 11, dir = fig_dir)
+      # redraw from the table alone: scripts/17r_gamma_ratio_height_figure.R
+      save_figure(plot_gamma_ratio_vs_height(hv, gamma_ratio_height_caption(hv, tag = tag)),
+                  "17s_gamma_ratio_vs_height", 17, 13, dir = fig_dir)
     }
   }
 }

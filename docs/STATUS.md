@@ -50,7 +50,11 @@ run).** Methods / supplement note:
   +2 h (`<derived_dir>/gamma_ec_off2h/`) and 17b parts C, D, with the new height table `17_gamma_ratio_vs_height`
   and figure `17s_gamma_ratio_vs_height`; no PBLHmod-γEC case (step 02 runs the γEC cases only when named), no
   script 11, no pair 9. Scripts called directly (run_site would rerun 01/11a/02): ≈ 4.5 CPU-hours.
-  Runbook: `docs/local/cluster_commands_spec17.md` section 0. Pending: the cluster run.
+  Runbook: `docs/local/cluster_commands_spec17.md` section 0. Cluster run done (17b log `gec17b_19467.out`,
+  results in `data/cluster_spec17/`): 38 sites with a ratio (FI-Lom none); Spearman rho(ratio, zm) −0.28 (+0 h,
+  p 0.09) and −0.30 (+2 h, p 0.07); land-cover medians +0 h / +2 h: crop / grass 3.11 / 2.69, DBF 2.91 / 2.22,
+  ENF / MF / EBF 2.26 / 1.40, wetland 1.89 / 1.60. Figure redrawn as one panel (G 2026-11-27,
+  `scripts/17r_gamma_ratio_height_figure.R`, ggrepel added to renv).
 
 The analysis reopens for one of the following; steps listed, nothing run.
 

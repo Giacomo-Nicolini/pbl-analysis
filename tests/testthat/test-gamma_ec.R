@@ -312,3 +312,27 @@ test_that("offset folders and heights of the spec-17 supplement", {
                      igbp = c("CRO", "ENF", "CRO", "ENF"))
   expect_s3_class(ggplot2::ggplot_build(plot_gamma_ratio_vs_height(x)), "ggplot_built")
 })
+
+test_that("land-cover groups, ratio-height statistics and caption (17s_gamma_ratio_vs_height)", {
+  expect_equal(land_cover_group(c("CRO", "gra", "CSH", "DBF", "ENF", "MF", "EBF", "WET", "SAV")),
+               c("lc_crop_grass", "lc_crop_grass", "lc_crop_grass", "lc_dbf", "lc_evergreen_mixed",
+                 "lc_evergreen_mixed", "lc_evergreen_mixed", "lc_wetland", NA))
+  x <- dplyr::tibble(site_id = rep(c("AA-One", "BB-Two", "CC-Thr", "DD-For", "EE-Fiv"), 2),
+                     offset_h = rep(c(0, 2), each = 5),
+                     ratio_ec_era5 = c(3.5, 3, 2, 1, NA, 3, 2.5, 1.5, 0.8, NA), zm_m = rep(c(2, 3, 20, 25, 5), 2),
+                     igbp = rep(c("CRO", "GRA", "ENF", "ENF", "WET"), 2))
+  st <- gamma_ratio_height_stats(x)
+  expect_equal(st$rho$n_sites, c(4L, 4L))
+  expect_equal(st$rho$rho_zm, c(-1, -1))
+  g0 <- st$groups[st$groups$offset_h == 0, ]
+  expect_equal(g0$group, c("lc_crop_grass", "lc_evergreen_mixed"))  # style order; the NA ratio row dropped
+  expect_equal(g0$median_ratio, c(3.25, 1.5))
+  cap <- gamma_ratio_height_caption(x)
+  expect_match(cap, "-1.00", fixed = TRUE)
+  expect_match(cap, "crop / grass 3.25 (2)", fixed = TRUE)
+  p <- plot_gamma_ratio_vs_height(x, cap)
+  b <- ggplot2::ggplot_build(p)
+  expect_equal(nrow(b$data[[2]]), 4L)                                # one segment per site with both fits
+  expect_setequal(b$plot$layers[[4]]$data$site_id, c("AA-One", "DD-For"))  # labels: < 1.5 or > 3.2 at +0 h
+  expect_warning(plot_gamma_ratio_vs_height(dplyr::mutate(x, igbp = "SAV")), "outside the land-cover groups")
+})

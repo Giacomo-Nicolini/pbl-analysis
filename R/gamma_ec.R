@@ -570,32 +570,110 @@ gamma_ec_heights <- function(daily, site_id, sites, sites_tv) {
                 zm_m = med_fin(h$zm_m - 2 / 3 * h$canopy_height_m), igbp = igbp)
 }
 
+#' Land-cover group of an IGBP class (spec 17 supplement figure)
+#'
+#' Groups of G (2026-11-27): crop / grass (CRO, GRA; also CSH, closed shrubland, BE-Maa: low vegetation), DBF,
+#' ENF / MF / EBF, wetland (WET). Ids are rows of group `land_cover` in [pblh_sources_style].
+#'
+#' @param igbp IGBP class [character].
+#' @return Group id [character], `NA` for a class outside the four groups.
+land_cover_group <- function(igbp) {
+  map <- c(CRO = "lc_crop_grass", GRA = "lc_crop_grass", CSH = "lc_crop_grass", DBF = "lc_dbf",
+           ENF = "lc_evergreen_mixed", MF = "lc_evergreen_mixed", EBF = "lc_evergreen_mixed", WET = "lc_wetland")
+  unname(map[toupper(igbp)])
+}
+
+#' Spearman rho with zm and land-cover medians of the site gamma_EC / gamma_ERA5 (spec 17 supplement)
+#'
+#' @param x Table `17_gamma_ratio_vs_height` (`offset_h`, `ratio_ec_era5`, `zm_m`, `igbp`).
+#' @return List: `rho` (tibble `offset_h` [h], `n_sites`, `rho_zm` [-], `p_value` [-]; Spearman rank correlation of
+#'   the ratio with zm over the sites with both finite) and `groups` (tibble `offset_h`, `group` (id), `n_sites`,
+#'   `median_ratio` [-]).
+gamma_ratio_height_stats <- function(x) {
+  x <- x[is.finite(x$ratio_ec_era5), ]
+  x$group <- land_cover_group(x$igbp)
+  rho <- lapply(sort(unique(x$offset_h)), function(o) {
+    d <- x[x$offset_h == o & is.finite(x$zm_m) & x$zm_m > 0, ]
+    ct <- if (nrow(d) >= 4) suppressWarnings(stats::cor.test(d$zm_m, d$ratio_ec_era5, method = "spearman")) else NULL
+    dplyr::tibble(offset_h = o, n_sites = nrow(d), rho_zm = if (is.null(ct)) NA_real_ else unname(ct$estimate),
+                  p_value = if (is.null(ct)) NA_real_ else ct$p.value)
+  })
+  grp <- dplyr::summarise(dplyr::group_by(x[!is.na(x$group), ], offset_h, group), n_sites = dplyr::n(),
+                          median_ratio = stats::median(ratio_ec_era5), .groups = "drop")
+  grp <- grp[order(grp$offset_h, style_of(grp$group, "order", "land_cover")), ]
+  list(rho = dplyr::bind_rows(rho), groups = grp)
+}
+
+#' Caption of 17s_gamma_ratio_vs_height
+#'
+#' @param x Table `17_gamma_ratio_vs_height`.
+#' @param label_lo,label_hi Label thresholds of [plot_gamma_ratio_vs_height()] [-].
+#' @param tag Text appended (e.g. a run label).
+#' @return Caption [character, one string, wrapped].
+gamma_ratio_height_caption <- function(x, label_lo = 1.5, label_hi = 3.2, tag = "") {
+  st <- gamma_ratio_height_stats(x)
+  r <- st$rho
+  rho_txt <- paste0("+", format(r$offset_h), " h: ", formatC(r$rho_zm, format = "f", digits = 2), " (p = ",
+                    signif(r$p_value, 2), ", ", r$n_sites, " sites)", collapse = "; ")
+  g <- st$groups
+  g_txt <- vapply(split(g, g$offset_h), function(d) {
+    paste0("+", format(d$offset_h[1]), " h: ", paste0(style_of(d$group, "label", "land_cover"), " ",
+                                                      formatC(d$median_ratio, format = "f", digits = 2), " (",
+                                                      d$n_sites, ")", collapse = ", "))
+  }, character(1))
+  fp_wrap(paste0("Site median of the monthly γEC / γERA5 (spec 17 supplement; decision D1 rejected). Filled: ",
+                 "standard fit (start at the first positive heat flux); open: fit start +2 h; segments join the two ",
+                 "fits of a site. zm = EC height - 2/3 canopy height on the used days. Labels: sites whose standard-fit ",
+                 "ratio is < ", label_lo, " or > ", label_hi, ". Spearman rho(ratio, zm): ", rho_txt,
+                 ". Land-cover medians (n sites): ", paste(g_txt, collapse = "; "), ".", tag), 120)
+}
+
 #' Site gamma_EC / gamma_ERA5 against the measurement height (spec 17 supplement figure)
 #'
-#' @param x Table `17_gamma_ratio_vs_height` (`site_id`, `offset_h`, `ratio_ec_era5`, `zm_m`, `ec_height_m`, `igbp`).
+#' One panel (G 2026-11-27): x = zm (log), y = ratio (log), colour = land-cover group ([land_cover_group()]), filled =
+#' smallest offset (standard fit), open = the other offset, a thin segment joining the two points of a site, the 1:1
+#' line, repelled labels (ggrepel) at the standard-fit point of the sites whose standard-fit ratio is outside
+#' [`label_lo`, `label_hi`].
+#'
+#' @param x Table `17_gamma_ratio_vs_height` (`site_id`, `offset_h`, `ratio_ec_era5`, `zm_m`, `igbp`).
 #' @param caption Caption.
-#' @return ggplot: two panels (x = zm, x = EC height, log axes), one point per site and offset, labels site (IGBP).
-plot_gamma_ratio_vs_height <- function(x, caption = NULL) {
-  x <- x[is.finite(x$ratio_ec_era5), ]
-  lab_z <- "zm = EC height - 2/3 hc [m]"
-  lab_e <- "EC height [m]"
-  long <- dplyr::bind_rows(
-    dplyr::mutate(x, height = zm_m, panel = lab_z),
-    dplyr::mutate(x, height = ec_height_m, panel = lab_e))
-  long <- long[is.finite(long$height) & long$height > 0, ]
-  long$panel <- factor(long$panel, levels = c(lab_z, lab_e))
-  long$offset <- factor(paste0("fit start +", format(long$offset_h), " h"))
-  long$label <- ifelse(long$offset_h == min(long$offset_h), paste0(long$site_id, " (", long$igbp, ")"), NA_character_)
-  ggplot2::ggplot(long, ggplot2::aes(height, ratio_ec_era5, shape = offset)) +
-    ggplot2::geom_hline(yintercept = 1, colour = style_of("reference_line", "colour", "element")) +
-    ggplot2::geom_point(colour = style_of("pblhmod_gamma_ec"), size = 1.8) +
-    ggplot2::geom_text(ggplot2::aes(label = label), size = 2, vjust = -0.9, na.rm = TRUE, show.legend = FALSE) +
-    ggplot2::scale_shape_manual(values = c(16, 1)[seq_along(levels(long$offset))], name = NULL) +
-    ggplot2::scale_x_log10(expand = ggplot2::expansion(mult = 0.25)) +
+#' @param label_lo,label_hi Label thresholds on the standard-fit ratio [-].
+#' @return ggplot.
+plot_gamma_ratio_vs_height <- function(x, caption = NULL, label_lo = 1.5, label_hi = 3.2) {
+  x <- x[is.finite(x$ratio_ec_era5) & is.finite(x$zm_m) & x$zm_m > 0, ]
+  x$group <- land_cover_group(x$igbp)
+  if (anyNA(x$group)) {
+    cli::cli_warn("IGBP class outside the land-cover groups, not plotted: {unique(x$igbp[is.na(x$group)])}.")
+    x <- x[!is.na(x$group), ]
+  }
+  offs <- sort(unique(x$offset_h))
+  x$offset <- factor(paste0("fit start +", format(x$offset_h), " h"), levels = paste0("fit start +", format(offs), " h"))
+  base <- x[x$offset_h == offs[1], ]
+  seg <- if (length(offs) > 1) {
+    dplyr::inner_join(base[c("site_id", "group", "zm_m", "ratio_ec_era5")],
+                      x[x$offset_h == offs[2], c("site_id", "zm_m", "ratio_ec_era5")], by = "site_id",
+                      suffix = c("", "_2"))
+  } else NULL
+  lab <- base[base$ratio_ec_era5 < label_lo | base$ratio_ec_era5 > label_hi, ]
+  gids <- style_ids("land_cover")
+  gids <- gids[gids %in% x$group]
+  p <- ggplot2::ggplot(x, ggplot2::aes(zm_m, ratio_ec_era5, colour = group)) +
+    ggplot2::geom_hline(yintercept = 1, colour = style_of("reference_line", "colour", "element"))
+  if (!is.null(seg)) {
+    p <- p + ggplot2::geom_segment(data = seg, ggplot2::aes(xend = zm_m_2, yend = ratio_ec_era5_2),
+                                   linewidth = 0.3, alpha = 0.7, show.legend = FALSE)
+  }
+  p +
+    ggplot2::geom_point(ggplot2::aes(shape = offset), size = 2, stroke = 0.8) +
+    ggrepel::geom_text_repel(data = lab, ggplot2::aes(label = site_id), size = 2.4, seed = 20261127,
+                             min.segment.length = 0, segment.size = 0.2, box.padding = 0.4, max.overlaps = Inf,
+                             show.legend = FALSE) +
+    ggplot2::scale_colour_manual(values = stats::setNames(style_of(gids, "colour", "land_cover"), gids),
+                                 labels = stats::setNames(style_of(gids, "label", "land_cover"), gids),
+                                 breaks = gids, name = "Land cover") +
+    ggplot2::scale_shape_manual(values = c(16, 1)[seq_along(offs)], name = NULL) +
+    ggplot2::scale_x_log10() +
     ggplot2::scale_y_log10() +
-    ggplot2::facet_wrap(~panel, scales = "free_x", strip.position = "bottom") +
-    ggplot2::labs(x = NULL, y = "γEC / γERA5 [-]", caption = caption) +
-    theme_pblh() +
-    ggplot2::theme(strip.placement = "outside") +
-    ggplot2::coord_cartesian(clip = "off")
+    ggplot2::labs(x = "zm = EC height - 2/3 hc [m]", y = "γEC / γERA5 [-]", caption = caption) +
+    theme_pblh()
 }
