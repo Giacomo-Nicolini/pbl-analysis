@@ -19,7 +19,7 @@
 #' of the measured MLH, legacy-regression variants and figure elements (bands, trend lines, highlighted classes).
 #'
 #' @format Tibble: `id`, `group` (`source`, `footprint_case`, `regime`, `subset`, `qc`, `legacy`, `element`,
-#'   `secondary` = series of the secondary measured sources, spec 14; `fp_pair`, `fp_share` = network footprint
+#'   `secondary` = series of the secondary measured sources, spec 14; `land_cover` = spec 17 supplement; `fp_pair`, `fp_share` = network footprint
 #'   summary, spec 15),
 #'   `colour` [hex or R colour name], `label`, `order` [integer, legend and plotting order within the group],
 #'   `linetype` (ggplot2 line type), `shape` (ggplot2 point shape; 16 = filled circle unless set, fix-15).
@@ -155,7 +155,12 @@ pblh_sources_style <- local({
     row("grad_low", "element", k["blue_light"], "low", 27),
     row("grad_high", "element", k["blue_dark"], "high", 28),
     # Spec 17 B: gamma where the median ln(PBLHmod / measured) crosses 0
-    row("gamma_best", "element", k["black"], "γ_best (median ln(PBLHmod / measured) = 0; bootstrap 95 %)", 29)
+    row("gamma_best", "element", k["black"], "γ_best (median ln(PBLHmod / measured) = 0; bootstrap 95 %)", 29),
+    # Spec 17 supplement (G 2026-11-27): land-cover groups of 17s_gamma_ratio_vs_height (land_cover_group())
+    row("lc_crop_grass", "land_cover", k["orange"], "crop / grass", 1),
+    row("lc_dbf", "land_cover", k["green"], "DBF", 2),
+    row("lc_evergreen_mixed", "land_cover", k["blue_dark"], "ENF / MF / EBF", 3),
+    row("lc_wetland", "land_cover", k["sky"], "wetland", 4)
   )
 })
 
