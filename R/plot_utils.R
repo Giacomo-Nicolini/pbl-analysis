@@ -219,7 +219,7 @@ source_labels <- function() style_of(style_ids("source"), "label")
 
 #' Save a figure (png by default; pdf only for paper figures)
 #'
-#' A list of ggplot objects is laid out side by side (base `grid` viewports;
+#' A list of ggplot objects is laid out side by side, or in `nrow` rows filled row by row (base `grid` viewports;
 #' no extra package). PNG at 300 dpi by default; add `"pdf"` to `formats`
 #' only for the final paper figures (CLAUDE.md, Style).
 #'
@@ -229,19 +229,26 @@ source_labels <- function() style_of(style_ids("source"), "label")
 #' @param dir Output directory; default `<output_dir>/figures` from `config.yml`.
 #' @param formats Output formats, any of `"png"`, `"pdf"` [character];
 #'   default `"png"`.
+#' @param nrow Rows of the layout [-] (default 1: all plots side by side).
+#' @param heights Relative row heights [-] (default equal).
 #' @return Named character vector of the written paths (names = formats),
 #'   invisibly.
-save_figure <- function(p, name, width_cm = 16, height_cm = 10, dir = NULL, formats = "png") {
+save_figure <- function(p, name, width_cm = 16, height_cm = 10, dir = NULL, formats = "png", nrow = 1L,
+                        heights = NULL) {
   bad <- setdiff(formats, c("png", "pdf"))
   if (length(formats) == 0 || length(bad) > 0) cli::cli_abort("{.arg formats} must be any of {.val png}, {.val pdf}.")
   if (is.null(dir)) dir <- file.path(resolve_path(get_cfg()$output_dir, must_exist = FALSE), "figures")
   dir.create(dir, recursive = TRUE, showWarnings = FALSE)
   plots <- if (inherits(p, "ggplot")) list(p) else p
+  ncol <- ceiling(length(plots) / nrow)
+  if (is.null(heights)) heights <- rep(1, nrow)
+  if (length(heights) != nrow) cli::cli_abort("{.arg heights} must have {nrow} value{?s}.")
   draw <- function() {
     grid::grid.newpage()
-    grid::pushViewport(grid::viewport(layout = grid::grid.layout(1, length(plots))))
+    grid::pushViewport(grid::viewport(layout = grid::grid.layout(nrow, ncol, heights = grid::unit(heights, "null"))))
     for (i in seq_along(plots)) {
-      print(plots[[i]], vp = grid::viewport(layout.pos.row = 1, layout.pos.col = i), newpage = FALSE)
+      print(plots[[i]], vp = grid::viewport(layout.pos.row = (i - 1) %/% ncol + 1, layout.pos.col = (i - 1) %% ncol + 1),
+            newpage = FALSE)
     }
     invisible(NULL)
   }

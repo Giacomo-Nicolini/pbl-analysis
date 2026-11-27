@@ -18,7 +18,8 @@
 # Usage: Rscript scripts/19a_site_descriptors.R [--sites-file=config/run_sites.txt | --sites=A,B]
 #          [--row-sites=CH-Dav,IT-Ren,...] [--flow-sites=...] [--label-sites=CZ-BK1,IT-MBo,FR-Lqu]
 #          [--cells=FILE] [--spec15=FILE] [--measured-tables=DIR]
-#        Rscript scripts/19a_site_descriptors.R --from-tables=DIR   (figures only, from the collected 19_* tables)
+#        Rscript scripts/19a_site_descriptors.R --from-tables=DIR [--figures=DIR]  (figures only, from the collected
+#          19_* tables; --figures: output folder, default <output_dir>/figures)
 
 for (f in list.files(here::here("R"), pattern = "\\.R$", full.names = TRUE)) source(f)
 
@@ -28,7 +29,7 @@ opt <- function(k, def = NULL) {
   if (length(v)) v else def
 }
 known <- c("--sites-file", "--sites", "--row-sites", "--flow-sites", "--label-sites", "--cells", "--spec15",
-           "--measured-tables", "--from-tables")
+           "--measured-tables", "--from-tables", "--figures")
 bad <- setdiff(sub("=.*$", "", grep("^--", args, value = TRUE)), known)
 if (length(bad)) cli::cli_abort("Unknown argument{?s}: {.val {bad}}.")
 split <- function(x) trimws(strsplit(x, ",")[[1]])
@@ -36,7 +37,7 @@ split <- function(x) trimws(strsplit(x, ",")[[1]])
 cfg <- get_cfg()
 out_dir <- resolve_path(cfg$output_dir, must_exist = FALSE)
 tables_dir <- file.path(out_dir, "tables")
-fig_dir <- file.path(out_dir, "figures")
+fig_dir <- opt("figures", file.path(out_dir, "figures"))
 dir.create(tables_dir, recursive = TRUE, showWarnings = FALSE)
 threshold_pp <- 5
 min_n <- 50
@@ -51,10 +52,11 @@ draw_figures <- function(desc, nr, wh, fig_dir) {
   ft <- alpine_drivers_table(desc, label_sites = label_sites, min_n = min_n)
   if (any(is.finite(ft$x) & is.finite(ft$y))) {
     cap <- fp_wrap(paste0("Rows: spec-15 common_pe of the reference year (set etc, subset valid_qc_used; row basis: ",
-                          basis, "). x: median ln(PBLHmod / ERA5) on the neutral and stable night rows; y: p10 of the",
+                          basis, "). y: p10 of the",
                           " target-area difference ERA5 - PBLHmod in the panel's stratum. Open symbols: fewer than ",
-                          min_n, " rows (not flagged as exception, spec 15). Dashed line: -", threshold_pp, " pp."))
-    save_figure(plot_alpine_drivers(ft, threshold_pp, cap), "19s_alpine_drivers", 18, 12, dir = fig_dir)
+                          min_n, " rows (not flagged as exception, spec 15). Dashed line: -", threshold_pp, " pp. Top row: x = ln ratio, colour = EC height, size = max sub-grid orography SD of the 9 ERA5 cells; bottom row: x = p90 of zm / h ERA5 on the neutral and stable night rows (log), colour = orography SD, size = EC height. Labels: |p10| > 2 pp and ", paste(label_sites, collapse = ", "), "."), 150)
+    save_figure(plot_alpine_drivers(ft, threshold_pp, cap), "19s_alpine_drivers", 19, 22, dir = fig_dir, nrow = 2,
+                heights = c(1, 1.35))
   } else cli::cli_alert_warning("19s_alpine_drivers: no footprint values (row basis {basis}), not drawn.")
   if (nrow(nr) && any(is.finite(nr$ta_diff_pp))) {
     cap <- fp_wrap("Night rows (zm/L neutral and stable) of the reference year, spec-15 common_pe (etc, valid_qc_used).")

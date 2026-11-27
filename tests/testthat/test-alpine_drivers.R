@@ -187,7 +187,7 @@ test_that("plot helpers draw on a synthetic descriptor table", {
     site_id = s, block = "x", variable = var, unit = "-", subset = sub, regime = reg, daynight = dn, value = val,
     value_chr = NA_character_, row_basis = "common_pe")
   desc <- dplyr::bind_rows(lapply(seq_along(sites), function(k) dplyr::bind_rows(
-    mk(sites[k], "ln_h_pblhmod_era5_median", "neutral_stable", "night", k * 0.5),
+    mk(sites[k], "ln_h_pblhmod_era5_median", "neutral_stable", "night", k * 0.5), mk(sites[k], "zm_h_era5_p90", "neutral_stable", "night", 0.05 * k),
     mk(sites[k], "ta_diff_p10", "stable", "night", -k * 3), mk(sites[k], "ta_diff_p10", "neutral", "night", -k),
     mk(sites[k], "ta_diff_n", "stable", "night", c(400, 30, 100)[k]), mk(sites[k], "ta_diff_n", "neutral", "night", 200),
     mk(sites[k], "ec_height_m", NA, NA, 10 * k, sub = NA), mk(sites[k], "sdor_max_m", NA, NA, 100 * k, sub = NA))))
@@ -197,7 +197,12 @@ test_that("plot helpers draw on a synthetic descriptor table", {
   expect_equal(ft$label[ft$site_id == "AA-One" & ft$panel == "stable night"], "AA-One")   # |p10| = 3 > 2
   expect_equal(ft$label[ft$site_id == "AA-One" & ft$panel == "neutral night"], "")        # |p10| = 1
   expect_equal(ft$label[ft$site_id == "CZ-BK1" & ft$panel == "neutral night"], "CZ-BK1")  # always labelled
-  expect_s3_class(ggplot2::ggplot_build(plot_alpine_drivers(ft)), "ggplot_built")
+  expect_equal(ft$x_zmh[ft$site_id == "BB-Two" & ft$panel == "stable night"], 0.1)
+  pa <- plot_alpine_drivers(ft)
+  expect_length(pa, 2L)
+  for (p in pa) expect_s3_class(ggplot2::ggplot_build(p), "ggplot_built")
+  expect_equal(rlang::as_label(pa[[2]]$layers[[2]]$mapping$colour), "sdor_max_m")
+  expect_true(all(file.exists(save_figure(pa, "drivers_test", 18, 20, dir = tempdir(), nrow = 2, heights = c(1, 1.3)))))
   nr <- dplyr::tibble(site_id = rep(sites, each = 5), zl_class = "stable", ta_diff_pp = rnorm(15),
                       lnx80_era5_pblhmod = rnorm(15), ln_h_era5_pblhmod = rnorm(15), zm_h_era5 = runif(15, 0.01, 1))
   expect_s3_class(ggplot2::ggplot_build(plot_alpine_row_level(nr)), "ggplot_built")
